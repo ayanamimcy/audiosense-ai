@@ -1,0 +1,5 @@
+{
+  "name": "AudioSense AI",
+  "description": "An audio analysis tool that transcribes, identifies speakers, and performs voice activity detection using Gemini AI.",
+  "requestFramePermissions": ["microphone"]
+}
