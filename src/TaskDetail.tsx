@@ -419,12 +419,28 @@ export function TaskDetail({
                       <div
                         key={message.id}
                         className={cn(
-                          'max-w-[90%] rounded-2xl px-4 py-3',
-                          message.role === 'user' ? 'ml-auto bg-indigo-600 text-white' : 'bg-slate-100 text-slate-800',
+                          'max-w-[90%] rounded-2xl px-4 py-3 border shadow-sm',
+                          message.role === 'user'
+                            ? 'ml-auto bg-slate-900 text-white border-slate-800 shadow-slate-900/10'
+                            : 'bg-slate-50 text-slate-800 border-slate-200',
                         )}
                       >
-                        <p className="text-xs opacity-70 mb-1">{message.role === 'user' ? 'You' : 'Assistant'}</p>
-                        <div className="prose prose-sm max-w-none prose-p:my-0 prose-headings:my-2 [&_*]:text-inherit">
+                        <p
+                          className={cn(
+                            'text-xs mb-1 font-medium',
+                            message.role === 'user' ? 'text-white/65' : 'text-slate-500',
+                          )}
+                        >
+                          {message.role === 'user' ? 'You' : 'Assistant'}
+                        </p>
+                        <div
+                          className={cn(
+                            'prose prose-sm max-w-none prose-p:my-0 prose-headings:my-2 prose-pre:rounded-xl prose-pre:px-4 prose-pre:py-3',
+                            message.role === 'user'
+                              ? 'prose-invert prose-strong:text-white prose-code:text-white prose-li:text-white/95'
+                              : 'prose-slate',
+                          )}
+                        >
                           <ReactMarkdown>{message.content}</ReactMarkdown>
                         </div>
                       </div>
@@ -474,8 +490,10 @@ function PanelButton({
     <button
       onClick={onClick}
       className={cn(
-        'px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2 transition-colors',
-        active ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-100',
+        'px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2 border transition-colors',
+        active
+          ? 'bg-white text-indigo-700 border-indigo-200 shadow-sm'
+          : 'text-slate-600 border-transparent hover:bg-slate-100 hover:border-slate-200',
       )}
     >
       {icon}
