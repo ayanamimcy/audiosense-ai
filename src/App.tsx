@@ -81,10 +81,14 @@ export default function App() {
     setProviderHealth([]);
   };
 
-  const fetchTasks = async () => {
+  const fetchTasks = async (preferredTaskId?: string | null) => {
     const data = await apiJson<Task[]>('/api/tasks');
     setTasks(data);
     setSelectedTask((current) => {
+      if (preferredTaskId) {
+        return data.find((task) => task.id === preferredTaskId) || data[0] || null;
+      }
+
       if (!current) {
         return data[0] || null;
       }
@@ -286,8 +290,8 @@ export default function App() {
                       notebooks={notebooks}
                       capabilities={capabilities}
                       userSettings={userSettings}
-                      onUploadSuccess={async () => {
-                        await fetchTasks();
+                      onUploadSuccess={async (taskId) => {
+                        await fetchTasks(taskId);
                         await fetchTags();
                       }}
                     />
@@ -297,8 +301,8 @@ export default function App() {
                       notebooks={notebooks}
                       capabilities={capabilities}
                       userSettings={userSettings}
-                      onUploadSuccess={async () => {
-                        await fetchTasks();
+                      onUploadSuccess={async (taskId) => {
+                        await fetchTasks(taskId);
                         await fetchTags();
                       }}
                     />
@@ -487,7 +491,7 @@ function UploadSection({
   notebooks: Notebook[];
   capabilities: AppCapabilities | null;
   userSettings: UserSettings | null;
-  onUploadSuccess: () => void | Promise<void>;
+  onUploadSuccess: (taskId?: string) => void | Promise<void>;
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -520,13 +524,17 @@ function UploadSection({
 
     try {
       const res = await apiFetch('/api/upload', { method: 'POST', body: formData });
+      const payload = await res.json().catch(() => null);
       if (!res.ok) {
-        const error = await res.json().catch(() => null);
-        throw new Error(error?.error || 'Upload failed.');
+        throw new Error(payload?.error || 'Upload failed.');
       }
 
       setTags('');
-      await onUploadSuccess();
+      await onUploadSuccess(
+        payload && typeof payload === 'object' && 'taskId' in payload
+          ? String((payload as { taskId?: string }).taskId || '')
+          : undefined,
+      );
     } catch (error: unknown) {
       console.error('Upload error:', error);
       alert(error instanceof Error ? error.message : 'Upload failed.');
@@ -641,7 +649,7 @@ function RecordSection({
   notebooks: Notebook[];
   capabilities: AppCapabilities | null;
   userSettings: UserSettings | null;
-  onUploadSuccess: () => void | Promise<void>;
+  onUploadSuccess: (taskId?: string) => void | Promise<void>;
 }) {
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -670,13 +678,17 @@ function RecordSection({
     }
 
     const res = await apiFetch('/api/upload', { method: 'POST', body: formData });
+    const payload = await res.json().catch(() => null);
     if (!res.ok) {
-      const error = await res.json().catch(() => null);
-      throw new Error(error?.error || 'Failed to queue recording.');
+      throw new Error(payload?.error || 'Failed to queue recording.');
     }
 
     setTags('');
-    await onUploadSuccess();
+    await onUploadSuccess(
+      payload && typeof payload === 'object' && 'taskId' in payload
+        ? String((payload as { taskId?: string }).taskId || '')
+        : undefined,
+    );
   };
 
   const startRecording = async () => {
