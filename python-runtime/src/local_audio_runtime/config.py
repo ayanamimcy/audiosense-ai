@@ -83,7 +83,7 @@ def load_config() -> RuntimeConfig:
         vad_filter=_read_bool("LOCAL_AUDIO_ENGINE_VAD_FILTER", True),
         diarization_model=os.getenv(
             "LOCAL_AUDIO_ENGINE_DIARIZATION_MODEL",
-            "pyannote/speaker-diarization-community-1",
+            "pyannote/speaker-diarization-3.1",
         ),
         hf_token=hf_token if hf_token else None,
         download_root=download_root if download_root else None,

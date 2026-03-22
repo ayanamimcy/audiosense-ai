@@ -1,4 +1,5 @@
 import type { SpeakerSummary, TranscriptSegment } from './transcription.js';
+import { repairPossiblyMojibakeText } from './text-encoding.js';
 
 export type TaskStatus = 'pending' | 'processing' | 'completed' | 'failed';
 export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed';
@@ -83,6 +84,7 @@ export function normalizeTags(value: unknown) {
 export function toTaskResponse(task: TaskRow) {
   return {
     ...task,
+    originalName: repairPossiblyMojibakeText(task.originalName),
     tags: parseJsonField<string[]>(task.tags, []),
     segments: parseJsonField<TranscriptSegment[]>(task.segments, []),
     speakers: parseJsonField<SpeakerSummary[]>(task.speakers, []),

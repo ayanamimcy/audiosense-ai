@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db, isSqliteDb } from '../db.js';
 import { cosineSimilarity, createEmbedding, getEmbeddingsInfo, isEmbeddingsConfigured } from './embeddings.js';
+import { repairPossiblyMojibakeText } from './text-encoding.js';
 import { parseJsonField, type TaskRow } from './task-types.js';
 
 type SearchChunk = {
@@ -63,6 +64,7 @@ export async function reindexTask(task: TaskRow) {
   const chunks = chunkTranscript(task.transcript);
   const tags = parseJsonField<string[]>(task.tags, []).join(' ');
   const summary = task.summary || '';
+  const title = repairPossiblyMojibakeText(task.originalName);
   const now = Date.now();
 
   for (let index = 0; index < chunks.length; index += 1) {
@@ -73,7 +75,7 @@ export async function reindexTask(task: TaskRow) {
     if (isEmbeddingsConfigured()) {
       try {
         const result = await createEmbedding(
-          [task.originalName, summary, tags, content].filter(Boolean).join('\n\n'),
+          [title, summary, tags, content].filter(Boolean).join('\n\n'),
         );
         embedding = result.vector;
         embeddingModel = result.model;
@@ -99,7 +101,7 @@ export async function reindexTask(task: TaskRow) {
     if (isSqliteDb()) {
       await db.raw(
         'INSERT INTO task_chunk_fts (taskChunkId, taskId, userId, title, summary, tags, content) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [row.id, task.id, userId, task.originalName, summary, tags, content],
+        [row.id, task.id, userId, title, summary, tags, content],
       );
     }
   }

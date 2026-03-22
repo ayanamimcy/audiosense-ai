@@ -51,6 +51,7 @@ import {
 } from './lib/settings.js';
 import { getLocalRuntimeCatalogSnapshot } from './lib/user-settings-schema.js';
 import { enqueueTaskJob } from './lib/task-queue.js';
+import { repairPossiblyMojibakeText } from './lib/text-encoding.js';
 import { getAvailableTranscriptionProviders } from './lib/transcription.js';
 import {
   normalizeTags,
@@ -154,7 +155,7 @@ async function getValidatedNotebookIdsForUser(userId: string, input: unknown) {
 
 function buildTaskContext(task: TaskRow) {
   return {
-    title: task.originalName,
+    title: repairPossiblyMojibakeText(task.originalName),
     transcript: task.transcript || '',
     language: task.language,
     speakers: parseJsonField(task.speakers, []),
@@ -393,6 +394,9 @@ protectedApi.post('/upload', upload.single('audio'), asyncRoute(async (req, res)
       ? Number(req.body.expectedSpeakers)
       : null;
   const expectedSpeakers = Number.isFinite(parsedExpectedSpeakers) ? parsedExpectedSpeakers : null;
+  const originalName = repairPossiblyMojibakeText(
+    req.body.originalName?.trim() || req.file.originalname,
+  );
   const provider = String(
     req.body.provider ||
       userSettings.defaultProvider ||
@@ -403,7 +407,7 @@ protectedApi.post('/upload', upload.single('audio'), asyncRoute(async (req, res)
     id: taskId,
     userId: user.id,
     filename: req.file.filename,
-    originalName: req.body.originalName?.trim() || req.file.originalname,
+    originalName,
     status: 'pending',
     createdAt: now,
     notebookId: req.body.notebookId || null,
@@ -497,7 +501,7 @@ protectedApi.patch('/tasks/:id', asyncRoute(async (req, res) => {
     updatedAt: Date.now(),
   };
   if (req.body.originalName !== undefined) {
-    updates.originalName = String(req.body.originalName).trim();
+    updates.originalName = repairPossiblyMojibakeText(String(req.body.originalName).trim());
   }
   if (req.body.tags !== undefined) {
     updates.tags = JSON.stringify(normalizeTags(req.body.tags));
@@ -823,7 +827,7 @@ protectedApi.post('/knowledge/ask', asyncRoute(async (req, res) => {
   const answer = await answerAcrossKnowledgeBase(
     query,
     candidateTasks.map((task) => ({
-      title: task.originalName,
+      title: repairPossiblyMojibakeText(task.originalName),
       transcript:
         retrieval.chunkRanking
           .filter((chunk) => chunk.taskId === task.id)
@@ -840,7 +844,7 @@ protectedApi.post('/knowledge/ask', asyncRoute(async (req, res) => {
     answer,
     sources: candidateTasks.map((task) => ({
       id: task.id,
-      originalName: task.originalName,
+      originalName: repairPossiblyMojibakeText(task.originalName),
       notebookName: task.notebookId ? notebookMap.get(task.notebookId) || null : null,
       tags: task.tags,
       snippet:

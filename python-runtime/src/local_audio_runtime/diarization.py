@@ -12,6 +12,10 @@ from .torchaudio_compat import ensure_torchaudio_compat, patch_loaded_huggingfac
 
 logger = logging.getLogger(__name__)
 
+PYANNOTE_MODEL_FALLBACKS: dict[str, tuple[str, ...]] = {
+    "pyannote/speaker-diarization-community-1": ("pyannote/speaker-diarization-3.1",),
+}
+
 
 def _build_pipeline_token_kwargs(
     from_pretrained: Any,
@@ -29,11 +33,69 @@ def _build_pipeline_token_kwargs(
     return {"token": effective_hf_token}
 
 
+def _is_auth_kwarg_error(exc: TypeError) -> bool:
+    message = str(exc)
+    return "unexpected keyword argument" in message and (
+        "'token'" in message or "'use_auth_token'" in message
+    )
+
+
+def _is_pipeline_compatibility_error(exc: TypeError) -> bool:
+    message = str(exc)
+    if "unexpected keyword argument" not in message:
+        return False
+
+    incompatible_fields = (
+        "'plda'",
+        "'embedding_batch_size'",
+        "'segmentation_batch_size'",
+        "'der_variant'",
+    )
+    return any(field in message for field in incompatible_fields)
+
+
+def _get_candidate_models(model_name: str) -> list[str]:
+    fallbacks = PYANNOTE_MODEL_FALLBACKS.get(model_name, ())
+    return [model_name, *fallbacks]
+
+
+def _load_pipeline(
+    pipeline_cls: Any,
+    *,
+    model_name: str,
+    effective_hf_token: str,
+) -> Any:
+    token_kwargs = _build_pipeline_token_kwargs(
+        pipeline_cls.from_pretrained,
+        effective_hf_token,
+    )
+
+    try:
+        return pipeline_cls.from_pretrained(
+            model_name,
+            **token_kwargs,
+        )
+    except TypeError as exc:
+        if not _is_auth_kwarg_error(exc):
+            raise
+
+        fallback_kwargs = (
+            {"use_auth_token": effective_hf_token}
+            if "token" in token_kwargs
+            else {"token": effective_hf_token}
+        )
+        return pipeline_cls.from_pretrained(
+            model_name,
+            **fallback_kwargs,
+        )
+
+
 class DiarizationEngine:
     def __init__(self, config: RuntimeConfig) -> None:
         self._config = config
         self._pipeline: Any | None = None
         self._device = resolve_device(config.device)
+        self._loaded_model_name: str | None = None
 
     def load(self, hf_token: str | None = None) -> None:
         if self._pipeline is not None:
@@ -54,30 +116,41 @@ class DiarizationEngine:
             self._config.diarization_model,
             self._device,
         )
-        token_kwargs = _build_pipeline_token_kwargs(
-            Pipeline.from_pretrained,
-            effective_hf_token,
-        )
+        last_error: Exception | None = None
+        candidate_models = _get_candidate_models(self._config.diarization_model)
 
-        try:
-            self._pipeline = Pipeline.from_pretrained(
-                self._config.diarization_model,
-                **token_kwargs,
-            )
-        except TypeError as exc:
-            # Older/newer pyannote releases disagree on the auth kwarg name.
-            if "unexpected keyword argument" not in str(exc):
+        for index, model_name in enumerate(candidate_models):
+            try:
+                self._pipeline = _load_pipeline(
+                    Pipeline,
+                    model_name=model_name,
+                    effective_hf_token=effective_hf_token,
+                )
+                self._loaded_model_name = model_name
+                if index > 0:
+                    logger.warning(
+                        "Diarization model %s is incompatible with current pyannote runtime; "
+                        "using fallback model %s instead.",
+                        self._config.diarization_model,
+                        model_name,
+                    )
+                break
+            except TypeError as exc:
+                last_error = exc
+                if index < len(candidate_models) - 1 and _is_pipeline_compatibility_error(exc):
+                    logger.warning(
+                        "Diarization model %s failed compatibility check (%s); retrying with %s",
+                        model_name,
+                        exc,
+                        candidate_models[index + 1],
+                    )
+                    continue
                 raise
 
-            fallback_kwargs = (
-                {"use_auth_token": effective_hf_token}
-                if "token" in token_kwargs
-                else {"token": effective_hf_token}
-            )
-            self._pipeline = Pipeline.from_pretrained(
-                self._config.diarization_model,
-                **fallback_kwargs,
-            )
+        if self._pipeline is None:
+            if last_error is not None:
+                raise last_error
+            raise RuntimeError("Failed to initialize diarization pipeline")
 
         try:
             import torch
@@ -89,6 +162,7 @@ class DiarizationEngine:
 
     def unload(self) -> None:
         self._pipeline = None
+        self._loaded_model_name = None
 
     def diarize(
         self,

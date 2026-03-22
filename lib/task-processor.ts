@@ -6,6 +6,7 @@ import { generateTaskSummary, isLlmConfigured } from './llm.js';
 import { getDefaultSummaryPromptForNotebook, listSummaryPrompts } from './summary-prompts.js';
 import { reindexTask } from './search-index.js';
 import { getUserSettings } from './settings.js';
+import { repairPossiblyMojibakeText } from './text-encoding.js';
 import { parseJsonField, type TaskJobRow, type TaskRow } from './task-types.js';
 
 const configuredUploadDir = process.env.UPLOAD_DIR?.trim();
@@ -18,6 +19,7 @@ export async function processQueuedJob(job: TaskJobRow) {
   }
 
   const metadata = parseJsonField<Record<string, unknown>>(task.metadata, {});
+  const displayName = repairPossiblyMojibakeText(task.originalName);
   const userSettings = task.userId ? await getUserSettings(task.userId) : null;
   const now = Date.now();
   const expectedSpeakers =
@@ -39,7 +41,7 @@ export async function processQueuedJob(job: TaskJobRow) {
     job.provider || task.provider,
     {
       filePath: path.join(uploadDir, task.filename),
-      fileName: task.originalName,
+      fileName: displayName,
       mimeType: typeof metadata.originalMimeType === 'string' ? metadata.originalMimeType : undefined,
       language: task.language || 'auto',
       diarization: metadata.diarization !== false,
@@ -61,8 +63,8 @@ export async function processQueuedJob(job: TaskJobRow) {
   const summary =
     shouldAutoSummarize && isLlmConfigured(userSettings || undefined)
       ? await generateTaskSummary(
-          {
-            title: task.originalName,
+        {
+            title: displayName,
             transcript,
             language: result.language || task.language,
             speakers: result.speakers,
