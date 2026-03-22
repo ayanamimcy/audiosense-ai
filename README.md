@@ -110,7 +110,8 @@ cp .env.example .env.local
 
 至少建议配置：
 
-- `WHISPERX_API_URL`
+- `LOCAL_AUDIO_ENGINE_ENABLED=true`
+- `LOCAL_AUDIO_ENGINE_URL=http://127.0.0.1:8765`
 - `LLM_API_KEY`
 
 如果你想走其他 provider，再补：
@@ -119,10 +120,8 @@ cp .env.example .env.local
 - `AZURE_OPENAI_*`
 - `EMBEDDING_*`
 
-如果你想走本地模型，再补：
+如果你想继续细调本地模型，再补：
 
-- `LOCAL_AUDIO_ENGINE_ENABLED=true`
-- `LOCAL_AUDIO_ENGINE_URL=http://127.0.0.1:8765`
 - `LOCAL_AUDIO_ENGINE_MODEL`
 - `HF_TOKEN` 或 `LOCAL_AUDIO_ENGINE_HF_TOKEN`（启用 diarization 时）
 - `LOCAL_AUDIO_ENGINE_DIARIZATION_STRATEGY=auto|parallel|sequential`

@@ -394,7 +394,10 @@ protectedApi.post('/upload', upload.single('audio'), asyncRoute(async (req, res)
       : null;
   const expectedSpeakers = Number.isFinite(parsedExpectedSpeakers) ? parsedExpectedSpeakers : null;
   const provider = String(
-    req.body.provider || userSettings.defaultProvider || process.env.TRANSCRIPTION_PROVIDER || 'whisperx',
+    req.body.provider ||
+      userSettings.defaultProvider ||
+      process.env.TRANSCRIPTION_PROVIDER ||
+      'local-python',
   ).toLowerCase();
   const task: TaskRow = {
     id: taskId,
@@ -451,7 +454,9 @@ protectedApi.post('/tasks/:id/reprocess', asyncRoute(async (req, res) => {
     return res.status(404).json({ error: 'Task not found.' });
   }
 
-  const provider = String(req.body.provider || task.provider || process.env.TRANSCRIPTION_PROVIDER || 'whisperx');
+  const provider = String(
+    req.body.provider || task.provider || process.env.TRANSCRIPTION_PROVIDER || 'local-python',
+  );
   await db('tasks').where({ id: task.id }).update({
     status: 'pending',
     summary: null,

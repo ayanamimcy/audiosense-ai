@@ -3,7 +3,7 @@ import { db } from '../db.js';
 import { processQueuedJob } from './task-processor.js';
 import { parseJsonField, type TaskJobRow } from './task-types.js';
 
-const DEFAULT_PROVIDER = (process.env.TRANSCRIPTION_PROVIDER || 'whisperx').toLowerCase();
+const DEFAULT_PROVIDER = (process.env.TRANSCRIPTION_PROVIDER || 'local-python').toLowerCase();
 
 export async function enqueueTaskJob(input: {
   taskId: string;

@@ -1,8 +1,4 @@
 export const PROVIDER_CATALOG = {
-  whisperx: {
-    label: 'WhisperX Service',
-    description: 'Self-hosted WhisperX HTTP service with diarization and segment-level timestamps.',
-  },
   'openai-compatible': {
     label: 'OpenAI Whisper API',
     description: 'OpenAI-style audio transcription and translation endpoints.',

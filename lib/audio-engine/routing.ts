@@ -21,7 +21,7 @@ export function buildProviderChain(settings: UserSettings | null | undefined, pr
   );
 
   const chain = [
-    primary || settings?.defaultProvider || process.env.TRANSCRIPTION_PROVIDER || 'whisperx',
+    primary || settings?.defaultProvider || process.env.TRANSCRIPTION_PROVIDER || 'local-python',
     ...(settings?.fallbackProviders || []),
   ]
     .map((item) => String(item).toLowerCase())
@@ -32,7 +32,7 @@ export function buildProviderChain(settings: UserSettings | null | undefined, pr
   }
 
   const configuredFallback = Array.from(configuredProviders);
-  return configuredFallback.length > 0 ? configuredFallback : ['whisperx'];
+  return configuredFallback.length > 0 ? configuredFallback : ['local-python'];
 }
 
 export async function isProviderCircuitOpen(provider: string) {

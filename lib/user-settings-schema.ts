@@ -88,7 +88,7 @@ export function getDefaultSettings(): UserSettings {
   );
 
   return {
-    defaultProvider: (process.env.TRANSCRIPTION_PROVIDER || 'whisperx').toLowerCase(),
+    defaultProvider: (process.env.TRANSCRIPTION_PROVIDER || 'local-python').toLowerCase(),
     fallbackProviders: [],
     autoGenerateSummary: process.env.AUTO_GENERATE_SUMMARY === 'true',
     circuitBreakerThreshold: 3,

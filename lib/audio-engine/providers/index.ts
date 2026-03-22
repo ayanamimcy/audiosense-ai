@@ -2,7 +2,6 @@ import { PROVIDER_CATALOG } from './catalog.js';
 import { AzureOpenAIProvider } from './azure-openai.js';
 import { LocalPythonProvider } from './local-python.js';
 import { OpenAICompatibleProvider } from './openai-compatible.js';
-import { WhisperXProvider } from './whisperx.js';
 import type { TranscriptionProvider, TranscriptionProviderInfo } from '../types.js';
 import {
   resolveLocalRuntimeSettings,
@@ -16,10 +15,6 @@ type ProviderRegistryEntry = {
 };
 
 const PROVIDERS: Record<string, ProviderRegistryEntry> = {
-  whisperx: {
-    create: () => new WhisperXProvider(),
-    configured: () => Boolean(process.env.WHISPERX_API_URL || 'http://localhost:8000'),
-  },
   'openai-compatible': {
     create: (settings?: Partial<UserSettings>) =>
       new OpenAICompatibleProvider(resolveOpenAIWhisperSettings(settings)),
@@ -48,7 +43,7 @@ const PROVIDERS: Record<string, ProviderRegistryEntry> = {
 };
 
 function getProviderName(input?: string) {
-  return (input || process.env.TRANSCRIPTION_PROVIDER || 'whisperx').toLowerCase();
+  return (input || process.env.TRANSCRIPTION_PROVIDER || 'local-python').toLowerCase();
 }
 
 export function createTranscriptionProvider(
