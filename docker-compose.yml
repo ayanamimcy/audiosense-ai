@@ -27,7 +27,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: app-runtime
-    image: audiosense-ai:latest
+    image: ${APP_IMAGE:-audiosense-ai:latest}
     init: true
     restart: unless-stopped
     ports:
@@ -43,7 +43,7 @@ services:
       context: .
       dockerfile: Dockerfile
       target: app-runtime
-    image: audiosense-ai:latest
+    image: ${APP_IMAGE:-audiosense-ai:latest}
     init: true
     restart: unless-stopped
     command: ["npm", "run", "worker"]
@@ -61,7 +61,7 @@ services:
     build:
       context: ./python-runtime
       dockerfile: Dockerfile.cuda
-    image: audiosense-local-runtime:cuda
+    image: ${LOCAL_AUDIO_RUNTIME_IMAGE:-audiosense-local-runtime:cuda}
     init: true
     restart: unless-stopped
     ports:
