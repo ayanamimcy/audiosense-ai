@@ -401,6 +401,9 @@ protectedApi.patch('/tasks/:id', asyncRoute(async (req, res) => {
   if (req.body.summary !== undefined) {
     updates.summary = req.body.summary ? String(req.body.summary) : null;
   }
+  if (req.body.summaryPrompt !== undefined) {
+    updates.summaryPrompt = req.body.summaryPrompt ? String(req.body.summaryPrompt).trim() : null;
+  }
 
   await db('tasks').where({ id: task.id, userId: user.id }).update(updates);
   const updatedTask = (await db('tasks').where({ id: task.id }).first()) as TaskRow;
@@ -537,6 +540,7 @@ protectedApi.post('/tasks/:id/summary', asyncRoute(async (req, res) => {
       buildTaskContext(task),
       req.body.instructions,
       userSettings,
+      task.summaryPrompt,
     );
     await db('tasks').where({ id: task.id, userId: user.id }).update({
       summary,

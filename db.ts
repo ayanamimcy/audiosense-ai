@@ -157,6 +157,7 @@ export async function initDb() {
       table.text('result');
       table.text('transcript');
       table.text('summary');
+      table.text('summaryPrompt');
       table.text('segments');
       table.text('speakers');
       table.text('metadata');
@@ -181,6 +182,9 @@ export async function initDb() {
     });
     await ensureColumn('tasks', 'summary', (table) => {
       table.text('summary');
+    });
+    await ensureColumn('tasks', 'summaryPrompt', (table) => {
+      table.text('summaryPrompt');
     });
     await ensureColumn('tasks', 'segments', (table) => {
       table.text('segments');

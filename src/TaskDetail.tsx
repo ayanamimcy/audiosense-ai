@@ -51,6 +51,7 @@ export function TaskDetail({
   const [editTags, setEditTags] = useState(task.tags.join(', '));
   const [editNotebookId, setEditNotebookId] = useState(task.notebookId || '');
   const [editDate, setEditDate] = useState(format(new Date(task.eventDate || task.createdAt), 'yyyy-MM-dd'));
+  const [editSummaryPrompt, setEditSummaryPrompt] = useState(task.summaryPrompt || '');
   const [summaryInstructions, setSummaryInstructions] = useState('');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [messages, setMessages] = useState<TaskMessage[]>([]);
@@ -62,6 +63,7 @@ export function TaskDetail({
     setEditTags(task.tags.join(', '));
     setEditNotebookId(task.notebookId || '');
     setEditDate(format(new Date(task.eventDate || task.createdAt), 'yyyy-MM-dd'));
+    setEditSummaryPrompt(task.summaryPrompt || '');
     setIsEditing(false);
     setSummaryInstructions('');
     setActivePanel(task.summary ? 'summary' : 'transcript');
@@ -105,6 +107,7 @@ export function TaskDetail({
           tags: tagsArray,
           notebookId: editNotebookId || null,
           eventDate: eventDateTimestamp,
+          summaryPrompt: editSummaryPrompt.trim() || null,
         }),
       });
 
@@ -227,6 +230,18 @@ export function TaskDetail({
                       className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-500 mb-1">Summary Prompt</label>
+                  <textarea
+                    value={editSummaryPrompt}
+                    onChange={(event) => setEditSummaryPrompt(event.target.value)}
+                    placeholder="Optional. Leave empty to use the default Summary Prompt from settings."
+                    className="w-full min-h-24 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <p className="text-xs text-slate-500 mt-2">
+                    This prompt is used for this task's summary generation and overrides the default Summary Prompt.
+                  </p>
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
                   <button onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">
@@ -351,9 +366,14 @@ export function TaskDetail({
                   <textarea
                     value={summaryInstructions}
                     onChange={(event) => setSummaryInstructions(event.target.value)}
-                    placeholder="可选：例如“请重点总结会议决策、风险项和待办事项”。"
+                    placeholder="可选：例如“请重点总结会议决策、风险项和待办事项”。留空时会回退到任务级或默认 Summary Prompt。"
                     className="w-full mt-4 min-h-24 px-4 py-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
+                  <p className="text-xs text-slate-500 mt-3">
+                    {task.summaryPrompt?.trim()
+                      ? '当前任务已配置 Summary Prompt。这里留空时会自动使用任务级配置。'
+                      : '当前任务没有单独配置 Summary Prompt。这里留空时会尝试使用设置里的默认 Summary Prompt。'}
+                  </p>
                   {!capabilities?.llm.configured && <p className="text-sm text-amber-600 mt-3">当前还没有配置 LLM API，摘要和对话功能暂时不可用。</p>}
                 </div>
 

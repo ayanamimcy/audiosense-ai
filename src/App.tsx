@@ -1200,6 +1200,24 @@ function SettingsSection({
             </div>
           </label>
 
+          <label className="block">
+            <span className="text-sm font-medium text-slate-700">Default Summary Prompt</span>
+            <textarea
+              value={draft.defaultSummaryPrompt}
+              onChange={(event) =>
+                updateDraft((current) => ({
+                  ...current,
+                  defaultSummaryPrompt: event.target.value,
+                }))
+              }
+              placeholder="Optional. Used when a task does not define its own Summary Prompt."
+              className="w-full mt-1 min-h-28 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <p className="text-xs text-slate-500 mt-2">
+              Leave this empty to use the built-in summary behavior. Task-specific Summary Prompt will override this value.
+            </p>
+          </label>
+
           <div className="grid md:grid-cols-2 gap-4">
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Circuit breaker threshold</span>

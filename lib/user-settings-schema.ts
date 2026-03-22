@@ -39,6 +39,7 @@ export interface UserSettings {
   defaultProvider: string;
   fallbackProviders: string[];
   autoGenerateSummary: boolean;
+  defaultSummaryPrompt: string;
   circuitBreakerThreshold: number;
   circuitBreakerCooldownMs: number;
   retrievalMode: RetrievalMode;
@@ -91,6 +92,7 @@ export function getDefaultSettings(): UserSettings {
     defaultProvider: (process.env.TRANSCRIPTION_PROVIDER || 'whisperx').toLowerCase(),
     fallbackProviders: [],
     autoGenerateSummary: process.env.AUTO_GENERATE_SUMMARY === 'true',
+    defaultSummaryPrompt: (process.env.DEFAULT_SUMMARY_PROMPT || '').trim(),
     circuitBreakerThreshold: 3,
     circuitBreakerCooldownMs: 5 * 60 * 1000,
     retrievalMode: 'hybrid',
@@ -190,6 +192,7 @@ export function sanitizeUserSettings(
     defaultProvider,
     fallbackProviders,
     autoGenerateSummary: readBool(merged.autoGenerateSummary, base.autoGenerateSummary),
+    defaultSummaryPrompt: readOptionalString(merged.defaultSummaryPrompt),
     circuitBreakerThreshold: clampNumber(
       merged.circuitBreakerThreshold,
       base.circuitBreakerThreshold,

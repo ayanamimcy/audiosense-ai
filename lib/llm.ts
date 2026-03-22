@@ -23,6 +23,9 @@ interface KnowledgeSource {
   tags?: string[];
 }
 
+export const FALLBACK_SUMMARY_PROMPT =
+  'Please summarize this audio. Include a concise overview, main topics, action items, and notable speaker takeaways.';
+
 function getBaseUrl(settings?: Partial<UserSettings>) {
   return resolveLlmSettings(settings).baseUrl;
 }
@@ -37,6 +40,28 @@ function getModel(settings?: Partial<UserSettings>) {
 
 export function isLlmConfigured(settings?: Partial<UserSettings>) {
   return Boolean(getApiKey(settings));
+}
+
+export function resolveSummaryPrompt(options?: {
+  instructions?: string | null;
+  taskPrompt?: string | null;
+  settings?: Partial<UserSettings>;
+}) {
+  const candidates = [
+    options?.instructions,
+    options?.taskPrompt,
+    typeof options?.settings?.defaultSummaryPrompt === 'string'
+      ? options.settings.defaultSummaryPrompt
+      : '',
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return FALLBACK_SUMMARY_PROMPT;
 }
 
 async function callChatCompletion(
@@ -100,10 +125,13 @@ export async function generateTaskSummary(
   context: LlmTaskContext,
   instructions?: string,
   settings?: Partial<UserSettings>,
+  taskPrompt?: string | null,
 ) {
-  const prompt = instructions?.trim()
-    ? instructions.trim()
-    : 'Please summarize this audio. Include a concise overview, main topics, action items, and notable speaker takeaways.';
+  const prompt = resolveSummaryPrompt({
+    instructions,
+    taskPrompt,
+    settings,
+  });
 
   return callChatCompletion(
     [

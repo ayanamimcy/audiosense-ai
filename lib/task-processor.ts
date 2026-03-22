@@ -64,8 +64,9 @@ export async function processQueuedJob(job: TaskJobRow) {
             language: result.language || task.language,
             speakers: result.speakers,
           },
-          'Summarize this transcript with overview, key insights, and action items.',
+          undefined,
           userSettings || undefined,
+          task.summaryPrompt || undefined,
         )
       : null;
   const completedAt = Date.now();

@@ -42,6 +42,7 @@ export interface Task {
   result?: string;
   transcript?: string;
   summary?: string | null;
+  summaryPrompt?: string | null;
   createdAt: number;
   tags: string[];
   notebookId?: string | null;
@@ -136,6 +137,7 @@ export interface UserSettings {
   defaultProvider: string;
   fallbackProviders: string[];
   autoGenerateSummary: boolean;
+  defaultSummaryPrompt: string;
   circuitBreakerThreshold: number;
   circuitBreakerCooldownMs: number;
   retrievalMode: 'hybrid' | 'fts' | 'vector';
