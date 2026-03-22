@@ -65,7 +65,7 @@ export function TaskDetail({
     setIsEditing(false);
     setSummaryInstructions('');
     setActivePanel(task.summary ? 'summary' : 'transcript');
-  }, [task]);
+  }, [task.id]);
 
   useEffect(() => {
     const loadMessages = async () => {

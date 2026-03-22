@@ -40,7 +40,7 @@ export default function NotebookView({
   onUpdateTasks,
 }: NotebookProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedNotebookId, setSelectedNotebookId] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState('');
   const [isCreatingNotebook, setIsCreatingNotebook] = useState(false);
@@ -65,7 +65,19 @@ export default function NotebookView({
     });
   }, [selectedNotebookId, selectedTag, tasks]);
 
-  const dayTasks = filteredTasks.filter((task) => isSameDay(new Date(task.eventDate || task.createdAt), selectedDate));
+  const visibleTasks = selectedDate
+    ? filteredTasks.filter((task) => isSameDay(new Date(task.eventDate || task.createdAt), selectedDate))
+    : filteredTasks;
+
+  const handleSelectAllTasks = () => {
+    setSelectedNotebookId(null);
+    setSelectedDate(null);
+  };
+
+  const handleSelectNotebook = (notebookId: string) => {
+    setSelectedNotebookId(notebookId);
+    setSelectedDate(null);
+  };
 
   const handleCreateNotebook = async () => {
     if (!newNotebookName.trim()) {
@@ -182,7 +194,7 @@ export default function NotebookView({
         <div className="space-y-4 overflow-y-auto custom-scrollbar">
           <div>
             <div
-              onClick={() => setSelectedNotebookId(null)}
+              onClick={handleSelectAllTasks}
               className={cn(
                 'flex items-center gap-3 p-2.5 rounded-xl cursor-pointer transition-colors',
                 selectedNotebookId === null ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-slate-600 hover:bg-slate-100',
@@ -202,7 +214,7 @@ export default function NotebookView({
               return (
                 <div key={notebook.id}>
                   <div
-                    onClick={() => setSelectedNotebookId(notebook.id)}
+                    onClick={() => handleSelectNotebook(notebook.id)}
                     className={cn(
                       'flex items-center gap-3 p-2.5 rounded-xl cursor-pointer transition-colors group',
                       isSelected ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-slate-600 hover:bg-slate-100',
@@ -298,14 +310,14 @@ export default function NotebookView({
             </div>
           ))}
           {days.map((day) => {
-            const isSelected = isSameDay(day, selectedDate);
+            const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
             const isCurrentMonth = isSameMonth(day, currentMonth);
             const calendarTasks = filteredTasks.filter((task) => isSameDay(new Date(task.eventDate || task.createdAt), day));
 
             return (
               <div
                 key={day.toISOString()}
-                onClick={() => setSelectedDate(day)}
+                onClick={() => setSelectedDate((current) => (current && isSameDay(current, day) ? null : day))}
                 className={cn(
                   'bg-white p-3 min-h-[100px] cursor-pointer transition-colors relative group border-t border-slate-200',
                   !isCurrentMonth && 'text-slate-400 bg-slate-50/50',
@@ -340,17 +352,33 @@ export default function NotebookView({
         <div className="mt-6 pt-6 border-t border-slate-200 shrink-0">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <h3 className="text-sm font-semibold text-slate-900">Tasks on {format(selectedDate, 'MMMM d, yyyy')}</h3>
-              <p className="text-sm text-slate-500 mt-1">{selectedNotebookId ? 'Filtered by notebook.' : 'Showing all notebooks.'} {selectedTag ? `Tag: #${selectedTag}` : ''}</p>
+              <h3 className="text-sm font-semibold text-slate-900">
+                {selectedDate ? `Tasks on ${format(selectedDate, 'MMMM d, yyyy')}` : 'All Filtered Tasks'}
+              </h3>
+              <p className="text-sm text-slate-500 mt-1">
+                {selectedNotebookId ? 'Filtered by notebook.' : 'Showing all notebooks.'} {selectedTag ? `Tag: #${selectedTag}` : ''} {selectedDate ? '' : 'Select a date on the calendar to narrow it down.'}
+              </p>
             </div>
-            <span className="text-sm text-slate-500">{dayTasks.length} items</span>
+            <div className="flex items-center gap-3">
+              {selectedDate && (
+                <button
+                  onClick={() => setSelectedDate(null)}
+                  className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+                >
+                  Clear date filter
+                </button>
+              )}
+              <span className="text-sm text-slate-500">{visibleTasks.length} items</span>
+            </div>
           </div>
 
-          {dayTasks.length === 0 ? (
-            <div className="text-sm text-slate-500 mt-4">No tasks for the selected date.</div>
+          {visibleTasks.length === 0 ? (
+            <div className="text-sm text-slate-500 mt-4">
+              {selectedDate ? 'No tasks for the selected date.' : 'No tasks match the current notebook/tag filters.'}
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
-              {dayTasks.map((task) => (
+              {visibleTasks.map((task) => (
                 <div
                   key={task.id}
                   onClick={() => onSelectTask(task)}
