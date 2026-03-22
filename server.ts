@@ -115,6 +115,18 @@ function requireAuthUser(req: express.Request) {
   return req.authUser;
 }
 
+function asyncRoute(
+  handler: (
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction,
+  ) => Promise<unknown>,
+) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    void Promise.resolve(handler(req, res, next)).catch(next);
+  };
+}
+
 async function findTaskForUser(userId: string, taskId: string) {
   return (await db('tasks').where({ id: taskId, userId }).first()) as TaskRow | undefined;
 }
@@ -155,7 +167,7 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, now: new Date().toISOString() });
 });
 
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', asyncRoute(async (req, res) => {
   const name = String(req.body.name || '').trim();
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
@@ -174,9 +186,9 @@ app.post('/api/auth/register', async (req, res) => {
       error: error instanceof Error ? error.message : 'Failed to create account.',
     });
   }
-});
+}));
 
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', asyncRoute(async (req, res) => {
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');
   if (!email || !password) {
@@ -191,23 +203,23 @@ app.post('/api/auth/login', async (req, res) => {
   const token = await createSession(user.id);
   setSessionCookie(res, token);
   return res.json({ user });
-});
+}));
 
-app.get('/api/auth/me', authenticateRequest, async (req, res) => {
+app.get('/api/auth/me', asyncRoute(authenticateRequest), asyncRoute(async (req, res) => {
   return res.json({ user: requireAuthUser(req) });
-});
+}));
 
-app.post('/api/auth/logout', async (req, res) => {
+app.post('/api/auth/logout', asyncRoute(async (req, res) => {
   const token = readCookie(req.headers.cookie, getSessionCookieName());
   await destroySession(token);
   clearSessionCookie(res);
   return res.json({ success: true });
-});
+}));
 
 const protectedApi = express.Router();
-protectedApi.use(authenticateRequest);
+protectedApi.use(asyncRoute(authenticateRequest));
 
-protectedApi.get('/capabilities', async (req, res) => {
+protectedApi.get('/capabilities', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const userSettings = await getUserSettings(user.id);
 
@@ -229,34 +241,34 @@ protectedApi.get('/capabilities', async (req, res) => {
     llm: getLlmInfo(userSettings),
     embeddings: getEmbeddingsInfo(),
   });
-});
+}));
 
-protectedApi.get('/settings', async (req, res) => {
+protectedApi.get('/settings', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   return res.json({
     settings: await getUserSettings(user.id),
     defaults: getDefaultSettings(),
   });
-});
+}));
 
-protectedApi.patch('/settings', async (req, res) => {
+protectedApi.patch('/settings', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const settings = await saveUserSettings(user.id, req.body || {});
   return res.json({ settings });
-});
+}));
 
-protectedApi.get('/provider-health', async (req, res) => {
+protectedApi.get('/provider-health', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const userSettings = await getUserSettings(user.id);
   return res.json(await getProviderHealth(userSettings));
-});
+}));
 
-protectedApi.post('/provider-health/:provider/reset', async (req, res) => {
+protectedApi.post('/provider-health/:provider/reset', asyncRoute(async (req, res) => {
   await resetProviderCircuit(String(req.params.provider));
   return res.json({ success: true });
-});
+}));
 
-protectedApi.post('/upload', upload.single('audio'), async (req, res) => {
+protectedApi.post('/upload', upload.single('audio'), asyncRoute(async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No audio file uploaded.' });
   }
@@ -325,9 +337,9 @@ protectedApi.post('/upload', upload.single('audio'), async (req, res) => {
     console.error('Failed to create task:', error);
     return res.status(500).json({ error: 'Database error while creating task.' });
   }
-});
+}));
 
-protectedApi.post('/tasks/:id/reprocess', async (req, res) => {
+protectedApi.post('/tasks/:id/reprocess', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const task = await findTaskForUser(user.id, req.params.id);
   if (!task) {
@@ -344,17 +356,17 @@ protectedApi.post('/tasks/:id/reprocess', async (req, res) => {
   await enqueueTaskJob({ taskId: task.id, userId: user.id, provider });
 
   return res.json({ success: true });
-});
+}));
 
-protectedApi.get('/tasks', async (req, res) => {
+protectedApi.get('/tasks', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const tasks = ((await db('tasks')
     .where({ userId: user.id })
     .orderBy('createdAt', 'desc')) as TaskRow[]).map(toTaskResponse);
   return res.json(tasks);
-});
+}));
 
-protectedApi.get('/tasks/:id', async (req, res) => {
+protectedApi.get('/tasks/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const task = await findTaskForUser(user.id, req.params.id);
   if (!task) {
@@ -362,9 +374,9 @@ protectedApi.get('/tasks/:id', async (req, res) => {
   }
 
   return res.json(toTaskResponse(task));
-});
+}));
 
-protectedApi.patch('/tasks/:id', async (req, res) => {
+protectedApi.patch('/tasks/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const task = await findTaskForUser(user.id, req.params.id);
   if (!task) {
@@ -396,9 +408,9 @@ protectedApi.patch('/tasks/:id', async (req, res) => {
     await reindexTask(updatedTask);
   }
   return res.json(toTaskResponse(updatedTask));
-});
+}));
 
-protectedApi.delete('/tasks/:id', async (req, res) => {
+protectedApi.delete('/tasks/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const task = await findTaskForUser(user.id, req.params.id);
   if (!task) {
@@ -415,15 +427,15 @@ protectedApi.delete('/tasks/:id', async (req, res) => {
   await db('task_messages').where({ taskId: task.id }).delete();
   await db('tasks').where({ id: task.id, userId: user.id }).delete();
   return res.json({ success: true });
-});
+}));
 
-protectedApi.get('/notebooks', async (req, res) => {
+protectedApi.get('/notebooks', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const notebooks = await db('notebooks').where({ userId: user.id }).orderBy('createdAt', 'desc');
   return res.json(notebooks);
-});
+}));
 
-protectedApi.post('/notebooks', async (req, res) => {
+protectedApi.post('/notebooks', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const name = String(req.body.name || '').trim();
   if (!name) {
@@ -441,9 +453,9 @@ protectedApi.post('/notebooks', async (req, res) => {
 
   await db('notebooks').insert(notebook);
   return res.json(notebook);
-});
+}));
 
-protectedApi.patch('/notebooks/:id', async (req, res) => {
+protectedApi.patch('/notebooks/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const notebook = await db('notebooks').where({ id: req.params.id, userId: user.id }).first();
   if (!notebook) {
@@ -459,9 +471,9 @@ protectedApi.patch('/notebooks/:id', async (req, res) => {
   await db('notebooks').where({ id: req.params.id, userId: user.id }).update(updates);
   const updated = await db('notebooks').where({ id: req.params.id }).first();
   return res.json(updated);
-});
+}));
 
-protectedApi.delete('/notebooks/:id', async (req, res) => {
+protectedApi.delete('/notebooks/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const deleted = await db('notebooks').where({ id: req.params.id, userId: user.id }).delete();
   if (!deleted) {
@@ -473,9 +485,9 @@ protectedApi.delete('/notebooks/:id', async (req, res) => {
     updatedAt: Date.now(),
   });
   return res.json({ success: true });
-});
+}));
 
-protectedApi.get('/tags', async (req, res) => {
+protectedApi.get('/tags', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const tasks = (await db('tasks').where({ userId: user.id }).select('tags')) as Pick<TaskRow, 'tags'>[];
   const counts = new Map<string, number>();
@@ -491,9 +503,9 @@ protectedApi.get('/tags', async (req, res) => {
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name)),
   );
-});
+}));
 
-protectedApi.get('/tasks/:id/messages', async (req, res) => {
+protectedApi.get('/tasks/:id/messages', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const task = await findTaskForUser(user.id, req.params.id);
   if (!task) {
@@ -504,9 +516,9 @@ protectedApi.get('/tasks/:id/messages', async (req, res) => {
     .where({ taskId: task.id })
     .orderBy('createdAt', 'asc')) as TaskMessageRow[];
   return res.json(messages);
-});
+}));
 
-protectedApi.post('/tasks/:id/summary', async (req, res) => {
+protectedApi.post('/tasks/:id/summary', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const task = await findTaskForUser(user.id, req.params.id);
   if (!task) {
@@ -538,9 +550,9 @@ protectedApi.post('/tasks/:id/summary', async (req, res) => {
       error: error instanceof Error ? error.message : 'Failed to generate summary.',
     });
   }
-});
+}));
 
-protectedApi.post('/tasks/:id/chat', async (req, res) => {
+protectedApi.post('/tasks/:id/chat', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const task = await findTaskForUser(user.id, req.params.id);
   if (!task) {
@@ -595,9 +607,9 @@ protectedApi.post('/tasks/:id/chat', async (req, res) => {
     .where({ taskId: task.id })
     .orderBy('createdAt', 'asc')) as TaskMessageRow[];
   return res.json(messages);
-});
+}));
 
-protectedApi.get('/search/tasks', async (req, res) => {
+protectedApi.get('/search/tasks', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const query = String(req.query.q || '').trim();
   const tasks = ((await db('tasks')
@@ -636,9 +648,9 @@ protectedApi.get('/search/tasks', async (req, res) => {
     }));
 
   return res.json(ranked);
-});
+}));
 
-protectedApi.post('/knowledge/ask', async (req, res) => {
+protectedApi.post('/knowledge/ask', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const query = String(req.body.query || '').trim();
   if (!query) {
@@ -711,9 +723,9 @@ protectedApi.post('/knowledge/ask', async (req, res) => {
       chunkCount: retrieval.chunkRanking.length,
     },
   });
-});
+}));
 
-protectedApi.get('/audio/:filename', async (req, res) => {
+protectedApi.get('/audio/:filename', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const task = (await db('tasks')
     .where({ userId: user.id, filename: req.params.filename })
@@ -728,9 +740,20 @@ protectedApi.get('/audio/:filename', async (req, res) => {
   }
 
   return res.sendFile(filePath);
-});
+}));
 
 app.use('/api', protectedApi);
+app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error('Unhandled API error:', error);
+
+  if (res.headersSent) {
+    return;
+  }
+
+  res.status(500).json({
+    error: error instanceof Error ? error.message : 'Internal server error.',
+  });
+});
 
 async function startServer() {
   await initDb();
