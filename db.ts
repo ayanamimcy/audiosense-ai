@@ -248,6 +248,30 @@ export async function initDb() {
     });
   }
 
+  const hasSummaryPrompts = await db.schema.hasTable('summary_prompts');
+  if (!hasSummaryPrompts) {
+    await db.schema.createTable('summary_prompts', (table) => {
+      table.string('id').primary();
+      table.string('userId').notNullable().references('id').inTable('users').onDelete('CASCADE');
+      table.string('name').notNullable();
+      table.text('prompt').notNullable();
+      table.text('notebookIds');
+      table.boolean('isDefault').notNullable().defaultTo(false);
+      table.bigInteger('createdAt').notNullable();
+      table.bigInteger('updatedAt').notNullable();
+    });
+  } else {
+    await ensureColumn('summary_prompts', 'notebookIds', (table) => {
+      table.text('notebookIds');
+    });
+    await ensureColumn('summary_prompts', 'isDefault', (table) => {
+      table.boolean('isDefault').notNullable().defaultTo(false);
+    });
+    await ensureColumn('summary_prompts', 'updatedAt', (table) => {
+      table.bigInteger('updatedAt').notNullable().defaultTo(Date.now());
+    });
+  }
+
   const hasTaskChunks = await db.schema.hasTable('task_chunks');
   if (!hasTaskChunks) {
     await db.schema.createTable('task_chunks', (table) => {

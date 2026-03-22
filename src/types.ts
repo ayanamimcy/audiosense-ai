@@ -42,7 +42,6 @@ export interface Task {
   result?: string;
   transcript?: string;
   summary?: string | null;
-  summaryPrompt?: string | null;
   createdAt: number;
   tags: string[];
   notebookId?: string | null;
@@ -137,7 +136,6 @@ export interface UserSettings {
   defaultProvider: string;
   fallbackProviders: string[];
   autoGenerateSummary: boolean;
-  defaultSummaryPrompt: string;
   circuitBreakerThreshold: number;
   circuitBreakerCooldownMs: number;
   retrievalMode: 'hybrid' | 'fts' | 'vector';
@@ -211,4 +209,15 @@ export interface KnowledgeAnswer {
     };
     chunkCount: number;
   };
+}
+
+export interface SummaryPrompt {
+  id: string;
+  userId?: string;
+  name: string;
+  prompt: string;
+  notebookIds: string[];
+  isDefault: boolean;
+  createdAt: number;
+  updatedAt: number;
 }

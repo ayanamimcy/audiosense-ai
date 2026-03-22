@@ -5,6 +5,7 @@ import {
   Book,
   Check,
   Edit2,
+  HelpCircle,
   Loader2,
   MessageSquare,
   RefreshCw,
@@ -16,7 +17,7 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { apiFetch } from './api';
-import type { AppCapabilities, Notebook, Task, TaskMessage } from './types';
+import type { AppCapabilities, Notebook, SummaryPrompt, Task, TaskMessage } from './types';
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -38,11 +39,13 @@ export function TaskDetail({
   task,
   notebooks,
   capabilities,
+  summaryPrompts,
   onUpdateTask,
 }: {
   task: Task;
   notebooks: Notebook[];
   capabilities: AppCapabilities | null;
+  summaryPrompts: SummaryPrompt[];
   onUpdateTask: () => void | Promise<void>;
 }) {
   const [isEditing, setIsEditing] = useState(false);
@@ -51,21 +54,30 @@ export function TaskDetail({
   const [editTags, setEditTags] = useState(task.tags.join(', '));
   const [editNotebookId, setEditNotebookId] = useState(task.notebookId || '');
   const [editDate, setEditDate] = useState(format(new Date(task.eventDate || task.createdAt), 'yyyy-MM-dd'));
-  const [editSummaryPrompt, setEditSummaryPrompt] = useState(task.summaryPrompt || '');
   const [summaryInstructions, setSummaryInstructions] = useState('');
+  const [summaryPromptSelection, setSummaryPromptSelection] = useState('default');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [messages, setMessages] = useState<TaskMessage[]>([]);
   const [messageInput, setMessageInput] = useState('');
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+
+  const availableSummaryPrompts = summaryPrompts.filter((prompt) => {
+    if (!prompt.notebookIds.length) {
+      return true;
+    }
+
+    return task.notebookId ? prompt.notebookIds.includes(task.notebookId) : false;
+  });
+  const defaultSummaryPrompt = availableSummaryPrompts.find((prompt) => prompt.isDefault) || null;
 
   useEffect(() => {
     setEditName(task.originalName);
     setEditTags(task.tags.join(', '));
     setEditNotebookId(task.notebookId || '');
     setEditDate(format(new Date(task.eventDate || task.createdAt), 'yyyy-MM-dd'));
-    setEditSummaryPrompt(task.summaryPrompt || '');
     setIsEditing(false);
     setSummaryInstructions('');
+    setSummaryPromptSelection('default');
     setActivePanel(task.summary ? 'summary' : 'transcript');
   }, [task.id]);
 
@@ -107,7 +119,6 @@ export function TaskDetail({
           tags: tagsArray,
           notebookId: editNotebookId || null,
           eventDate: eventDateTimestamp,
-          summaryPrompt: editSummaryPrompt.trim() || null,
         }),
       });
 
@@ -128,7 +139,14 @@ export function TaskDetail({
       const res = await apiFetch(`/api/tasks/${task.id}/summary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ instructions: summaryInstructions }),
+        body: JSON.stringify({
+          instructions: summaryInstructions,
+          summaryPromptId:
+            summaryPromptSelection !== 'default' && summaryPromptSelection !== 'none'
+              ? summaryPromptSelection
+              : null,
+          skipConfiguredPrompt: summaryPromptSelection === 'none',
+        }),
       });
 
       const payload = await res.json().catch(() => null);
@@ -230,18 +248,6 @@ export function TaskDetail({
                       className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Summary Prompt</label>
-                  <textarea
-                    value={editSummaryPrompt}
-                    onChange={(event) => setEditSummaryPrompt(event.target.value)}
-                    placeholder="Optional. Leave empty to use the default Summary Prompt from settings."
-                    className="w-full min-h-24 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                  <p className="text-xs text-slate-500 mt-2">
-                    This prompt is used for this task's summary generation and overrides the default Summary Prompt.
-                  </p>
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
                   <button onClick={() => setIsEditing(false)} className="px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">
@@ -363,16 +369,51 @@ export function TaskDetail({
                       {isGeneratingSummary ? 'Generating...' : task.summary ? 'Regenerate Summary' : 'Generate Summary'}
                     </button>
                   </div>
+                  <div className="mt-4">
+                    <label className="block">
+                      <span className="text-sm font-medium text-slate-700">Summary Prompt</span>
+                      <select
+                        value={summaryPromptSelection}
+                        onChange={(event) => setSummaryPromptSelection(event.target.value)}
+                        className="w-full mt-1 px-4 py-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="default">
+                          {defaultSummaryPrompt
+                            ? `Use default (${defaultSummaryPrompt.name})`
+                            : 'Use default (none configured)'}
+                        </option>
+                        <option value="none">Do not use configured prompt</option>
+                        {availableSummaryPrompts.map((prompt) => (
+                          <option key={prompt.id} value={prompt.id}>
+                            {prompt.name}
+                            {prompt.isDefault ? ' (Default)' : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="flex items-start gap-2 mt-2 text-xs text-slate-500">
+                        <HelpCircle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-slate-400" />
+                        <p>
+                          {task.notebookId
+                            ? 'This task can use prompts assigned to its notebook, plus prompts available in all notebooks.'
+                            : 'This task is currently unassigned, so it can only use prompts available in all notebooks.'}
+                        </p>
+                      </div>
+                    </label>
+                  </div>
                   <textarea
                     value={summaryInstructions}
                     onChange={(event) => setSummaryInstructions(event.target.value)}
-                    placeholder="可选：例如“请重点总结会议决策、风险项和待办事项”。留空时会回退到任务级或默认 Summary Prompt。"
+                    placeholder="可选：例如“请重点总结会议决策、风险项和待办事项”。留空时会使用上面的 Summary Prompt 选择。"
                     className="w-full mt-4 min-h-24 px-4 py-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                   <p className="text-xs text-slate-500 mt-3">
-                    {task.summaryPrompt?.trim()
-                      ? '当前任务已配置 Summary Prompt。这里留空时会自动使用任务级配置。'
-                      : '当前任务没有单独配置 Summary Prompt。这里留空时会尝试使用设置里的默认 Summary Prompt。'}
+                    {summaryPromptSelection === 'none'
+                      ? '当前不会使用配置页里的 Prompt，会直接使用系统默认总结方式。'
+                      : summaryPromptSelection !== 'default'
+                        ? '当前会使用你在上面选中的 Summary Prompt。'
+                        : defaultSummaryPrompt
+                          ? `当前会优先使用默认 Summary Prompt：${defaultSummaryPrompt.name}。`
+                          : '当前没有可用的默认 Summary Prompt，会直接使用系统默认总结方式。'}
                   </p>
                   {!capabilities?.llm.configured && <p className="text-sm text-amber-600 mt-3">当前还没有配置 LLM API，摘要和对话功能暂时不可用。</p>}
                 </div>

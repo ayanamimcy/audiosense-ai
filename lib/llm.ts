@@ -45,14 +45,10 @@ export function isLlmConfigured(settings?: Partial<UserSettings>) {
 export function resolveSummaryPrompt(options?: {
   instructions?: string | null;
   taskPrompt?: string | null;
-  settings?: Partial<UserSettings>;
 }) {
   const candidates = [
     options?.instructions,
     options?.taskPrompt,
-    typeof options?.settings?.defaultSummaryPrompt === 'string'
-      ? options.settings.defaultSummaryPrompt
-      : '',
   ];
 
   for (const candidate of candidates) {
@@ -130,7 +126,6 @@ export async function generateTaskSummary(
   const prompt = resolveSummaryPrompt({
     instructions,
     taskPrompt,
-    settings,
   });
 
   return callChatCompletion(

@@ -12,7 +12,6 @@ export interface TaskRow {
   result?: string | null;
   transcript?: string | null;
   summary?: string | null;
-  summaryPrompt?: string | null;
   createdAt: number;
   notebookId?: string | null;
   eventDate?: number | null;

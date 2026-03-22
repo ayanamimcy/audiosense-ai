@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Search,
   Settings,
+  Sparkles,
   Square,
   Trash2,
   Upload,
@@ -24,6 +25,7 @@ import { twMerge } from 'tailwind-merge';
 import { apiFetch, apiJson, getCurrentUser, getStoredUser, logout } from './api';
 import { KnowledgeBase } from './KnowledgeBase';
 import NotebookView from './Notebook';
+import { SummaryPromptPage } from './SummaryPromptPage';
 import { TaskDetail } from './TaskDetail';
 import { Login } from './components/Login';
 import type {
@@ -31,6 +33,7 @@ import type {
   AuthUser,
   Notebook,
   ProviderHealth,
+  SummaryPrompt,
   TagStat,
   Task,
   UserSettings,
@@ -40,7 +43,7 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-type Tab = 'upload' | 'record' | 'tasks' | 'notebook' | 'knowledge' | 'settings';
+type Tab = 'upload' | 'record' | 'tasks' | 'notebook' | 'knowledge' | 'prompts' | 'settings';
 
 const LANGUAGE_OPTIONS = [
   { value: 'auto', label: 'Auto Detect' },
@@ -63,6 +66,7 @@ export default function App() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
   const [tags, setTags] = useState<TagStat[]>([]);
+  const [summaryPrompts, setSummaryPrompts] = useState<SummaryPrompt[]>([]);
   const [capabilities, setCapabilities] = useState<AppCapabilities | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const [providerHealth, setProviderHealth] = useState<ProviderHealth[]>([]);
@@ -76,6 +80,7 @@ export default function App() {
     setTasks([]);
     setNotebooks([]);
     setTags([]);
+    setSummaryPrompts([]);
     setCapabilities(null);
     setUserSettings(null);
     setProviderHealth([]);
@@ -105,6 +110,10 @@ export default function App() {
     setTags(await apiJson<TagStat[]>('/api/tags'));
   };
 
+  const fetchSummaryPrompts = async () => {
+    setSummaryPrompts(await apiJson<SummaryPrompt[]>('/api/summary-prompts'));
+  };
+
   const fetchCapabilities = async () => {
     setCapabilities(await apiJson<AppCapabilities>('/api/capabilities'));
   };
@@ -123,6 +132,7 @@ export default function App() {
       fetchTasks(),
       fetchNotebooks(),
       fetchTags(),
+      fetchSummaryPrompts(),
       fetchCapabilities(),
       fetchSettings(),
       fetchProviderHealth(),
@@ -214,6 +224,9 @@ export default function App() {
           <SidebarButton active={activeTab === 'tasks'} onClick={() => setActiveTab('tasks')} icon={<List className="w-5 h-5" />}>
             Tasks
           </SidebarButton>
+          <SidebarButton active={activeTab === 'prompts'} onClick={() => setActiveTab('prompts')} icon={<Sparkles className="w-5 h-5" />}>
+            Prompts
+          </SidebarButton>
         </nav>
 
         <div className="p-4 border-t border-slate-100">
@@ -282,6 +295,14 @@ export default function App() {
                   }}
                 />
               </div>
+            ) : activeTab === 'prompts' ? (
+              <div className="h-full pb-6">
+                <SummaryPromptPage
+                  prompts={summaryPrompts}
+                  notebooks={notebooks}
+                  onRefresh={fetchSummaryPrompts}
+                />
+              </div>
             ) : (
               <div className="flex flex-col lg:grid lg:grid-cols-3 gap-6 h-full lg:overflow-hidden">
                 <div className="lg:col-span-1 space-y-6 lg:overflow-y-auto pr-2 custom-scrollbar shrink-0">
@@ -325,6 +346,7 @@ export default function App() {
                       task={selectedTask}
                       notebooks={notebooks}
                       capabilities={capabilities}
+                      summaryPrompts={summaryPrompts}
                       onUpdateTask={refreshAll}
                     />
                   ) : (
@@ -386,6 +408,7 @@ export default function App() {
               <div className="space-y-2">
                 <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-2">Workspace</h3>
                 <DrawerButton icon={<List className="w-5 h-5 text-slate-500" />} label="Tasks" onClick={() => { setActiveTab('tasks'); setIsMobileMenuOpen(false); }} />
+                <DrawerButton icon={<Sparkles className="w-5 h-5 text-slate-500" />} label="Summary Prompts" onClick={() => { setActiveTab('prompts'); setIsMobileMenuOpen(false); }} />
                 <DrawerButton icon={<Settings className="w-5 h-5 text-slate-500" />} label="Settings & Preferences" onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }} />
               </div>
 
@@ -1198,24 +1221,6 @@ function SettingsSection({
               <p className="text-sm font-medium text-slate-800">Auto generate summary after transcription</p>
               <p className="text-sm text-slate-500 mt-1">If LLM is configured, the worker will generate a summary automatically after a task completes.</p>
             </div>
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Default Summary Prompt</span>
-            <textarea
-              value={draft.defaultSummaryPrompt}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  defaultSummaryPrompt: event.target.value,
-                }))
-              }
-              placeholder="Optional. Used when a task does not define its own Summary Prompt."
-              className="w-full mt-1 min-h-28 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <p className="text-xs text-slate-500 mt-2">
-              Leave this empty to use the built-in summary behavior. Task-specific Summary Prompt will override this value.
-            </p>
           </label>
 
           <div className="grid md:grid-cols-2 gap-4">

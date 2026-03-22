@@ -31,6 +31,14 @@ import {
 import { getEmbeddingsInfo } from './lib/embeddings.js';
 import { resetProviderCircuit } from './lib/provider-routing.js';
 import {
+  clearDefaultSummaryPrompts,
+  findSummaryPrompt,
+  getDefaultSummaryPromptForNotebook,
+  isSummaryPromptAvailableForNotebook,
+  listSummaryPrompts,
+  normalizeSummaryPromptNotebookIds,
+} from './lib/summary-prompts.js';
+import {
   clearTaskIndex,
   reindexTask,
   searchChunksHybrid,
@@ -129,6 +137,19 @@ function asyncRoute(
 
 async function findTaskForUser(userId: string, taskId: string) {
   return (await db('tasks').where({ id: taskId, userId }).first()) as TaskRow | undefined;
+}
+
+async function getValidatedNotebookIdsForUser(userId: string, input: unknown) {
+  const requestedIds = normalizeSummaryPromptNotebookIds(input);
+  if (!requestedIds.length) {
+    return [];
+  }
+
+  const rows = (await db('notebooks').where({ userId }).whereIn('id', requestedIds).select('id')) as Array<{
+    id: string;
+  }>;
+  const validIds = new Set(rows.map((row) => row.id));
+  return requestedIds.filter((id) => validIds.has(id));
 }
 
 function buildTaskContext(task: TaskRow) {
@@ -261,6 +282,90 @@ protectedApi.get('/provider-health', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const userSettings = await getUserSettings(user.id);
   return res.json(await getProviderHealth(userSettings));
+}));
+
+protectedApi.get('/summary-prompts', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  return res.json(await listSummaryPrompts(user.id));
+}));
+
+protectedApi.post('/summary-prompts', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  const name = String(req.body.name || '').trim();
+  const prompt = String(req.body.prompt || '').trim();
+  if (!name) {
+    return res.status(400).json({ error: 'Prompt name is required.' });
+  }
+  if (!prompt) {
+    return res.status(400).json({ error: 'Prompt content is required.' });
+  }
+
+  const notebookIds = await getValidatedNotebookIdsForUser(user.id, req.body.notebookIds);
+  const isDefault = req.body.isDefault === true;
+  const now = Date.now();
+  const record = {
+    id: uuidv4(),
+    userId: user.id,
+    name,
+    prompt,
+    notebookIds: JSON.stringify(notebookIds),
+    isDefault,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  if (isDefault) {
+    await clearDefaultSummaryPrompts(user.id);
+  }
+
+  await db('summary_prompts').insert(record);
+  return res.json(await findSummaryPrompt(user.id, record.id));
+}));
+
+protectedApi.patch('/summary-prompts/:id', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  const current = await findSummaryPrompt(user.id, req.params.id);
+  if (!current) {
+    return res.status(404).json({ error: 'Summary prompt not found.' });
+  }
+
+  const nextName = req.body.name !== undefined ? String(req.body.name || '').trim() : current.name;
+  const nextPrompt = req.body.prompt !== undefined ? String(req.body.prompt || '').trim() : current.prompt;
+  if (!nextName) {
+    return res.status(400).json({ error: 'Prompt name is required.' });
+  }
+  if (!nextPrompt) {
+    return res.status(400).json({ error: 'Prompt content is required.' });
+  }
+
+  const notebookIds =
+    req.body.notebookIds !== undefined
+      ? await getValidatedNotebookIdsForUser(user.id, req.body.notebookIds)
+      : current.notebookIds;
+  const isDefault = req.body.isDefault !== undefined ? req.body.isDefault === true : current.isDefault;
+  if (isDefault) {
+    await clearDefaultSummaryPrompts(user.id, current.id);
+  }
+
+  await db('summary_prompts').where({ id: current.id, userId: user.id }).update({
+    name: nextName,
+    prompt: nextPrompt,
+    notebookIds: JSON.stringify(notebookIds),
+    isDefault,
+    updatedAt: Date.now(),
+  });
+
+  return res.json(await findSummaryPrompt(user.id, current.id));
+}));
+
+protectedApi.delete('/summary-prompts/:id', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  const deleted = await db('summary_prompts').where({ id: req.params.id, userId: user.id }).delete();
+  if (!deleted) {
+    return res.status(404).json({ error: 'Summary prompt not found.' });
+  }
+
+  return res.json({ success: true });
 }));
 
 protectedApi.post('/provider-health/:provider/reset', asyncRoute(async (req, res) => {
@@ -401,10 +506,6 @@ protectedApi.patch('/tasks/:id', asyncRoute(async (req, res) => {
   if (req.body.summary !== undefined) {
     updates.summary = req.body.summary ? String(req.body.summary) : null;
   }
-  if (req.body.summaryPrompt !== undefined) {
-    updates.summaryPrompt = req.body.summaryPrompt ? String(req.body.summaryPrompt).trim() : null;
-  }
-
   await db('tasks').where({ id: task.id, userId: user.id }).update(updates);
   const updatedTask = (await db('tasks').where({ id: task.id }).first()) as TaskRow;
   if (updatedTask.status === 'completed' && updatedTask.transcript) {
@@ -536,11 +637,32 @@ protectedApi.post('/tasks/:id/summary', asyncRoute(async (req, res) => {
   }
 
   try {
+    const summaryPrompts = await listSummaryPrompts(user.id);
+    const selectedSummaryPromptId =
+      typeof req.body.summaryPromptId === 'string' && req.body.summaryPromptId.trim()
+        ? req.body.summaryPromptId.trim()
+        : null;
+    const skipConfiguredPrompt = req.body.skipConfiguredPrompt === true;
+    let resolvedPrompt: string | null = null;
+
+    if (selectedSummaryPromptId) {
+      const selectedPrompt = summaryPrompts.find((item) => item.id === selectedSummaryPromptId);
+      if (!selectedPrompt) {
+        return res.status(404).json({ error: 'Selected Summary Prompt not found.' });
+      }
+      if (!isSummaryPromptAvailableForNotebook(selectedPrompt, task.notebookId)) {
+        return res.status(400).json({ error: 'Selected Summary Prompt is not available for this notebook.' });
+      }
+      resolvedPrompt = selectedPrompt.prompt;
+    } else if (!skipConfiguredPrompt) {
+      resolvedPrompt = getDefaultSummaryPromptForNotebook(summaryPrompts, task.notebookId)?.prompt || null;
+    }
+
     const summary = await generateTaskSummary(
       buildTaskContext(task),
       req.body.instructions,
       userSettings,
-      task.summaryPrompt,
+      resolvedPrompt,
     );
     await db('tasks').where({ id: task.id, userId: user.id }).update({
       summary,

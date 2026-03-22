@@ -3,6 +3,7 @@ import { db } from '../db.js';
 import { parseAudioWithFallback } from './audio-engine/engine.js';
 import { formatTranscriptMarkdown } from './audio-engine/markdown.js';
 import { generateTaskSummary, isLlmConfigured } from './llm.js';
+import { getDefaultSummaryPromptForNotebook, listSummaryPrompts } from './summary-prompts.js';
 import { reindexTask } from './search-index.js';
 import { getUserSettings } from './settings.js';
 import { parseJsonField, type TaskJobRow, type TaskRow } from './task-types.js';
@@ -55,6 +56,8 @@ export async function processQueuedJob(job: TaskJobRow) {
 
   const transcript = result.text;
   const shouldAutoSummarize = userSettings?.autoGenerateSummary || process.env.AUTO_GENERATE_SUMMARY === 'true';
+  const summaryPrompts = task.userId ? await listSummaryPrompts(task.userId) : [];
+  const defaultPrompt = getDefaultSummaryPromptForNotebook(summaryPrompts, task.notebookId)?.prompt || null;
   const summary =
     shouldAutoSummarize && isLlmConfigured(userSettings || undefined)
       ? await generateTaskSummary(
@@ -66,7 +69,7 @@ export async function processQueuedJob(job: TaskJobRow) {
           },
           undefined,
           userSettings || undefined,
-          task.summaryPrompt || undefined,
+          defaultPrompt,
         )
       : null;
   const completedAt = Date.now();
