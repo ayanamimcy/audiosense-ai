@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import logging
 from typing import Any
 
@@ -10,6 +11,22 @@ from .backends import resolve_device
 from .torchaudio_compat import ensure_torchaudio_compat, patch_loaded_huggingface_aliases
 
 logger = logging.getLogger(__name__)
+
+
+def _build_pipeline_token_kwargs(
+    from_pretrained: Any,
+    effective_hf_token: str,
+) -> dict[str, str]:
+    try:
+        signature = inspect.signature(from_pretrained)
+    except (TypeError, ValueError):
+        return {"token": effective_hf_token}
+
+    if "token" in signature.parameters:
+        return {"token": effective_hf_token}
+    if "use_auth_token" in signature.parameters:
+        return {"use_auth_token": effective_hf_token}
+    return {"token": effective_hf_token}
 
 
 class DiarizationEngine:
@@ -37,10 +54,30 @@ class DiarizationEngine:
             self._config.diarization_model,
             self._device,
         )
-        self._pipeline = Pipeline.from_pretrained(
-            self._config.diarization_model,
-            token=effective_hf_token,
+        token_kwargs = _build_pipeline_token_kwargs(
+            Pipeline.from_pretrained,
+            effective_hf_token,
         )
+
+        try:
+            self._pipeline = Pipeline.from_pretrained(
+                self._config.diarization_model,
+                **token_kwargs,
+            )
+        except TypeError as exc:
+            # Older/newer pyannote releases disagree on the auth kwarg name.
+            if "unexpected keyword argument" not in str(exc):
+                raise
+
+            fallback_kwargs = (
+                {"use_auth_token": effective_hf_token}
+                if "token" in token_kwargs
+                else {"token": effective_hf_token}
+            )
+            self._pipeline = Pipeline.from_pretrained(
+                self._config.diarization_model,
+                **fallback_kwargs,
+            )
 
         try:
             import torch
