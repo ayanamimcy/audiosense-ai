@@ -2,6 +2,7 @@ import axios from 'axios';
 import { ensureLocalAudioRuntime, getLocalAudioRuntimeBaseUrl } from '../local-runtime.js';
 import { BaseTranscriptionProvider } from './base.js';
 import type { ProviderTranscriptionPayload, TranscriptionJobInput } from '../types.js';
+import type { LocalRuntimeSettings } from '../../user-settings-schema.js';
 
 function readString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -13,6 +14,12 @@ function readWarnings(value: unknown) {
 
 export class LocalPythonProvider extends BaseTranscriptionProvider {
   readonly name = 'local-python';
+  private readonly config: LocalRuntimeSettings;
+
+  constructor(config: LocalRuntimeSettings) {
+    super();
+    this.config = config;
+  }
 
   readonly capabilities = {
     diarization: 'mergeable',
@@ -22,12 +29,12 @@ export class LocalPythonProvider extends BaseTranscriptionProvider {
   } as const;
 
   async transcribe(input: TranscriptionJobInput): Promise<ProviderTranscriptionPayload> {
-    await ensureLocalAudioRuntime();
+    await ensureLocalAudioRuntime(this.config.baseUrl);
 
     let response;
     try {
       response = await axios.post(
-        `${getLocalAudioRuntimeBaseUrl()}/transcribe`,
+        `${getLocalAudioRuntimeBaseUrl(this.config.baseUrl)}/transcribe`,
         {
           file_path: input.filePath,
           language: input.language && input.language !== 'auto' ? input.language : null,
@@ -36,17 +43,13 @@ export class LocalPythonProvider extends BaseTranscriptionProvider {
           task: input.task || 'transcribe',
           translation_target_language: input.translationTargetLanguage || null,
           expected_speakers: input.expectedSpeakers ?? null,
-          diarization_strategy: readString(
-            process.env.LOCAL_AUDIO_ENGINE_DIARIZATION_STRATEGY_OVERRIDE ||
-              process.env.LOCAL_AUDIO_ENGINE_DIARIZATION_STRATEGY,
-          ),
-          backend: readString(
-            process.env.LOCAL_AUDIO_ENGINE_BACKEND_OVERRIDE || process.env.LOCAL_AUDIO_ENGINE_BACKEND,
-          ),
-          model_name: readString(process.env.LOCAL_AUDIO_ENGINE_MODEL_OVERRIDE || process.env.LOCAL_AUDIO_ENGINE_MODEL),
+          diarization_strategy: readString(this.config.diarizationStrategy),
+          backend: readString(this.config.backendId),
+          model_name: readString(this.config.modelName),
+          hf_token: readString(this.config.hfToken),
         },
         {
-          timeout: Math.max(60_000, Number(process.env.LOCAL_AUDIO_ENGINE_REQUEST_TIMEOUT_MS || 3_600_000)),
+          timeout: Math.max(60_000, Number(this.config.requestTimeoutMs || 3_600_000)),
         },
       );
     } catch (error) {

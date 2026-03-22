@@ -16,6 +16,7 @@ class TranscriptionRequest(BaseModel):
     backend: str | None = None
     model_name: str | None = None
     diarization_strategy: str | None = None
+    hf_token: str | None = None
 
 
 class TranscriptionResponse(BaseModel):

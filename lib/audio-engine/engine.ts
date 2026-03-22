@@ -8,13 +8,15 @@ import {
   recordProviderSuccess,
 } from './routing.js';
 import type { TranscriptionExecutionResult, TranscriptionJobInput } from './types.js';
+import { getUserSettings } from '../settings.js';
 
 export async function parseAudioWithFallback(
   userId: string | null | undefined,
   primaryProvider: string | null | undefined,
   input: TranscriptionJobInput,
 ): Promise<TranscriptionExecutionResult> {
-  const chain = await buildProviderChain(userId, primaryProvider);
+  const userSettings = userId ? await getUserSettings(userId) : null;
+  const chain = buildProviderChain(userSettings, primaryProvider);
   const attemptedProviders: string[] = [];
   const skippedProviders: string[] = [];
   const errors: string[] = [];
@@ -33,7 +35,7 @@ export async function parseAudioWithFallback(
     attemptedProviders.push(providerName);
 
     try {
-      const provider = createTranscriptionProvider(providerName);
+      const provider = createTranscriptionProvider(providerName, userSettings || undefined);
       const providerResponse = await provider.transcribe({
         ...input,
         wordTimestamps: input.wordTimestamps ?? false,
@@ -66,4 +68,3 @@ export async function parseAudioWithFallback(
 
   throw new Error(`All providers failed. ${errors.join(' | ')}`);
 }
-

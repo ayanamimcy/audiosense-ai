@@ -10,9 +10,21 @@ let runtimeProcess: ChildProcessWithoutNullStreams | null = null;
 let startupPromise: Promise<void> | null = null;
 let cleanupRegistered = false;
 
-function getRuntimeBaseUrl() {
+function normalizeBaseUrl(url: string) {
+  return url.replace(/\/$/, '');
+}
+
+function getDefaultRuntimeBaseUrl() {
   const port = Number(process.env.LOCAL_AUDIO_ENGINE_PORT || 8765);
-  return (process.env.LOCAL_AUDIO_ENGINE_URL || `http://127.0.0.1:${port}`).replace(/\/$/, '');
+  return normalizeBaseUrl(process.env.LOCAL_AUDIO_ENGINE_URL || `http://127.0.0.1:${port}`);
+}
+
+function getRuntimeBaseUrl(baseUrlOverride?: string) {
+  if (baseUrlOverride?.trim()) {
+    return normalizeBaseUrl(baseUrlOverride);
+  }
+
+  return getDefaultRuntimeBaseUrl();
 }
 
 function buildPythonPath() {
@@ -24,9 +36,9 @@ function getStartupTimeoutMs() {
   return Math.max(5_000, Number(process.env.LOCAL_AUDIO_ENGINE_STARTUP_TIMEOUT_MS || 120_000));
 }
 
-async function isRuntimeHealthy() {
+async function isRuntimeHealthy(baseUrlOverride?: string) {
   try {
-    await axios.get(`${getRuntimeBaseUrl()}/health`, {
+    await axios.get(`${getRuntimeBaseUrl(baseUrlOverride)}/health`, {
       timeout: 1_500,
     });
     return true;
@@ -64,7 +76,7 @@ function wireRuntimeLogs(child: ChildProcessWithoutNullStreams) {
   });
 }
 
-async function waitForRuntimeReady(child: ChildProcessWithoutNullStreams) {
+async function waitForRuntimeReady(child: ChildProcessWithoutNullStreams, baseUrlOverride?: string) {
   const startedAt = Date.now();
   const timeoutMs = getStartupTimeoutMs();
 
@@ -73,7 +85,7 @@ async function waitForRuntimeReady(child: ChildProcessWithoutNullStreams) {
       throw new Error(`Local audio runtime exited early with code ${child.exitCode}.`);
     }
 
-    if (await isRuntimeHealthy()) {
+    if (await isRuntimeHealthy(baseUrlOverride)) {
       return;
     }
 
@@ -83,7 +95,7 @@ async function waitForRuntimeReady(child: ChildProcessWithoutNullStreams) {
   throw new Error(`Timed out waiting for local audio runtime after ${timeoutMs}ms.`);
 }
 
-async function startRuntimeProcess() {
+async function startRuntimeProcess(baseUrlOverride?: string) {
   registerCleanup();
 
   const child = spawn('python3', ['-m', 'local_audio_runtime.server'], {
@@ -104,12 +116,20 @@ async function startRuntimeProcess() {
     startupPromise = null;
   });
 
-  await waitForRuntimeReady(child);
+  await waitForRuntimeReady(child, baseUrlOverride);
 }
 
-export async function ensureLocalAudioRuntime() {
-  if (await isRuntimeHealthy()) {
+export async function ensureLocalAudioRuntime(baseUrlOverride?: string) {
+  if (await isRuntimeHealthy(baseUrlOverride)) {
     return;
+  }
+
+  const defaultBaseUrl = getDefaultRuntimeBaseUrl();
+  const usingExternalRuntime =
+    Boolean(baseUrlOverride?.trim()) && getRuntimeBaseUrl(baseUrlOverride) !== defaultBaseUrl;
+
+  if (usingExternalRuntime) {
+    throw new Error('Configured local audio runtime URL is unavailable. Start that runtime manually first.');
   }
 
   if (process.env.LOCAL_AUDIO_ENGINE_AUTOSTART === 'false') {
@@ -119,7 +139,7 @@ export async function ensureLocalAudioRuntime() {
   }
 
   if (!startupPromise) {
-    startupPromise = startRuntimeProcess().finally(() => {
+    startupPromise = startRuntimeProcess(baseUrlOverride).finally(() => {
       startupPromise = null;
     });
   }
@@ -127,7 +147,6 @@ export async function ensureLocalAudioRuntime() {
   return startupPromise;
 }
 
-export function getLocalAudioRuntimeBaseUrl() {
-  return getRuntimeBaseUrl();
+export function getLocalAudioRuntimeBaseUrl(baseUrlOverride?: string) {
+  return getRuntimeBaseUrl(baseUrlOverride);
 }
-

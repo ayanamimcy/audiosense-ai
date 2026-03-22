@@ -18,11 +18,12 @@ class DiarizationEngine:
         self._pipeline: Any | None = None
         self._device = resolve_device(config.device)
 
-    def load(self) -> None:
+    def load(self, hf_token: str | None = None) -> None:
         if self._pipeline is not None:
             return
 
-        if not self._config.hf_token:
+        effective_hf_token = hf_token or self._config.hf_token
+        if not effective_hf_token:
             raise ValueError(
                 "HF_TOKEN or LOCAL_AUDIO_ENGINE_HF_TOKEN is required for speaker diarization."
             )
@@ -38,7 +39,7 @@ class DiarizationEngine:
         )
         self._pipeline = Pipeline.from_pretrained(
             self._config.diarization_model,
-            token=self._config.hf_token,
+            token=effective_hf_token,
         )
 
         try:
@@ -58,9 +59,10 @@ class DiarizationEngine:
         *,
         sample_rate: int,
         num_speakers: int | None = None,
+        hf_token: str | None = None,
     ) -> list[dict[str, Any]]:
         if self._pipeline is None:
-            self.load()
+            self.load(hf_token=hf_token)
 
         if self._pipeline is None:
             raise RuntimeError("Diarization pipeline is not available")

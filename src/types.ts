@@ -105,6 +105,33 @@ export interface ProviderHealth {
   configured: boolean;
 }
 
+export interface OpenAIWhisperSettings {
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  transcriptionPath: string;
+  translationPath: string;
+  responseFormat: string;
+  disableTimestampGranularities: boolean;
+}
+
+export interface LocalRuntimeSettings {
+  enabled: boolean;
+  baseUrl: string;
+  backendId: string;
+  modelName: string;
+  diarizationStrategy: 'auto' | 'parallel' | 'sequential';
+  hfToken: string;
+  requestTimeoutMs: number;
+}
+
+export interface LlmSettings {
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+}
+
 export interface UserSettings {
   defaultProvider: string;
   fallbackProviders: string[];
@@ -113,6 +140,26 @@ export interface UserSettings {
   circuitBreakerCooldownMs: number;
   retrievalMode: 'hybrid' | 'fts' | 'vector';
   maxKnowledgeChunks: number;
+  openaiWhisper: OpenAIWhisperSettings;
+  localRuntime: LocalRuntimeSettings;
+  llm: LlmSettings;
+}
+
+export interface LocalRuntimeModelCatalogEntry {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export interface LocalRuntimeBackendCatalogEntry {
+  id: string;
+  label: string;
+  description: string;
+  supportsDiarization: boolean;
+  supportsIntegratedDiarization: boolean;
+  supportsTranslation: boolean;
+  defaultModel: string;
+  models: LocalRuntimeModelCatalogEntry[];
 }
 
 export interface AppCapabilities {
@@ -124,6 +171,9 @@ export interface AppCapabilities {
     activeProvider: string;
     providers: ProviderInfo[];
     diarizationSupported: boolean;
+    localRuntime: {
+      backends: LocalRuntimeBackendCatalogEntry[];
+    };
   };
   queue: {
     workerMode: string;

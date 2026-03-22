@@ -1014,13 +1014,7 @@ function SettingsSection({
 }) {
   const [language, setLanguage] = useState('auto');
   const [enableDiarization, setEnableDiarization] = useState(true);
-  const [defaultProvider, setDefaultProvider] = useState('whisperx');
-  const [fallbackProviders, setFallbackProviders] = useState<string[]>([]);
-  const [autoGenerateSummary, setAutoGenerateSummary] = useState(false);
-  const [circuitBreakerThreshold, setCircuitBreakerThreshold] = useState(3);
-  const [circuitBreakerCooldownMs, setCircuitBreakerCooldownMs] = useState(300000);
-  const [retrievalMode, setRetrievalMode] = useState<UserSettings['retrievalMode']>('hybrid');
-  const [maxKnowledgeChunks, setMaxKnowledgeChunks] = useState(8);
+  const [draft, setDraft] = useState<UserSettings | null>(userSettings);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -1033,16 +1027,27 @@ function SettingsSection({
       return;
     }
 
-    setDefaultProvider(userSettings.defaultProvider);
-    setFallbackProviders(userSettings.fallbackProviders);
-    setAutoGenerateSummary(userSettings.autoGenerateSummary);
-    setCircuitBreakerThreshold(userSettings.circuitBreakerThreshold);
-    setCircuitBreakerCooldownMs(userSettings.circuitBreakerCooldownMs);
-    setRetrievalMode(userSettings.retrievalMode);
-    setMaxKnowledgeChunks(userSettings.maxKnowledgeChunks);
+    setDraft(userSettings);
   }, [userSettings]);
 
+  const updateDraft = (updater: (current: UserSettings) => UserSettings) => {
+    setDraft((current) => (current ? updater(current) : current));
+  };
+
+  const providerOptions = capabilities?.transcription.providers || [];
+  const providerHealthMap = new Map(providerHealth.map((item) => [item.provider, item]));
+  const localRuntimeBackends = capabilities?.transcription.localRuntime.backends || [];
+  const selectedLocalRuntimeBackend =
+    localRuntimeBackends.find((backend) => backend.id === draft?.localRuntime.backendId) ||
+    localRuntimeBackends[0] ||
+    null;
+  const localRuntimeModels = selectedLocalRuntimeBackend?.models || [];
+
   const handleSave = async () => {
+    if (!draft) {
+      return;
+    }
+
     localStorage.setItem('parseLanguage', language);
     localStorage.setItem('enableDiarization', String(enableDiarization));
 
@@ -1051,15 +1056,7 @@ function SettingsSection({
       await apiJson('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          defaultProvider,
-          fallbackProviders,
-          autoGenerateSummary,
-          circuitBreakerThreshold,
-          circuitBreakerCooldownMs,
-          retrievalMode,
-          maxKnowledgeChunks,
-        }),
+        body: JSON.stringify(draft),
       });
       await onSettingsSaved();
       alert('Settings saved successfully.');
@@ -1070,6 +1067,15 @@ function SettingsSection({
       setIsSaving(false);
     }
   };
+
+  if (!draft) {
+    return (
+      <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm max-w-3xl">
+        <h2 className="text-2xl font-bold text-slate-900 mb-4">Settings</h2>
+        <p className="text-slate-500">Loading settings...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm max-w-3xl">
@@ -1105,21 +1111,28 @@ function SettingsSection({
         </label>
 
         <div className="rounded-2xl border border-slate-200 p-5 space-y-5">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">Provider Routing</h3>
-            <p className="text-sm text-slate-500 mt-1">Configure default provider, fallback chain, and circuit breaker strategy.</p>
-          </div>
+            <div>
+              <h3 className="text-base font-semibold text-slate-900">Provider Routing</h3>
+              <p className="text-sm text-slate-500 mt-1">Configure default provider, fallback chain, and circuit breaker strategy.</p>
+            </div>
 
           <label className="block">
             <span className="text-sm font-medium text-slate-700">Default provider</span>
             <select
-              value={defaultProvider}
-              onChange={(event) => setDefaultProvider(event.target.value)}
+              value={draft.defaultProvider}
+              onChange={(event) =>
+                updateDraft((current) => ({
+                  ...current,
+                  defaultProvider: event.target.value,
+                  fallbackProviders: current.fallbackProviders.filter((item) => item !== event.target.value),
+                }))
+              }
               className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
-              {capabilities?.transcription.providers.map((provider) => (
-                <option key={provider.id} value={provider.id} disabled={!provider.configured}>
-                  {provider.label}{provider.configured ? '' : ' (Not configured)'}
+              {providerOptions.map((provider) => (
+                <option key={provider.id} value={provider.id}>
+                  {provider.label}
+                  {provider.configured ? '' : ' (Missing saved config)'}
                 </option>
               ))}
             </select>
@@ -1128,22 +1141,22 @@ function SettingsSection({
           <div>
             <span className="text-sm font-medium text-slate-700">Fallback chain</span>
             <div className="mt-2 space-y-2">
-              {capabilities?.transcription.providers
-                .filter((provider) => provider.id !== defaultProvider)
+              {providerOptions
+                .filter((provider) => provider.id !== draft.defaultProvider)
                 .map((provider) => {
-                  const checked = fallbackProviders.includes(provider.id);
+                  const checked = draft.fallbackProviders.includes(provider.id);
                   return (
                     <label key={provider.id} className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50">
                       <input
                         type="checkbox"
                         checked={checked}
-                        disabled={!provider.configured}
                         onChange={(event) => {
-                          setFallbackProviders((current) =>
-                            event.target.checked
-                              ? [...current, provider.id]
-                              : current.filter((item) => item !== provider.id),
-                          );
+                          updateDraft((current) => ({
+                            ...current,
+                            fallbackProviders: event.target.checked
+                              ? [...current.fallbackProviders, provider.id]
+                              : current.fallbackProviders.filter((item) => item !== provider.id),
+                          }));
                         }}
                         className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
                       />
@@ -1160,8 +1173,13 @@ function SettingsSection({
           <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
             <input
               type="checkbox"
-              checked={autoGenerateSummary}
-              onChange={(event) => setAutoGenerateSummary(event.target.checked)}
+              checked={draft.autoGenerateSummary}
+              onChange={(event) =>
+                updateDraft((current) => ({
+                  ...current,
+                  autoGenerateSummary: event.target.checked,
+                }))
+              }
               className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
             />
             <div>
@@ -1177,8 +1195,13 @@ function SettingsSection({
                 type="number"
                 min={1}
                 max={10}
-                value={circuitBreakerThreshold}
-                onChange={(event) => setCircuitBreakerThreshold(Number(event.target.value))}
+                value={draft.circuitBreakerThreshold}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    circuitBreakerThreshold: Number(event.target.value),
+                  }))
+                }
                 className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </label>
@@ -1188,9 +1211,395 @@ function SettingsSection({
                 type="number"
                 min={10}
                 max={3600}
-                value={Math.round(circuitBreakerCooldownMs / 1000)}
-                onChange={(event) => setCircuitBreakerCooldownMs(Number(event.target.value) * 1000)}
+                value={Math.round(draft.circuitBreakerCooldownMs / 1000)}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    circuitBreakerCooldownMs: Number(event.target.value) * 1000,
+                  }))
+                }
                 className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 p-5 space-y-5">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">OpenAI Whisper API</h3>
+            <p className="text-sm text-slate-500 mt-1">Configure a standard OpenAI-compatible Whisper transcription endpoint.</p>
+          </div>
+
+          <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
+            <input
+              type="checkbox"
+              checked={draft.openaiWhisper.enabled}
+              onChange={(event) =>
+                updateDraft((current) => ({
+                  ...current,
+                  openaiWhisper: {
+                    ...current.openaiWhisper,
+                    enabled: event.target.checked,
+                  },
+                }))
+              }
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div>
+              <p className="text-sm font-medium text-slate-800">Enable OpenAI Whisper provider</p>
+              <p className="text-sm text-slate-500 mt-1">After saving, this provider can be used as the default provider or a fallback provider.</p>
+            </div>
+          </label>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <label className="block md:col-span-2">
+              <span className="text-sm font-medium text-slate-700">API base URL</span>
+              <input
+                type="url"
+                value={draft.openaiWhisper.baseUrl}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    openaiWhisper: {
+                      ...current.openaiWhisper,
+                      baseUrl: event.target.value,
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="https://api.openai.com/v1"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Model</span>
+              <input
+                type="text"
+                value={draft.openaiWhisper.model}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    openaiWhisper: {
+                      ...current.openaiWhisper,
+                      model: event.target.value,
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="whisper-1"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">API key</span>
+              <input
+                type="password"
+                value={draft.openaiWhisper.apiKey}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    openaiWhisper: {
+                      ...current.openaiWhisper,
+                      apiKey: event.target.value,
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="sk-..."
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Transcription path</span>
+              <input
+                type="text"
+                value={draft.openaiWhisper.transcriptionPath}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    openaiWhisper: {
+                      ...current.openaiWhisper,
+                      transcriptionPath: event.target.value,
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Translation path</span>
+              <input
+                type="text"
+                value={draft.openaiWhisper.translationPath}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    openaiWhisper: {
+                      ...current.openaiWhisper,
+                      translationPath: event.target.value,
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Response format</span>
+              <select
+                value={draft.openaiWhisper.responseFormat}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    openaiWhisper: {
+                      ...current.openaiWhisper,
+                      responseFormat: event.target.value,
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="verbose_json">verbose_json</option>
+                <option value="json">json</option>
+                <option value="text">text</option>
+              </select>
+            </label>
+          </div>
+
+          <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
+            <input
+              type="checkbox"
+              checked={draft.openaiWhisper.disableTimestampGranularities}
+              onChange={(event) =>
+                updateDraft((current) => ({
+                  ...current,
+                  openaiWhisper: {
+                    ...current.openaiWhisper,
+                    disableTimestampGranularities: event.target.checked,
+                  },
+                }))
+              }
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div>
+              <p className="text-sm font-medium text-slate-800">Disable timestamp granularities</p>
+              <p className="text-sm text-slate-500 mt-1">Turn this on if your endpoint does not support `timestamp_granularities[]`.</p>
+            </div>
+          </label>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 p-5 space-y-5">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">Local Deployed Models</h3>
+            <p className="text-sm text-slate-500 mt-1">Configure the Python runtime URL, local backend, and model size. The backend catalog comes from `python-runtime`.</p>
+          </div>
+
+          <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
+            <input
+              type="checkbox"
+              checked={draft.localRuntime.enabled}
+              onChange={(event) =>
+                updateDraft((current) => ({
+                  ...current,
+                  localRuntime: {
+                    ...current.localRuntime,
+                    enabled: event.target.checked,
+                  },
+                }))
+              }
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div>
+              <p className="text-sm font-medium text-slate-800">Enable local Python runtime</p>
+              <p className="text-sm text-slate-500 mt-1">Use the built-in `local-python` provider for locally deployed speech models.</p>
+            </div>
+          </label>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <label className="block md:col-span-2">
+              <span className="text-sm font-medium text-slate-700">Runtime base URL</span>
+              <input
+                type="url"
+                value={draft.localRuntime.baseUrl}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    localRuntime: {
+                      ...current.localRuntime,
+                      baseUrl: event.target.value,
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="http://127.0.0.1:8765"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Local backend</span>
+              <select
+                value={draft.localRuntime.backendId}
+                onChange={(event) => {
+                  const nextBackend =
+                    localRuntimeBackends.find((backend) => backend.id === event.target.value) ||
+                    localRuntimeBackends[0];
+                  updateDraft((current) => ({
+                    ...current,
+                    localRuntime: {
+                      ...current.localRuntime,
+                      backendId: nextBackend?.id || current.localRuntime.backendId,
+                      modelName: nextBackend?.defaultModel || current.localRuntime.modelName,
+                    },
+                  }));
+                }}
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {localRuntimeBackends.map((backend) => (
+                  <option key={backend.id} value={backend.id}>
+                    {backend.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Model size</span>
+              <select
+                value={draft.localRuntime.modelName}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    localRuntime: {
+                      ...current.localRuntime,
+                      modelName: event.target.value,
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {localRuntimeModels.map((model) => (
+                  <option key={model.id} value={model.id}>
+                    {model.label}
+                  </option>
+                ))}
+              </select>
+              {selectedLocalRuntimeBackend && (
+                <p className="text-xs text-slate-500 mt-2">{selectedLocalRuntimeBackend.description}</p>
+              )}
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Diarization strategy</span>
+              <select
+                value={draft.localRuntime.diarizationStrategy}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    localRuntime: {
+                      ...current.localRuntime,
+                      diarizationStrategy: event.target.value as UserSettings['localRuntime']['diarizationStrategy'],
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="auto">auto</option>
+                <option value="parallel">parallel</option>
+                <option value="sequential">sequential</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Request timeout (seconds)</span>
+              <input
+                type="number"
+                min={60}
+                max={14400}
+                value={Math.round(draft.localRuntime.requestTimeoutMs / 1000)}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    localRuntime: {
+                      ...current.localRuntime,
+                      requestTimeoutMs: Number(event.target.value) * 1000,
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </label>
+            <label className="block md:col-span-2">
+              <span className="text-sm font-medium text-slate-700">Hugging Face token</span>
+              <input
+                type="password"
+                value={draft.localRuntime.hfToken}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    localRuntime: {
+                      ...current.localRuntime,
+                      hfToken: event.target.value,
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="Required for gated diarization models"
+              />
+            </label>
+          </div>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 p-5 space-y-5">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">LLM API</h3>
+            <p className="text-sm text-slate-500 mt-1">Used for summary generation and transcript chat.</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-4">
+            <label className="block md:col-span-2">
+              <span className="text-sm font-medium text-slate-700">Base URL</span>
+              <input
+                type="url"
+                value={draft.llm.baseUrl}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    llm: {
+                      ...current.llm,
+                      baseUrl: event.target.value,
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="https://api.openai.com/v1"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">Model</span>
+              <input
+                type="text"
+                value={draft.llm.model}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    llm: {
+                      ...current.llm,
+                      model: event.target.value,
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="gpt-4o-mini"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-700">API key</span>
+              <input
+                type="password"
+                value={draft.llm.apiKey}
+                onChange={(event) =>
+                  updateDraft((current) => ({
+                    ...current,
+                    llm: {
+                      ...current.llm,
+                      apiKey: event.target.value,
+                    },
+                  }))
+                }
+                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="sk-..."
               />
             </label>
           </div>
@@ -1205,8 +1614,13 @@ function SettingsSection({
           <label className="block">
             <span className="text-sm font-medium text-slate-700">Retrieval mode</span>
             <select
-              value={retrievalMode}
-              onChange={(event) => setRetrievalMode(event.target.value as UserSettings['retrievalMode'])}
+              value={draft.retrievalMode}
+              onChange={(event) =>
+                updateDraft((current) => ({
+                  ...current,
+                  retrievalMode: event.target.value as UserSettings['retrievalMode'],
+                }))
+              }
               className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
             >
               <option value="hybrid">Hybrid (FTS + vector)</option>
@@ -1221,8 +1635,13 @@ function SettingsSection({
               type="number"
               min={3}
               max={20}
-              value={maxKnowledgeChunks}
-              onChange={(event) => setMaxKnowledgeChunks(Number(event.target.value))}
+              value={draft.maxKnowledgeChunks}
+              onChange={(event) =>
+                updateDraft((current) => ({
+                  ...current,
+                  maxKnowledgeChunks: Number(event.target.value),
+                }))
+              }
               className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </label>
@@ -1239,7 +1658,7 @@ function SettingsSection({
             <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
               <p className="text-xs uppercase tracking-wider text-slate-400">LLM</p>
               <p className="text-sm font-medium text-slate-800 mt-2">{capabilities?.llm.configured ? capabilities.llm.model : 'Not configured'}</p>
-              <p className="text-xs text-slate-500 mt-1 break-all">{capabilities?.llm.baseUrl || 'Set LLM_API_BASE_URL and LLM_API_KEY'}</p>
+              <p className="text-xs text-slate-500 mt-1 break-all">{capabilities?.llm.baseUrl || 'Set LLM API config in settings'}</p>
             </div>
             <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
               <p className="text-xs uppercase tracking-wider text-slate-400">Embeddings</p>
@@ -1248,14 +1667,14 @@ function SettingsSection({
             </div>
           </div>
           <div className="mt-4 space-y-2">
-            {capabilities?.transcription.providers.map((provider) => (
+            {providerOptions.map((provider) => (
               <div key={provider.id} className="rounded-xl border border-slate-200 p-4 flex items-start justify-between gap-4">
                 <div>
                   <p className="text-sm font-medium text-slate-900">{provider.label}</p>
                   <p className="text-xs text-slate-500 mt-1">{provider.description}</p>
-                  {providerHealth.find((item) => item.provider === provider.id)?.lastError && (
+                  {providerHealthMap.get(provider.id)?.lastError && (
                     <p className="text-xs text-red-600 mt-2">
-                      {providerHealth.find((item) => item.provider === provider.id)?.lastError}
+                      {providerHealthMap.get(provider.id)?.lastError}
                     </p>
                   )}
                 </div>
@@ -1264,9 +1683,9 @@ function SettingsSection({
                     {provider.configured ? 'Configured' : 'Missing config'}
                   </span>
                   <span className="text-[11px] text-slate-500">
-                    failures {providerHealth.find((item) => item.provider === provider.id)?.failureCount || 0}
+                    failures {providerHealthMap.get(provider.id)?.failureCount || 0}
                     {' • '}
-                    success {providerHealth.find((item) => item.provider === provider.id)?.successCount || 0}
+                    success {providerHealthMap.get(provider.id)?.successCount || 0}
                   </span>
                   <button
                     onClick={async () => {

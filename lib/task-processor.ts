@@ -56,7 +56,7 @@ export async function processQueuedJob(job: TaskJobRow) {
   const transcript = result.text;
   const shouldAutoSummarize = userSettings?.autoGenerateSummary || process.env.AUTO_GENERATE_SUMMARY === 'true';
   const summary =
-    shouldAutoSummarize && isLlmConfigured()
+    shouldAutoSummarize && isLlmConfigured(userSettings || undefined)
       ? await generateTaskSummary(
           {
             title: task.originalName,
@@ -65,6 +65,7 @@ export async function processQueuedJob(job: TaskJobRow) {
             speakers: result.speakers,
           },
           'Summarize this transcript with overview, key insights, and action items.',
+          userSettings || undefined,
         )
       : null;
   const completedAt = Date.now();

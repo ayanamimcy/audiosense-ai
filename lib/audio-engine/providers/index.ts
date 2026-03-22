@@ -1,66 +1,82 @@
+import { PROVIDER_CATALOG } from './catalog.js';
 import { AzureOpenAIProvider } from './azure-openai.js';
 import { LocalPythonProvider } from './local-python.js';
 import { OpenAICompatibleProvider } from './openai-compatible.js';
 import { WhisperXProvider } from './whisperx.js';
 import type { TranscriptionProvider, TranscriptionProviderInfo } from '../types.js';
+import {
+  resolveLocalRuntimeSettings,
+  resolveOpenAIWhisperSettings,
+  type UserSettings,
+} from '../../user-settings-schema.js';
 
-const PROVIDERS = {
+type ProviderRegistryEntry = {
+  create: (settings?: Partial<UserSettings>) => TranscriptionProvider;
+  configured: (settings?: Partial<UserSettings>) => boolean;
+};
+
+const PROVIDERS: Record<string, ProviderRegistryEntry> = {
   whisperx: {
     create: () => new WhisperXProvider(),
-    label: 'WhisperX',
     configured: () => Boolean(process.env.WHISPERX_API_URL || 'http://localhost:8000'),
-    description: 'Self-hosted service with diarization and segment-level timestamps.',
   },
   'openai-compatible': {
-    create: () => new OpenAICompatibleProvider(),
-    label: 'OpenAI-Compatible ASR',
-    configured: () => Boolean(process.env.OPENAI_TRANSCRIPTION_API_KEY || process.env.OPENAI_API_KEY),
-    description: 'OpenAI-style audio transcription and translation endpoints.',
+    create: (settings?: Partial<UserSettings>) =>
+      new OpenAICompatibleProvider(resolveOpenAIWhisperSettings(settings)),
+    configured: (settings?: Partial<UserSettings>) => {
+      const config = resolveOpenAIWhisperSettings(settings);
+      return config.enabled && Boolean(config.apiKey);
+    },
   },
   'azure-openai': {
     create: () => new AzureOpenAIProvider(),
-    label: 'Azure OpenAI ASR',
     configured: () =>
       Boolean(
         process.env.AZURE_OPENAI_ENDPOINT &&
           process.env.AZURE_OPENAI_TRANSCRIPTION_DEPLOYMENT &&
           process.env.AZURE_OPENAI_API_KEY,
       ),
-    description: 'Microsoft-hosted OpenAI deployment for transcription workloads.',
   },
   'local-python': {
-    create: () => new LocalPythonProvider(),
-    label: 'Local Python Runtime',
-    configured: () =>
-      process.env.LOCAL_AUDIO_ENGINE_ENABLED === 'true' || Boolean(process.env.LOCAL_AUDIO_ENGINE_URL),
-    description: 'Local faster-whisper / WhisperX + PyAnnote runtime started from this repo.',
+    create: (settings?: Partial<UserSettings>) =>
+      new LocalPythonProvider(resolveLocalRuntimeSettings(settings)),
+    configured: (settings?: Partial<UserSettings>) => {
+      const config = resolveLocalRuntimeSettings(settings);
+      return config.enabled && Boolean(config.baseUrl);
+    },
   },
-} as const;
+};
 
 function getProviderName(input?: string) {
   return (input || process.env.TRANSCRIPTION_PROVIDER || 'whisperx').toLowerCase();
 }
 
-export function createTranscriptionProvider(providerName?: string): TranscriptionProvider {
+export function createTranscriptionProvider(
+  providerName?: string,
+  settings?: Partial<UserSettings>,
+): TranscriptionProvider {
   const normalizedProviderName = getProviderName(providerName);
-  const entry = PROVIDERS[normalizedProviderName as keyof typeof PROVIDERS];
+  const entry = PROVIDERS[normalizedProviderName];
 
   if (!entry) {
     throw new Error(`Unsupported transcription provider: ${normalizedProviderName}`);
   }
 
-  return entry.create();
+  return entry.create(settings);
 }
 
-export function getAvailableTranscriptionProviders(): TranscriptionProviderInfo[] {
+export function getAvailableTranscriptionProviders(
+  settings?: Partial<UserSettings>,
+): TranscriptionProviderInfo[] {
   return Object.entries(PROVIDERS).map(([id, entry]) => {
-    const provider = entry.create();
+    const provider = entry.create(settings);
+    const catalogEntry = PROVIDER_CATALOG[id as keyof typeof PROVIDER_CATALOG];
 
     return {
       id,
-      label: entry.label,
-      configured: entry.configured(),
-      description: entry.description,
+      label: catalogEntry.label,
+      configured: entry.configured(settings),
+      description: catalogEntry.description,
       capabilities: provider.capabilities,
     } satisfies TranscriptionProviderInfo;
   });

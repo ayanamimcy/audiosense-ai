@@ -1,6 +1,7 @@
 import { db } from '../../db.js';
 import { getAvailableTranscriptionProviders } from './providers/index.js';
 import { getUserSettings } from '../settings.js';
+import type { UserSettings } from '../user-settings-schema.js';
 
 type ProviderHealthRow = {
   provider: string;
@@ -12,14 +13,13 @@ type ProviderHealthRow = {
   updatedAt: number;
 };
 
-export async function buildProviderChain(userId: string | null | undefined, primary?: string | null) {
+export function buildProviderChain(settings: UserSettings | null | undefined, primary?: string | null) {
   const configuredProviders = new Set(
-    getAvailableTranscriptionProviders()
+    getAvailableTranscriptionProviders(settings || undefined)
       .filter((item) => item.configured)
       .map((item) => item.id),
   );
 
-  const settings = userId ? await getUserSettings(userId) : null;
   const chain = [
     primary || settings?.defaultProvider || process.env.TRANSCRIPTION_PROVIDER || 'whisperx',
     ...(settings?.fallbackProviders || []),
@@ -27,7 +27,12 @@ export async function buildProviderChain(userId: string | null | undefined, prim
     .map((item) => String(item).toLowerCase())
     .filter((item, index, array) => item && array.indexOf(item) === index && configuredProviders.has(item));
 
-  return chain.length > 0 ? chain : ['whisperx'];
+  if (chain.length > 0) {
+    return chain;
+  }
+
+  const configuredFallback = Array.from(configuredProviders);
+  return configuredFallback.length > 0 ? configuredFallback : ['whisperx'];
 }
 
 export async function isProviderCircuitOpen(provider: string) {
@@ -102,4 +107,3 @@ export async function resetProviderCircuit(provider: string) {
     updatedAt: Date.now(),
   });
 }
-

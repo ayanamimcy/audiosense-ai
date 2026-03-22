@@ -1,5 +1,7 @@
 import axios from 'axios';
 import type { SpeakerSummary } from './transcription.js';
+import type { UserSettings } from './user-settings-schema.js';
+import { resolveLlmSettings } from './user-settings-schema.js';
 
 export interface LlmMessage {
   role: 'system' | 'user' | 'assistant';
@@ -21,32 +23,36 @@ interface KnowledgeSource {
   tags?: string[];
 }
 
-function getBaseUrl() {
-  return (process.env.LLM_API_BASE_URL || 'https://api.openai.com/v1').replace(/\/$/, '');
+function getBaseUrl(settings?: Partial<UserSettings>) {
+  return resolveLlmSettings(settings).baseUrl;
 }
 
-function getApiKey() {
-  return process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '';
+function getApiKey(settings?: Partial<UserSettings>) {
+  return resolveLlmSettings(settings).apiKey;
 }
 
-function getModel() {
-  return process.env.LLM_MODEL || 'gpt-4o-mini';
+function getModel(settings?: Partial<UserSettings>) {
+  return resolveLlmSettings(settings).model;
 }
 
-export function isLlmConfigured() {
-  return Boolean(getApiKey());
+export function isLlmConfigured(settings?: Partial<UserSettings>) {
+  return Boolean(getApiKey(settings));
 }
 
-async function callChatCompletion(messages: LlmMessage[], temperature = 0.2) {
-  const apiKey = getApiKey();
+async function callChatCompletion(
+  messages: LlmMessage[],
+  temperature = 0.2,
+  settings?: Partial<UserSettings>,
+) {
+  const apiKey = getApiKey(settings);
   if (!apiKey) {
     throw new Error('LLM API is not configured. Please set LLM_API_KEY or OPENAI_API_KEY.');
   }
 
   const response = await axios.post(
-    `${getBaseUrl()}/chat/completions`,
+    `${getBaseUrl(settings)}/chat/completions`,
     {
-      model: getModel(),
+      model: getModel(settings),
       temperature,
       messages,
     },
@@ -90,7 +96,11 @@ function buildContextBlock(context: LlmTaskContext) {
   ].join('\n');
 }
 
-export async function generateTaskSummary(context: LlmTaskContext, instructions?: string) {
+export async function generateTaskSummary(
+  context: LlmTaskContext,
+  instructions?: string,
+  settings?: Partial<UserSettings>,
+) {
   const prompt = instructions?.trim()
     ? instructions.trim()
     : 'Please summarize this audio. Include a concise overview, main topics, action items, and notable speaker takeaways.';
@@ -108,6 +118,7 @@ export async function generateTaskSummary(context: LlmTaskContext, instructions?
       },
     ],
     0.3,
+    settings,
   );
 }
 
@@ -115,6 +126,7 @@ export async function chatWithTranscript(
   context: LlmTaskContext,
   history: LlmMessage[],
   message: string,
+  settings?: Partial<UserSettings>,
 ) {
   return callChatCompletion(
     [
@@ -134,10 +146,15 @@ export async function chatWithTranscript(
       },
     ],
     0.2,
+    settings,
   );
 }
 
-export async function answerAcrossKnowledgeBase(query: string, sources: KnowledgeSource[]) {
+export async function answerAcrossKnowledgeBase(
+  query: string,
+  sources: KnowledgeSource[],
+  settings?: Partial<UserSettings>,
+) {
   if (sources.length === 0) {
     throw new Error('No source transcripts available for knowledge-base answering.');
   }
@@ -167,13 +184,14 @@ export async function answerAcrossKnowledgeBase(query: string, sources: Knowledg
       },
     ],
     0.2,
+    settings,
   );
 }
 
-export function getLlmInfo() {
+export function getLlmInfo(settings?: Partial<UserSettings>) {
   return {
-    configured: isLlmConfigured(),
-    model: getModel(),
-    baseUrl: getBaseUrl(),
+    configured: isLlmConfigured(settings),
+    model: getModel(settings),
+    baseUrl: getBaseUrl(settings),
   };
 }

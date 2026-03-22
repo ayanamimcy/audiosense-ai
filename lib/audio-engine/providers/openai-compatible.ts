@@ -3,6 +3,7 @@ import FormData from 'form-data';
 import fs from 'fs';
 import { BaseTranscriptionProvider } from './base.js';
 import type { ProviderTranscriptionPayload, TranscriptionJobInput } from '../types.js';
+import type { OpenAIWhisperSettings } from '../../user-settings-schema.js';
 
 function normalizeBaseUrl(url: string) {
   return url.replace(/\/$/, '');
@@ -10,6 +11,12 @@ function normalizeBaseUrl(url: string) {
 
 export class OpenAICompatibleProvider extends BaseTranscriptionProvider {
   readonly name = 'openai-compatible';
+  private readonly config: OpenAIWhisperSettings;
+
+  constructor(config: OpenAIWhisperSettings) {
+    super();
+    this.config = config;
+  }
 
   readonly capabilities = {
     diarization: 'none',
@@ -19,12 +26,12 @@ export class OpenAICompatibleProvider extends BaseTranscriptionProvider {
   } as const;
 
   async transcribe(input: TranscriptionJobInput): Promise<ProviderTranscriptionPayload> {
-    const baseUrl = normalizeBaseUrl(process.env.OPENAI_TRANSCRIPTION_API_BASE_URL || 'https://api.openai.com/v1');
-    const apiKey = process.env.OPENAI_TRANSCRIPTION_API_KEY || process.env.OPENAI_API_KEY;
-    const transcriptionPath = process.env.OPENAI_TRANSCRIPTION_PATH || '/audio/transcriptions';
-    const translationPath = process.env.OPENAI_TRANSLATION_PATH || '/audio/translations';
+    const baseUrl = normalizeBaseUrl(this.config.baseUrl || 'https://api.openai.com/v1');
+    const apiKey = this.config.apiKey;
+    const transcriptionPath = this.config.transcriptionPath || '/audio/transcriptions';
+    const translationPath = this.config.translationPath || '/audio/translations';
     const endpoint = input.task === 'translate' ? translationPath : transcriptionPath;
-    const model = process.env.OPENAI_TRANSCRIPTION_MODEL || 'whisper-1';
+    const model = this.config.model || 'whisper-1';
 
     if (!apiKey) {
       throw new Error('OPENAI_TRANSCRIPTION_API_KEY or OPENAI_API_KEY is required.');
@@ -33,13 +40,13 @@ export class OpenAICompatibleProvider extends BaseTranscriptionProvider {
     const formData = new FormData();
     formData.append('file', fs.createReadStream(input.filePath));
     formData.append('model', model);
-    formData.append('response_format', process.env.OPENAI_TRANSCRIPTION_RESPONSE_FORMAT || 'verbose_json');
+    formData.append('response_format', this.config.responseFormat || 'verbose_json');
 
     if (input.language && input.language !== 'auto' && input.task !== 'translate') {
       formData.append('language', input.language);
     }
 
-    if (input.wordTimestamps && process.env.OPENAI_TRANSCRIPTION_DISABLE_TIMESTAMP_GRANULARITIES !== 'true') {
+    if (input.wordTimestamps && !this.config.disableTimestampGranularities) {
       formData.append('timestamp_granularities[]', 'segment');
       formData.append('timestamp_granularities[]', 'word');
     }
@@ -60,4 +67,3 @@ export class OpenAICompatibleProvider extends BaseTranscriptionProvider {
     };
   }
 }
-

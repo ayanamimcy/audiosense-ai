@@ -1,0 +1,40 @@
+{
+  "backends": [
+    {
+      "id": "whisperx",
+      "label": "WhisperX",
+      "description": "WhisperX with alignment and integrated diarization support.",
+      "supportsDiarization": true,
+      "supportsIntegratedDiarization": true,
+      "supportsTranslation": true,
+      "defaultModel": "small",
+      "models": [
+        { "id": "tiny", "label": "Tiny", "description": "Fastest startup, lowest accuracy." },
+        { "id": "base", "label": "Base", "description": "Balanced for quick local smoke tests." },
+        { "id": "small", "label": "Small", "description": "Good default for local deployment." },
+        { "id": "medium", "label": "Medium", "description": "Higher accuracy with more VRAM and latency." },
+        { "id": "large-v2", "label": "Large v2", "description": "Large multilingual checkpoint." },
+        { "id": "large-v3", "label": "Large v3", "description": "Best quality in the Whisper family." },
+        { "id": "distil-large-v3", "label": "Distil Large v3", "description": "Faster distilled large model." }
+      ]
+    },
+    {
+      "id": "faster-whisper",
+      "label": "Faster Whisper",
+      "description": "Lower-overhead local Whisper runtime with word timestamps.",
+      "supportsDiarization": true,
+      "supportsIntegratedDiarization": false,
+      "supportsTranslation": true,
+      "defaultModel": "small",
+      "models": [
+        { "id": "tiny", "label": "Tiny", "description": "Fastest startup, lowest accuracy." },
+        { "id": "base", "label": "Base", "description": "Balanced for quick local smoke tests." },
+        { "id": "small", "label": "Small", "description": "Good default for local deployment." },
+        { "id": "medium", "label": "Medium", "description": "Higher accuracy with more VRAM and latency." },
+        { "id": "large-v2", "label": "Large v2", "description": "Large multilingual checkpoint." },
+        { "id": "large-v3", "label": "Large v3", "description": "Best quality in the Whisper family." },
+        { "id": "distil-large-v3", "label": "Distil Large v3", "description": "Faster distilled large model." }
+      ]
+    }
+  ]
+}

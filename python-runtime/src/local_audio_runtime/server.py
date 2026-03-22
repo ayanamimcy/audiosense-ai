@@ -10,6 +10,7 @@ from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 import uvicorn
 
+from .catalog import get_backend_catalog
 from .config import load_config
 from .live_engine import LiveModeConfig, LiveModeEngine, LiveModeState
 from .model_manager import ModelManager
@@ -43,6 +44,19 @@ def health() -> HealthResponse:
     return HealthResponse(ok=True, runtime=manager.health())
 
 
+@app.get("/capabilities")
+def capabilities() -> dict[str, object]:
+    catalog = get_backend_catalog()
+    return {
+        "backends": catalog.get("backends", []),
+        "defaults": {
+            "backend": config.backend,
+            "model_name": config.model_name,
+            "diarization_strategy": config.diarization_strategy,
+        },
+    }
+
+
 @app.post("/transcribe", response_model=TranscriptionResponse)
 def transcribe(payload: TranscriptionRequest) -> TranscriptionResponse:
     if not Path(payload.file_path).exists():
@@ -60,6 +74,7 @@ def transcribe(payload: TranscriptionRequest) -> TranscriptionResponse:
             backend=payload.backend,
             model_name=payload.model_name,
             diarization_strategy=payload.diarization_strategy,
+            hf_token=payload.hf_token,
         )
         return TranscriptionResponse(**result)
     except HTTPException:

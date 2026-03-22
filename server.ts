@@ -41,6 +41,7 @@ import {
   getUserSettings,
   saveUserSettings,
 } from './lib/settings.js';
+import { getLocalRuntimeCatalogSnapshot } from './lib/user-settings-schema.js';
 import { enqueueTaskJob } from './lib/task-queue.js';
 import { getAvailableTranscriptionProviders } from './lib/transcription.js';
 import {
@@ -206,22 +207,26 @@ app.post('/api/auth/logout', async (req, res) => {
 const protectedApi = express.Router();
 protectedApi.use(authenticateRequest);
 
-protectedApi.get('/capabilities', (req, res) => {
+protectedApi.get('/capabilities', async (req, res) => {
+  const user = requireAuthUser(req);
+  const userSettings = await getUserSettings(user.id);
+
   res.json({
     auth: {
       type: 'session-cookie',
-      userId: requireAuthUser(req).id,
+      userId: user.id,
     },
     transcription: {
-      activeProvider: (process.env.TRANSCRIPTION_PROVIDER || 'whisperx').toLowerCase(),
-      providers: getAvailableTranscriptionProviders(),
+      activeProvider: userSettings.defaultProvider,
+      providers: getAvailableTranscriptionProviders(userSettings),
       diarizationSupported: true,
+      localRuntime: getLocalRuntimeCatalogSnapshot(),
     },
     queue: {
       workerMode: 'separate-process',
       recommendedCommand: 'npm run worker',
     },
-    llm: getLlmInfo(),
+    llm: getLlmInfo(userSettings),
     embeddings: getEmbeddingsInfo(),
   });
 });
@@ -240,8 +245,10 @@ protectedApi.patch('/settings', async (req, res) => {
   return res.json({ settings });
 });
 
-protectedApi.get('/provider-health', async (_req, res) => {
-  return res.json(await getProviderHealth());
+protectedApi.get('/provider-health', async (req, res) => {
+  const user = requireAuthUser(req);
+  const userSettings = await getUserSettings(user.id);
+  return res.json(await getProviderHealth(userSettings));
 });
 
 protectedApi.post('/provider-health/:provider/reset', async (req, res) => {
@@ -508,12 +515,17 @@ protectedApi.post('/tasks/:id/summary', async (req, res) => {
   if (!task.transcript) {
     return res.status(400).json({ error: 'Task transcript is not ready yet.' });
   }
-  if (!isLlmConfigured()) {
+  const userSettings = await getUserSettings(user.id);
+  if (!isLlmConfigured(userSettings)) {
     return res.status(400).json({ error: 'LLM API is not configured.' });
   }
 
   try {
-    const summary = await generateTaskSummary(buildTaskContext(task), req.body.instructions);
+    const summary = await generateTaskSummary(
+      buildTaskContext(task),
+      req.body.instructions,
+      userSettings,
+    );
     await db('tasks').where({ id: task.id, userId: user.id }).update({
       summary,
       updatedAt: Date.now(),
@@ -537,7 +549,8 @@ protectedApi.post('/tasks/:id/chat', async (req, res) => {
   if (!task.transcript) {
     return res.status(400).json({ error: 'Task transcript is not ready yet.' });
   }
-  if (!isLlmConfigured()) {
+  const userSettings = await getUserSettings(user.id);
+  if (!isLlmConfigured(userSettings)) {
     return res.status(400).json({ error: 'LLM API is not configured.' });
   }
 
@@ -553,7 +566,12 @@ protectedApi.post('/tasks/:id/chat', async (req, res) => {
     role: item.role,
     content: item.content,
   }));
-  const reply = await chatWithTranscript(buildTaskContext(task), normalizedHistory, message);
+  const reply = await chatWithTranscript(
+    buildTaskContext(task),
+    normalizedHistory,
+    message,
+    userSettings,
+  );
   const now = Date.now();
 
   await db('task_messages').insert([
@@ -626,7 +644,8 @@ protectedApi.post('/knowledge/ask', async (req, res) => {
   if (!query) {
     return res.status(400).json({ error: 'Query is required.' });
   }
-  if (!isLlmConfigured()) {
+  const userSettings = await getUserSettings(user.id);
+  if (!isLlmConfigured(userSettings)) {
     return res.status(400).json({ error: 'LLM API is not configured.' });
   }
 
@@ -636,7 +655,6 @@ protectedApi.post('/knowledge/ask', async (req, res) => {
   const selectedIds = Array.isArray(req.body.taskIds)
     ? req.body.taskIds.map((value: unknown) => String(value))
     : [];
-  const userSettings = await getUserSettings(user.id);
   const retrieval = await searchChunksHybrid(user.id, query, {
     taskIds: selectedIds.length ? selectedIds : undefined,
     retrievalMode: userSettings.retrievalMode,
@@ -672,6 +690,7 @@ protectedApi.post('/knowledge/ask', async (req, res) => {
       notebook: task.notebookId ? notebookMap.get(task.notebookId) || null : null,
       tags: task.tags,
     })),
+    userSettings,
   );
 
   return res.json({

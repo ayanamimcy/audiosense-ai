@@ -117,6 +117,7 @@ class ModelManager:
         initial_prompt: str | None = None,
         suppress_tokens: list[int] | None = None,
         diarization_strategy: str | None = None,
+        hf_token: str | None = None,
         backend_instance: BaseBackend | None = None,
     ) -> dict[str, Any]:
         with self._transcription_lock:
@@ -145,7 +146,7 @@ class ModelManager:
                     suppress_tokens=suppress_tokens,
                     translation_target_language=effective_target,
                     num_speakers=expected_speakers,
-                    hf_token=self._config.hf_token,
+                    hf_token=hf_token or self._config.hf_token,
                 )
                 if result is not None:
                     result["duration"] = get_audio_duration_seconds(audio_data, sample_rate)
@@ -198,6 +199,7 @@ class ModelManager:
                     audio_data,
                     sample_rate=sample_rate,
                     num_speakers=expected_speakers,
+                    hf_token=hf_token,
                 )
 
             if strategy == "parallel" or strategy == "auto":
@@ -246,6 +248,7 @@ class ModelManager:
         backend: str | None = None,
         model_name: str | None = None,
         diarization_strategy: str | None = None,
+        hf_token: str | None = None,
     ) -> dict[str, Any]:
         runtime_backend = self._ensure_backend(backend=backend, model_name=model_name)
         audio, sample_rate = load_audio(file_path, target_sample_rate=16000)
@@ -261,6 +264,7 @@ class ModelManager:
             backend=backend,
             model_name=model_name,
             diarization_strategy=diarization_strategy,
+            hf_token=hf_token,
             backend_instance=runtime_backend,
         )
 
