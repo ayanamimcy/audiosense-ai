@@ -1,13 +1,14 @@
 import path from 'path';
 import { db } from '../db.js';
+import { parseAudioWithFallback } from './audio-engine/engine.js';
+import { formatTranscriptMarkdown } from './audio-engine/markdown.js';
 import { generateTaskSummary, isLlmConfigured } from './llm.js';
-import { transcribeWithFallback } from './provider-routing.js';
 import { reindexTask } from './search-index.js';
 import { getUserSettings } from './settings.js';
-import { formatTranscriptMarkdown } from './transcription.js';
 import { parseJsonField, type TaskJobRow, type TaskRow } from './task-types.js';
 
-const uploadDir = path.join(process.cwd(), 'uploads');
+const configuredUploadDir = process.env.UPLOAD_DIR?.trim();
+const uploadDir = path.resolve(configuredUploadDir || path.join(process.cwd(), 'uploads'));
 
 export async function processQueuedJob(job: TaskJobRow) {
   const task = (await db('tasks').where({ id: job.taskId }).first()) as TaskRow | undefined;
@@ -18,6 +19,12 @@ export async function processQueuedJob(job: TaskJobRow) {
   const metadata = parseJsonField<Record<string, unknown>>(task.metadata, {});
   const userSettings = task.userId ? await getUserSettings(task.userId) : null;
   const now = Date.now();
+  const expectedSpeakers =
+    typeof metadata.expectedSpeakers === 'number'
+      ? metadata.expectedSpeakers
+      : typeof metadata.expectedSpeakers === 'string' && metadata.expectedSpeakers.trim()
+        ? Number(metadata.expectedSpeakers)
+        : undefined;
 
   await db('tasks').where({ id: task.id }).update({
     status: 'processing',
@@ -26,11 +33,25 @@ export async function processQueuedJob(job: TaskJobRow) {
     provider: job.provider || task.provider,
   });
 
-  const { providerName, result } = await transcribeWithFallback(task.userId, job.provider || task.provider, {
-    filePath: path.join(uploadDir, task.filename),
-    language: task.language || 'auto',
-    diarization: metadata.diarization !== false,
-  });
+  const { providerName, result, attemptedProviders, skippedProviders } = await parseAudioWithFallback(
+    task.userId,
+    job.provider || task.provider,
+    {
+      filePath: path.join(uploadDir, task.filename),
+      fileName: task.originalName,
+      mimeType: typeof metadata.originalMimeType === 'string' ? metadata.originalMimeType : undefined,
+      language: task.language || 'auto',
+      diarization: metadata.diarization !== false,
+      wordTimestamps: metadata.wordTimestamps === true || metadata.diarization !== false,
+      task: metadata.translationEnabled === true ? 'translate' : 'transcribe',
+      translationTargetLanguage:
+        typeof metadata.translationTargetLanguage === 'string' ? metadata.translationTargetLanguage : undefined,
+      expectedSpeakers:
+        typeof expectedSpeakers === 'number' && Number.isFinite(expectedSpeakers) && expectedSpeakers > 0
+          ? expectedSpeakers
+          : undefined,
+    },
+  );
 
   const transcript = result.text;
   const shouldAutoSummarize = userSettings?.autoGenerateSummary || process.env.AUTO_GENERATE_SUMMARY === 'true';
@@ -46,6 +67,7 @@ export async function processQueuedJob(job: TaskJobRow) {
           'Summarize this transcript with overview, key insights, and action items.',
         )
       : null;
+  const completedAt = Date.now();
 
   await db('tasks').where({ id: task.id }).update({
     status: 'completed',
@@ -57,12 +79,18 @@ export async function processQueuedJob(job: TaskJobRow) {
     language: result.language || task.language,
     provider: providerName,
     durationSeconds: result.durationSeconds || null,
-    completedAt: Date.now(),
-    updatedAt: Date.now(),
+    completedAt,
+    updatedAt: completedAt,
     metadata: JSON.stringify({
       ...metadata,
-      completedAt: Date.now(),
+      completedAt,
       finalProvider: providerName,
+      attemptedProviders,
+      skippedProviders,
+      media: result.metadata.media,
+      analysisMode: result.metadata.analysisMode,
+      warnings: result.metadata.warnings,
+      detected: result.metadata.detected,
     }),
   });
 

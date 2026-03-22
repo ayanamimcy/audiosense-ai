@@ -7,6 +7,7 @@
     "dev": "concurrently -k \"tsx server.ts\" \"tsx worker.ts\"",
     "dev:api": "tsx server.ts",
     "dev:worker": "tsx worker.ts",
+    "dev:local-engine": "cd python-runtime && PYTHONPATH=src python3 -m local_audio_runtime.server",
     "start": "concurrently -k \"tsx server.ts\" \"tsx worker.ts\"",
     "start:api": "tsx server.ts",
     "worker": "tsx worker.ts",

@@ -1,5 +1,5 @@
 import { db } from '../db.js';
-import { getAvailableTranscriptionProviders } from './transcription.js';
+import { getAvailableTranscriptionProviders } from './audio-engine/providers/index.js';
 
 export interface UserSettings {
   defaultProvider: string;

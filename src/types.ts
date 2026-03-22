@@ -13,6 +13,16 @@ export interface TranscriptSegment {
   end: number;
   text: string;
   speaker?: string;
+  words?: TranscriptWord[];
+}
+
+export interface TranscriptWord {
+  id: string;
+  start: number;
+  end: number;
+  text: string;
+  speaker?: string;
+  confidence?: number;
 }
 
 export interface SpeakerSummary {
@@ -20,6 +30,7 @@ export interface SpeakerSummary {
   label: string;
   segmentCount: number;
   durationSeconds: number;
+  wordCount?: number;
 }
 
 export interface Task {
@@ -75,6 +86,12 @@ export interface ProviderInfo {
   label: string;
   configured: boolean;
   description: string;
+  capabilities?: {
+    diarization: 'integrated' | 'mergeable' | 'none';
+    wordTimestamps: boolean;
+    translation: boolean;
+    asyncPolling: boolean;
+  };
 }
 
 export interface ProviderHealth {

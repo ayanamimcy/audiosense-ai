@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "audiosense-local-audio-runtime"
+version = "0.1.0"
+description = "Local STT and diarization runtime for AudioSense AI"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0,<1.0.0",
+    "uvicorn[standard]>=0.30.0,<1.0.0",
+    "pydantic>=2.8.0,<3.0.0",
+    "numpy>=1.26.0",
+    "soundfile>=0.12.1",
+    "scipy>=1.13.0",
+]
+
+[project.optional-dependencies]
+whisper = [
+    "faster-whisper>=1.0.3",
+]
+whisperx = [
+    "whisperx>=3.3.0",
+]
+diarization = [
+    "torch>=2.3.0",
+    "torchaudio>=2.3.0",
+    "pyannote.audio>=3.3.2",
+]
+live = [
+    "torch>=2.3.0",
+    "webrtcvad>=2.0.10",
+    "silero-vad>=6.2.0",
+]
+full = [
+    "faster-whisper>=1.0.3",
+    "whisperx>=3.3.0",
+    "torch>=2.3.0",
+    "torchaudio>=2.3.0",
+    "pyannote.audio>=3.3.2",
+    "webrtcvad>=2.0.10",
+    "silero-vad>=6.2.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/local_audio_runtime"]

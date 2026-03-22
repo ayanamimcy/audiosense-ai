@@ -26,8 +26,9 @@
 - SQLite 默认存储，可切 PostgreSQL
 - Cookie session 鉴权
 - `task_jobs` 队列表 + 独立 `worker.ts`
-- `TranscriptionProvider` 注册表
+- `audio-engine/` 音频解析引擎 + `TranscriptionProvider` 注册表
 - `user_settings`、`provider_health`、`task_chunks`、SQLite FTS
+- `python-runtime/` 本地模型 sidecar，可加载 faster-whisper / WhisperX / PyAnnote
 
 ## 已实现的能力
 
@@ -49,6 +50,7 @@ ASR provider：
 - `whisperx`
 - `openai-compatible`
 - `azure-openai`
+- `local-python`
 
 知识能力：
 
@@ -70,6 +72,18 @@ Provider 管理：
 - `server.ts`: 主 API 服务
 - `worker.ts`: 队列 worker
 - `db.ts`: schema 初始化
+- `lib/audio-engine/engine.ts`: 音频解析主入口，负责媒体探测、provider fallback、结果标准化
+- `lib/audio-engine/normalize.ts`: 统一整理 provider 返回的 text / segment / word / speaker 数据
+- `lib/audio-engine/speaker-merge.ts`: 参考 TranscriptionSuite 的时间戳对齐策略做说话人合并
+- `lib/audio-engine/providers/*`: 各个 ASR provider 适配器
+- `lib/audio-engine/providers/local-python.ts`: 调用仓库内本地 Python 推理服务
+- `python-runtime/src/local_audio_runtime/server.py`: 本地模型 HTTP runtime
+- `python-runtime/src/local_audio_runtime/model_manager.py`: 本地模型缓存和生命周期管理
+- `python-runtime/src/local_audio_runtime/backends.py`: 本地 faster-whisper / WhisperX backend，含 WhisperX 集成 diarization
+- `python-runtime/src/local_audio_runtime/parallel_diarize.py`: 并行 / 串行 diarization 调度
+- `python-runtime/src/local_audio_runtime/recorder.py`: AudioToTextRecorder 运行时
+- `python-runtime/src/local_audio_runtime/vad.py`: Silero + WebRTC 双 VAD
+- `python-runtime/src/local_audio_runtime/live_engine.py`: 实时 sentence-by-sentence live mode
 - `lib/auth.ts`: 用户与 session
 - `lib/task-queue.ts`: 入队、抢占、失败重试
 - `lib/task-processor.ts`: 实际转写处理
@@ -105,6 +119,25 @@ cp .env.example .env.local
 - `AZURE_OPENAI_*`
 - `EMBEDDING_*`
 
+如果你想走本地模型，再补：
+
+- `LOCAL_AUDIO_ENGINE_ENABLED=true`
+- `LOCAL_AUDIO_ENGINE_URL=http://127.0.0.1:8765`
+- `LOCAL_AUDIO_ENGINE_MODEL`
+- `HF_TOKEN` 或 `LOCAL_AUDIO_ENGINE_HF_TOKEN`（启用 diarization 时）
+- `LOCAL_AUDIO_ENGINE_DIARIZATION_STRATEGY=auto|parallel|sequential`
+- `SQLITE_FILENAME`（容器或自定义数据目录时推荐）
+- `UPLOAD_DIR`（容器或共享卷时推荐）
+
+并安装 Python runtime 依赖：
+
+```bash
+cd python-runtime
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[full]'
+```
+
 3. 启动 API + worker
 
 ```bash
@@ -114,6 +147,75 @@ npm run dev
 默认地址：
 
 - `http://localhost:3000`
+
+本地音频 runtime 也可以单独启动：
+
+```bash
+npm run dev:local-engine
+```
+
+当前本地 runtime 已支持：
+
+- `WhisperX transcribe_with_diarization()` 单次集成 speaker 流程
+- 非 WhisperX backend 的并行 / 串行 diarization 调度
+- 基于 `AudioToTextRecorder` 的本地 live VAD / streaming runtime
+- `ws://127.0.0.1:8765/ws/live` 的实时 WebSocket live mode
+
+## Docker 部署
+
+仓库现在已经带上了这些容器文件：
+
+- `Dockerfile`: Node API + 前端静态产物 + worker 共享镜像
+- `docker-compose.yml`: `app`、`worker`、`local-audio-runtime` 三服务编排
+- `python-runtime/Dockerfile.cuda`: 适合 Linux + NVIDIA CUDA 的本地模型 runtime
+
+部署前提：
+
+- Linux 主机已经装好 NVIDIA Driver
+- 已安装 `nvidia-container-toolkit`
+- 使用 `docker compose` v2
+
+推荐步骤：
+
+1. 复制环境变量文件
+
+```bash
+cp .env.example .env
+```
+
+2. 至少把这些变量填好
+
+- `TRANSCRIPTION_PROVIDER=local-python`
+- `LOCAL_AUDIO_ENGINE_ENABLED=true`
+- `LOCAL_AUDIO_ENGINE_AUTOSTART=false`
+- `LOCAL_AUDIO_ENGINE_HF_TOKEN=...`
+- `LLM_API_KEY=...`（如果你要摘要 / 问答）
+- `EMBEDDING_API_KEY=...`（如果你要向量检索）
+
+3. 启动整套服务
+
+```bash
+docker compose up -d --build
+```
+
+4. 打开服务
+
+- `http://localhost:3000`
+
+几个部署细节：
+
+- Compose 里默认让 `local-audio-runtime` 走 `whisperx + cuda + float16`
+- `app` 和 `worker` 共用 SQLite 数据卷与 `uploads/` 音频卷
+- `worker` 把文件路径传给 Python runtime，所以 `worker` 和 `local-audio-runtime` 必须挂同一个 `/app/uploads`
+- 模型下载缓存会落在 `audiosense-models`、`audiosense-hf-cache`、`audiosense-torch-cache`
+- 第一次启动会下载 Whisper / PyAnnote 模型，耗时会明显更长
+
+如果你要改模型大小，最常调的是：
+
+- `LOCAL_AUDIO_ENGINE_MODEL=small|medium|large-v3`
+- `LOCAL_AUDIO_ENGINE_BATCH_SIZE`
+- `LOCAL_AUDIO_ENGINE_COMPUTE_TYPE=float16`
+- `LOCAL_AUDIO_ENGINE_PRELOAD=true|false`
 
 ## 架构建议
 
@@ -127,7 +229,8 @@ npm run dev
 这样做的好处：
 
 - 现在开发快，联调简单
-- 后面加 WhisperX、Qwen ASR、Azure/OpenAI/第三方 API 时，只是在 worker/provider 层扩展
+- 后面加 WhisperX、Qwen ASR、Azure/OpenAI/第三方 API 时，只是在 `audio-engine/providers` 层扩展
+- 文件元数据探测、结果标准化、speaker merge 不会散落在业务逻辑里
 - 真到压力变大时，可以把 worker 单独部署，甚至再拆成独立 speech service，而不动前端和主 API 的业务边界
 
 ## 如果后面继续往生产走

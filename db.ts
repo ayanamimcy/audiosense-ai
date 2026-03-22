@@ -1,14 +1,23 @@
+import fs from 'fs';
 import knex, { type Knex } from 'knex';
 import path from 'path';
 
 const dbType = process.env.DB_TYPE || 'sqlite3';
 const isSqlite = dbType === 'sqlite3';
+const configuredSqliteFilename = process.env.SQLITE_FILENAME?.trim();
+const sqliteFilename = configuredSqliteFilename
+  ? path.resolve(configuredSqliteFilename)
+  : path.join(process.cwd(), 'database.sqlite');
+
+if (isSqlite) {
+  fs.mkdirSync(path.dirname(sqliteFilename), { recursive: true });
+}
 
 const config = {
   sqlite3: {
     client: 'sqlite3',
     connection: {
-      filename: path.join(process.cwd(), 'database.sqlite'),
+      filename: sqliteFilename,
     },
     useNullAsDefault: true,
   },

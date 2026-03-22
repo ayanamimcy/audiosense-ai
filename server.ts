@@ -53,11 +53,12 @@ import {
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
+const configuredUploadDir = process.env.UPLOAD_DIR?.trim();
 
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
 
-const uploadDir = path.join(process.cwd(), 'uploads');
+const uploadDir = path.resolve(configuredUploadDir || path.join(process.cwd(), 'uploads'));
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
@@ -257,6 +258,17 @@ protectedApi.post('/upload', upload.single('audio'), async (req, res) => {
   const now = Date.now();
   const taskId = uuidv4();
   const userSettings = await getUserSettings(user.id);
+  const diarizationEnabled = req.body.diarization !== 'false';
+  const wordTimestampsEnabled = req.body.wordTimestamps === 'true';
+  const translationEnabled = req.body.translationEnabled === 'true';
+  const translationTargetLanguage = req.body.translationTargetLanguage
+    ? String(req.body.translationTargetLanguage).trim()
+    : null;
+  const parsedExpectedSpeakers =
+    req.body.expectedSpeakers !== undefined && req.body.expectedSpeakers !== ''
+      ? Number(req.body.expectedSpeakers)
+      : null;
+  const expectedSpeakers = Number.isFinite(parsedExpectedSpeakers) ? parsedExpectedSpeakers : null;
   const provider = String(
     req.body.provider || userSettings.defaultProvider || process.env.TRANSCRIPTION_PROVIDER || 'whisperx',
   ).toLowerCase();
@@ -274,7 +286,11 @@ protectedApi.post('/upload', upload.single('audio'), async (req, res) => {
     sourceType: req.body.sourceType || 'upload',
     eventDate: req.body.eventDate ? Number(req.body.eventDate) : now,
     metadata: JSON.stringify({
-      diarization: req.body.diarization !== 'false',
+      diarization: diarizationEnabled,
+      wordTimestamps: wordTimestampsEnabled,
+      translationEnabled,
+      translationTargetLanguage,
+      expectedSpeakers,
       originalMimeType: req.file.mimetype,
       size: req.file.size,
     }),
@@ -289,6 +305,11 @@ protectedApi.post('/upload', upload.single('audio'), async (req, res) => {
       provider,
       payload: {
         language: task.language,
+        diarization: diarizationEnabled,
+        wordTimestamps: wordTimestampsEnabled,
+        task: translationEnabled ? 'translate' : 'transcribe',
+        translationTargetLanguage,
+        expectedSpeakers,
       },
     });
 

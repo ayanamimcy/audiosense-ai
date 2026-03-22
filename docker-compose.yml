@@ -1,0 +1,104 @@
+x-node-environment: &node-environment
+  NODE_ENV: production
+  PORT: "3000"
+  DB_TYPE: sqlite3
+  SQLITE_FILENAME: /app/runtime-data/database.sqlite
+  UPLOAD_DIR: /app/uploads
+  TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-local-python}
+  LOCAL_AUDIO_ENGINE_ENABLED: ${LOCAL_AUDIO_ENGINE_ENABLED:-true}
+  LOCAL_AUDIO_ENGINE_AUTOSTART: "false"
+  LOCAL_AUDIO_ENGINE_URL: http://local-audio-runtime:8765
+  LOCAL_AUDIO_ENGINE_REQUEST_TIMEOUT_MS: ${LOCAL_AUDIO_ENGINE_REQUEST_TIMEOUT_MS:-3600000}
+  AUTO_GENERATE_SUMMARY: ${AUTO_GENERATE_SUMMARY:-false}
+  LLM_API_BASE_URL: ${LLM_API_BASE_URL:-https://api.openai.com/v1}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+  EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-https://api.openai.com/v1}
+  EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+
+x-node-volumes: &node-volumes
+  - audiosense-db:/app/runtime-data
+  - audiosense-uploads:/app/uploads
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app-runtime
+    image: audiosense-ai:latest
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${PORT:-3000}:3000"
+    environment: *node-environment
+    volumes: *node-volumes
+    depends_on:
+      local-audio-runtime:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app-runtime
+    image: audiosense-ai:latest
+    init: true
+    restart: unless-stopped
+    command: ["npm", "run", "worker"]
+    environment:
+      <<: *node-environment
+      WORKER_IDLE_MS: ${WORKER_IDLE_MS:-3000}
+    volumes: *node-volumes
+    depends_on:
+      app:
+        condition: service_started
+      local-audio-runtime:
+        condition: service_healthy
+
+  local-audio-runtime:
+    build:
+      context: ./python-runtime
+      dockerfile: Dockerfile.cuda
+    image: audiosense-local-runtime:cuda
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${LOCAL_AUDIO_ENGINE_PORT:-8765}:8765"
+    environment:
+      LOCAL_AUDIO_ENGINE_HOST: 0.0.0.0
+      LOCAL_AUDIO_ENGINE_PORT: "8765"
+      LOCAL_AUDIO_ENGINE_BACKEND: ${LOCAL_AUDIO_ENGINE_BACKEND:-whisperx}
+      LOCAL_AUDIO_ENGINE_MODEL: ${LOCAL_AUDIO_ENGINE_MODEL:-small}
+      LOCAL_AUDIO_ENGINE_DEVICE: ${LOCAL_AUDIO_ENGINE_DEVICE:-cuda}
+      LOCAL_AUDIO_ENGINE_COMPUTE_TYPE: ${LOCAL_AUDIO_ENGINE_COMPUTE_TYPE:-float16}
+      LOCAL_AUDIO_ENGINE_BATCH_SIZE: ${LOCAL_AUDIO_ENGINE_BATCH_SIZE:-16}
+      LOCAL_AUDIO_ENGINE_BEAM_SIZE: ${LOCAL_AUDIO_ENGINE_BEAM_SIZE:-5}
+      LOCAL_AUDIO_ENGINE_VAD_FILTER: ${LOCAL_AUDIO_ENGINE_VAD_FILTER:-true}
+      LOCAL_AUDIO_ENGINE_DIARIZATION_MODEL: ${LOCAL_AUDIO_ENGINE_DIARIZATION_MODEL:-pyannote/speaker-diarization-community-1}
+      LOCAL_AUDIO_ENGINE_DIARIZATION_STRATEGY: ${LOCAL_AUDIO_ENGINE_DIARIZATION_STRATEGY:-auto}
+      LOCAL_AUDIO_ENGINE_PREFER_INTEGRATED_DIARIZATION: ${LOCAL_AUDIO_ENGINE_PREFER_INTEGRATED_DIARIZATION:-true}
+      LOCAL_AUDIO_ENGINE_SEQUENTIAL_UNLOAD_BETWEEN_STAGES: ${LOCAL_AUDIO_ENGINE_SEQUENTIAL_UNLOAD_BETWEEN_STAGES:-true}
+      LOCAL_AUDIO_ENGINE_HF_TOKEN: ${LOCAL_AUDIO_ENGINE_HF_TOKEN:-}
+      LOCAL_AUDIO_ENGINE_DOWNLOAD_ROOT: /models
+      LOCAL_AUDIO_ENGINE_PRELOAD: ${LOCAL_AUDIO_ENGINE_PRELOAD:-false}
+      HF_HOME: /cache/huggingface
+      TRANSFORMERS_CACHE: /cache/huggingface
+      TORCH_HOME: /cache/torch
+    volumes:
+      - audiosense-uploads:/app/uploads
+      - audiosense-models:/models
+      - audiosense-hf-cache:/cache/huggingface
+      - audiosense-torch-cache:/cache/torch
+    shm_size: "8gb"
+    gpus:
+      - driver: nvidia
+        count: all
+
+volumes:
+  audiosense-db:
+  audiosense-uploads:
+  audiosense-models:
+  audiosense-hf-cache:
+  audiosense-torch-cache:
