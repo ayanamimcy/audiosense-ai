@@ -40,6 +40,26 @@ def _import_whisperx_modules(*, include_diarize: bool = False) -> tuple[Any, Any
     return whisperx, diarize_module
 
 
+def _build_whisperx_diarization_kwargs(diarization_pipeline_cls: Any, token: str, device: str) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {"device": device}
+    try:
+        signature = inspect.signature(diarization_pipeline_cls)
+    except (TypeError, ValueError):
+        kwargs["token"] = token
+        return kwargs
+
+    if "token" in signature.parameters:
+        kwargs["token"] = token
+        return kwargs
+
+    if "use_auth_token" in signature.parameters:
+        kwargs["use_auth_token"] = token
+        return kwargs
+
+    kwargs["token"] = token
+    return kwargs
+
+
 @dataclass(slots=True)
 class BackendLoadSpec:
     backend: str
@@ -479,7 +499,12 @@ class WhisperXBackend(BaseBackend):
             except Exception as exc:
                 logger.warning("WhisperX alignment failed during integrated diarization: %s", exc)
 
-        diarization_pipeline = diarize_module.DiarizationPipeline(use_auth_token=token, device=self.device)
+        diarization_kwargs = _build_whisperx_diarization_kwargs(
+            diarize_module.DiarizationPipeline,
+            token,
+            self.device,
+        )
+        diarization_pipeline = diarize_module.DiarizationPipeline(**diarization_kwargs)
         diarize_kwargs: dict[str, Any] = {}
         if num_speakers is not None:
             diarize_kwargs["min_speakers"] = num_speakers

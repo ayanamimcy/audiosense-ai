@@ -12,52 +12,42 @@ dependencies = [
     "uvicorn[standard]==0.42.0",
     "pydantic==2.11.7",
     "python-multipart==0.0.22",
-    "numpy==2.0.2; python_version < '3.13'",
-    "numpy==2.2.6; python_version >= '3.13'",
+    "numpy==2.2.6",
     "soundfile==0.13.1",
     "scipy==1.17.1",
 ]
 
 [project.optional-dependencies]
 whisper = [
+    "ctranslate2==4.7.1",
     "faster-whisper==1.2.1",
 ]
 whisperx = [
-    "whisperx==3.4.2; python_version < '3.13'",
-    "whisperx==3.7.2; python_version >= '3.13'",
-    "torch==2.5.1; python_version < '3.13'",
-    "torchaudio==2.5.1; python_version < '3.13'",
-    "torchvision==0.20.1; python_version < '3.13'",
-    "torch==2.10.0; python_version >= '3.13'",
-    "torchaudio==2.10.0; python_version >= '3.13'",
-    "torchvision==0.25.0; python_version >= '3.13'",
+    "ctranslate2==4.7.1",
+    "whisperx==3.8.2",
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "torchvision==0.23.0",
 ]
 diarization = [
-    "torch==2.5.1; python_version < '3.13'",
-    "torchaudio==2.5.1; python_version < '3.13'",
-    "torchvision==0.20.1; python_version < '3.13'",
-    "torch==2.10.0; python_version >= '3.13'",
-    "torchaudio==2.10.0; python_version >= '3.13'",
-    "torchvision==0.25.0; python_version >= '3.13'",
-    "pyannote.audio==3.3.2",
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "torchvision==0.23.0",
+    "pyannote.audio==4.0.4",
 ]
 live = [
-    "torch==2.5.1; python_version < '3.13'",
-    "torch==2.10.0; python_version >= '3.13'",
+    "torch==2.8.0",
     "webrtcvad==2.0.10",
     "silero-vad==6.2.1",
 ]
 full = [
+    "ctranslate2==4.7.1",
     "faster-whisper==1.2.1",
-    "whisperx==3.4.2; python_version < '3.13'",
-    "whisperx==3.7.2; python_version >= '3.13'",
-    "torch==2.5.1; python_version < '3.13'",
-    "torchaudio==2.5.1; python_version < '3.13'",
-    "torchvision==0.20.1; python_version < '3.13'",
-    "torch==2.10.0; python_version >= '3.13'",
-    "torchaudio==2.10.0; python_version >= '3.13'",
-    "torchvision==0.25.0; python_version >= '3.13'",
-    "pyannote.audio==3.3.2",
+    "whisperx==3.8.2",
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "torchvision==0.23.0",
+    "pyannote.audio==4.0.4",
     "webrtcvad==2.0.10",
     "silero-vad==6.2.1",
 ]
