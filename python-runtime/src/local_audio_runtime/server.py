@@ -5,8 +5,9 @@ import json
 import logging
 from pathlib import Path
 import struct
+import tempfile
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 import uvicorn
 
@@ -27,6 +28,45 @@ manager = ModelManager(config)
 app = FastAPI(title="AudioSense Local Audio Runtime")
 _active_live_session: LiveModeSession | None = None
 _session_lock = asyncio.Lock()
+
+
+def _run_transcription(
+    *,
+    file_path: str,
+    language: str | None = None,
+    diarization: bool = False,
+    word_timestamps: bool = False,
+    task: str = "transcribe",
+    translation_target_language: str | None = None,
+    expected_speakers: int | None = None,
+    backend: str | None = None,
+    model_name: str | None = None,
+    diarization_strategy: str | None = None,
+    hf_token: str | None = None,
+) -> TranscriptionResponse:
+    if not Path(file_path).exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+
+    try:
+        result = manager.transcribe_file(
+            file_path=file_path,
+            language=language,
+            diarization=diarization,
+            word_timestamps=word_timestamps,
+            task=task,
+            translation_target_language=translation_target_language,
+            expected_speakers=expected_speakers,
+            backend=backend,
+            model_name=model_name,
+            diarization_strategy=diarization_strategy,
+            hf_token=hf_token,
+        )
+        return TranscriptionResponse(**result)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("Local transcription failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 
 @app.on_event("startup")
@@ -59,29 +99,64 @@ def capabilities() -> dict[str, object]:
 
 @app.post("/transcribe", response_model=TranscriptionResponse)
 def transcribe(payload: TranscriptionRequest) -> TranscriptionResponse:
-    if not Path(payload.file_path).exists():
-        raise HTTPException(status_code=404, detail="Audio file not found")
+    return _run_transcription(
+        file_path=payload.file_path,
+        language=payload.language,
+        diarization=payload.diarization,
+        word_timestamps=payload.word_timestamps,
+        task=payload.task,
+        translation_target_language=payload.translation_target_language,
+        expected_speakers=payload.expected_speakers,
+        backend=payload.backend,
+        model_name=payload.model_name,
+        diarization_strategy=payload.diarization_strategy,
+        hf_token=payload.hf_token,
+    )
+
+
+@app.post("/transcribe-file", response_model=TranscriptionResponse)
+async def transcribe_file(
+    file: UploadFile = File(...),
+    language: str | None = Form(default=None),
+    diarization: bool = Form(default=False),
+    word_timestamps: bool = Form(default=False),
+    task: str = Form(default="transcribe"),
+    translation_target_language: str | None = Form(default=None),
+    expected_speakers: int | None = Form(default=None),
+    backend: str | None = Form(default=None),
+    model_name: str | None = Form(default=None),
+    diarization_strategy: str | None = Form(default=None),
+    hf_token: str | None = Form(default=None),
+) -> TranscriptionResponse:
+    suffix = Path(file.filename or "").suffix
+    temp_path: str | None = None
 
     try:
-        result = manager.transcribe_file(
-            file_path=payload.file_path,
-            language=payload.language,
-            diarization=payload.diarization,
-            word_timestamps=payload.word_timestamps,
-            task=payload.task,
-            translation_target_language=payload.translation_target_language,
-            expected_speakers=payload.expected_speakers,
-            backend=payload.backend,
-            model_name=payload.model_name,
-            diarization_strategy=payload.diarization_strategy,
-            hf_token=payload.hf_token,
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_path = temp_file.name
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                temp_file.write(chunk)
+
+        return _run_transcription(
+            file_path=temp_path,
+            language=(language or None),
+            diarization=diarization,
+            word_timestamps=word_timestamps,
+            task=task,
+            translation_target_language=(translation_target_language or None),
+            expected_speakers=expected_speakers,
+            backend=(backend or None),
+            model_name=(model_name or None),
+            diarization_strategy=(diarization_strategy or None),
+            hf_token=(hf_token or None),
         )
-        return TranscriptionResponse(**result)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("Local transcription failed")
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        await file.close()
+        if temp_path:
+            Path(temp_path).unlink(missing_ok=True)
 
 
 def _parse_audio_message(audio_data: bytes) -> tuple[bytes, int]:

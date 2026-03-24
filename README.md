@@ -165,7 +165,8 @@ npm run dev:local-engine
 仓库现在已经带上了这些容器文件：
 
 - `Dockerfile`: Node API + 前端静态产物 + worker 共享镜像
-- `docker-compose.yml`: `app`、`worker`、`local-audio-runtime` 三服务编排
+- `docker-compose.yml`: 面向部署，默认直接拉镜像
+- `docker-compose.build.yml`: 本地源码构建时叠加的 override
 - `python-runtime/Dockerfile.cuda`: 适合 Linux + NVIDIA CUDA 的本地模型 runtime
 
 部署前提：
@@ -193,8 +194,17 @@ cp .env.example .env
 
 3. 启动整套服务
 
+服务器部署推荐直接拉镜像：
+
 ```bash
-docker compose up -d --build
+docker compose pull
+docker compose up -d
+```
+
+如果你在本地改了代码，想自己构建再启动：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
 4. 打开服务
@@ -204,6 +214,13 @@ docker compose up -d --build
 几个部署细节：
 
 - Compose 里默认让 `local-audio-runtime` 走 `whisperx + cuda + float16`
+- 如果你使用 GitHub Container Registry，可以在 `.env` 里设置：
+
+```env
+APP_IMAGE=audiosense-ai
+LOCAL_AUDIO_RUNTIME_IMAGE=audiosense-ai-local-runtime-cuda
+```
+
 - `app` 和 `worker` 共用 SQLite 数据卷与 `uploads/` 音频卷
 - `worker` 把文件路径传给 Python runtime，所以 `worker` 和 `local-audio-runtime` 必须挂同一个 `/app/uploads`
 - 模型下载缓存会落在 `audiosense-models`、`audiosense-hf-cache`、`audiosense-torch-cache`

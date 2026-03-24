@@ -1,4 +1,7 @@
 import axios from 'axios';
+import FormData from 'form-data';
+import fs from 'fs';
+import path from 'path';
 import { ensureLocalAudioRuntime, getLocalAudioRuntimeBaseUrl } from '../local-runtime.js';
 import { BaseTranscriptionProvider } from './base.js';
 import type { ProviderTranscriptionPayload, TranscriptionJobInput } from '../types.js';
@@ -31,24 +34,38 @@ export class LocalPythonProvider extends BaseTranscriptionProvider {
   async transcribe(input: TranscriptionJobInput): Promise<ProviderTranscriptionPayload> {
     await ensureLocalAudioRuntime(this.config.baseUrl);
 
+    const formData = new FormData();
+    formData.append(
+      'file',
+      fs.createReadStream(input.filePath),
+      {
+        filename: input.fileName || path.basename(input.filePath),
+        contentType: input.mimeType || 'application/octet-stream',
+      },
+    );
+    formData.append('language', input.language && input.language !== 'auto' ? input.language : '');
+    formData.append('diarization', String(Boolean(input.diarization)));
+    formData.append('word_timestamps', String(Boolean(input.wordTimestamps || input.diarization)));
+    formData.append('task', input.task || 'transcribe');
+    formData.append('translation_target_language', input.translationTargetLanguage || '');
+    formData.append(
+      'expected_speakers',
+      input.expectedSpeakers !== null && input.expectedSpeakers !== undefined
+        ? String(input.expectedSpeakers)
+        : '',
+    );
+    formData.append('diarization_strategy', readString(this.config.diarizationStrategy) || '');
+    formData.append('backend', readString(this.config.backendId) || '');
+    formData.append('model_name', readString(this.config.modelName) || '');
+    formData.append('hf_token', readString(this.config.hfToken) || '');
+
     let response;
     try {
       response = await axios.post(
-        `${getLocalAudioRuntimeBaseUrl(this.config.baseUrl)}/transcribe`,
+        `${getLocalAudioRuntimeBaseUrl(this.config.baseUrl)}/transcribe-file`,
+        formData,
         {
-          file_path: input.filePath,
-          language: input.language && input.language !== 'auto' ? input.language : null,
-          diarization: Boolean(input.diarization),
-          word_timestamps: Boolean(input.wordTimestamps || input.diarization),
-          task: input.task || 'transcribe',
-          translation_target_language: input.translationTargetLanguage || null,
-          expected_speakers: input.expectedSpeakers ?? null,
-          diarization_strategy: readString(this.config.diarizationStrategy),
-          backend: readString(this.config.backendId),
-          model_name: readString(this.config.modelName),
-          hf_token: readString(this.config.hfToken),
-        },
-        {
+          headers: formData.getHeaders(),
           timeout: Math.max(60_000, Number(this.config.requestTimeoutMs || 3_600_000)),
         },
       );

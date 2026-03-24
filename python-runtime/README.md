@@ -47,5 +47,6 @@ PYTHONPATH=src python3 -m local_audio_runtime.server
 ## 主要接口
 
 - `POST /transcribe`
+- `POST /transcribe-file`
 - `GET /health`
 - `WS /ws/live`

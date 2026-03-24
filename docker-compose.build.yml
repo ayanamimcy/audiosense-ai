@@ -1,0 +1,17 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app-runtime
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: app-runtime
+
+  local-audio-runtime:
+    build:
+      context: ./python-runtime
+      dockerfile: Dockerfile.cuda
