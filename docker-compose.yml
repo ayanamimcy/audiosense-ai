@@ -23,7 +23,7 @@ x-node-volumes: &node-volumes
 
 services:
   app:
-    image: ${APP_IMAGE:-audiosense-ai}
+    image: ${APP_IMAGE:-ghcr.io/ayanamimcy/audiosense-ai}
     init: true
     restart: unless-stopped
     ports:
@@ -35,7 +35,7 @@ services:
         condition: service_healthy
 
   worker:
-    image: ${APP_IMAGE:-audiosense-ai}
+    image: ${APP_IMAGE:-ghcr.io/ayanamimcy/audiosense-ai}
     init: true
     restart: unless-stopped
     command: ["npm", "run", "worker"]
@@ -50,7 +50,7 @@ services:
         condition: service_healthy
 
   local-audio-runtime:
-    image: ${LOCAL_AUDIO_RUNTIME_IMAGE:-audiosense-ai-local-runtime-cuda}
+    image: ${LOCAL_AUDIO_RUNTIME_IMAGE:-ghcr.io/ayanamimcy/audiosense-ai-local-runtime-cuda}
     init: true
     restart: unless-stopped
     ports:
