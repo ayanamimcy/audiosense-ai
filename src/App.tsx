@@ -684,6 +684,13 @@ function RecordSection({
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
 
+  const clearRecordingTimer = () => {
+    if (timerRef.current !== null) {
+      window.clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
   const uploadRecording = async (file: File) => {
     const formData = new FormData();
     formData.append('audio', file);
@@ -750,6 +757,8 @@ function RecordSection({
 
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach((track) => track.stop());
+        clearRecordingTimer();
+        setIsRecording(false);
         if (chunksRef.current.length === 0) {
           setIsUploading(false);
           return;
@@ -773,6 +782,7 @@ function RecordSection({
       mediaRecorder.start(1000);
       setIsRecording(true);
       setRecordingTime(0);
+      clearRecordingTimer();
       timerRef.current = window.setInterval(() => {
         setRecordingTime((prev) => prev + 1);
       }, 1000);
@@ -786,22 +796,18 @@ function RecordSection({
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.stop();
       setIsRecording(false);
-      if (timerRef.current) {
-        window.clearInterval(timerRef.current);
-      }
+      clearRecordingTimer();
     }
   };
 
   useEffect(() => {
     return () => {
-      if (timerRef.current) {
-        window.clearInterval(timerRef.current);
-      }
-      if (mediaRecorderRef.current && isRecording) {
+      clearRecordingTimer();
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
         mediaRecorderRef.current.stop();
       }
     };
-  }, [isRecording]);
+  }, []);
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60).toString().padStart(2, '0');
