@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import {
   Book,
   Check,
+  Copy,
   Edit2,
   HelpCircle,
   Loader2,
@@ -33,6 +34,19 @@ function formatTime(seconds: number) {
   return `${mins}:${secs}`;
 }
 
+function buildTranscriptClipboardText(task: Task) {
+  if (task.segments.length > 0) {
+    return task.segments
+      .map((segment) => {
+        const speaker = segment.speaker?.trim() ? `${segment.speaker}: ` : '';
+        return `[${formatTime(segment.start)} - ${formatTime(segment.end)}] ${speaker}${segment.text}`.trim();
+      })
+      .join('\n\n');
+  }
+
+  return task.transcript || task.result || '';
+}
+
 type Panel = 'summary' | 'transcript' | 'chat';
 
 export function TaskDetail({
@@ -60,6 +74,7 @@ export function TaskDetail({
   const [messages, setMessages] = useState<TaskMessage[]>([]);
   const [messageInput, setMessageInput] = useState('');
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [transcriptCopied, setTranscriptCopied] = useState(false);
 
   const availableSummaryPrompts = summaryPrompts.filter((prompt) => {
     if (!prompt.notebookIds.length) {
@@ -225,6 +240,22 @@ export function TaskDetail({
   };
 
   const notebook = notebooks.find((item) => item.id === task.notebookId);
+
+  const handleCopyTranscript = async () => {
+    const content = buildTranscriptClipboardText(task).trim();
+    if (!content) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(content);
+      setTranscriptCopied(true);
+      window.setTimeout(() => setTranscriptCopied(false), 1800);
+    } catch (error) {
+      console.error('Failed to copy transcript:', error);
+      alert('Failed to copy transcript.');
+    }
+  };
 
   return (
     <div className="flex flex-col h-full">
@@ -461,6 +492,17 @@ export function TaskDetail({
 
             {activePanel === 'transcript' && (
               <div className="space-y-6">
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => void handleCopyTranscript()}
+                    disabled={!task.transcript && !task.result && task.segments.length === 0}
+                    className="px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2 border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {transcriptCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+                    {transcriptCopied ? 'Copied' : 'Copy Transcript'}
+                  </button>
+                </div>
+
                 {task.speakers.length > 0 && (
                   <div className="grid gap-3 md:grid-cols-2">
                     {task.speakers.map((speaker) => (

@@ -1,260 +1,233 @@
 # AudioSense AI
 
-一个面向语音内容管理的工作台，当前已经支持：
+AudioSense AI is an open audio workspace for teams that need to capture, transcribe, organize, search, and discuss spoken content.
 
-- 录音并入队转写
-- 上传音频并入队转写
-- Notebook / Tag 管理
-- WhisperX 说话人识别与分段
-- LLM 摘要、单任务对话、跨任务知识问答
-- 真实用户注册 / 登录 / 会话
-- 独立 worker 处理长耗时转写任务
-- 可扩展 ASR provider 注册表
-- provider fallback / 熔断 / 配置面板
-- FTS + 向量混合检索
+It combines a React workspace, an API server, a background worker, and an optional local Python runtime for WhisperX / diarization workloads.
 
-## 当前结构
+## Highlights
 
-前端：
+- Upload audio files and queue long-running transcription jobs
+- Record audio directly in the browser and send it into the same processing pipeline
+- Organize recordings with notebooks, tags, dates, and task metadata
+- Run local WhisperX-based transcription with diarization through `python-runtime`
+- Generate summaries, chat with a single transcript, and ask questions across recordings
+- Use provider routing, fallback chains, and circuit breaker controls
+- Support both SQLite-by-default and PostgreSQL-based deployments
+- Deploy with Docker Compose, including a dedicated CUDA runtime container
 
-- React 19 + Vite
-- `Workspace / Knowledge / Upload / Record / Tasks / Settings`
+## Architecture
 
-后端：
+AudioSense AI is split into a few clear responsibilities:
 
-- Express API
-- SQLite 默认存储，可切 PostgreSQL
-- Cookie session 鉴权
-- `task_jobs` 队列表 + 独立 `worker.ts`
-- `audio-engine/` 音频解析引擎 + `TranscriptionProvider` 注册表
-- `user_settings`、`provider_health`、`task_chunks`、SQLite FTS
-- `python-runtime/` 本地模型 sidecar，可加载 faster-whisper / WhisperX / PyAnnote
+- `app`
+  Frontend + API server. Handles auth, uploads, task creation, settings, retrieval, and LLM orchestration.
+- `worker`
+  Background job runner. Claims queued transcription jobs and writes results back to storage.
+- `local-audio-runtime`
+  Optional Python sidecar for local WhisperX / diarization inference, especially useful on a GPU host.
+- `database`
+  SQLite by default. Stores users, tasks, notebooks, messages, chunks, provider state, and the job queue.
 
-## 已实现的能力
+High-level flow:
 
-认证与权限：
+```text
+Browser -> app(API) -> task_jobs queue -> worker -> audio-engine -> provider/local runtime
+                                 \-> SQLite / search index / transcript messages
+```
 
-- 用户注册 / 登录 / 登出
-- 服务端 session
-- 用户数据隔离，任务、Notebook、音频文件都按用户维度访问
+## Core Features
 
-异步任务：
+### Workspace
 
-- 上传只负责创建任务并入队
-- worker 轮询 `task_jobs` 表执行转写
-- 失败自动重试，避免 API 进程长时间阻塞
-- provider fallback 链和熔断状态由 worker 执行时判断
+- Task list with transcript, summary, and chat views
+- Notebook and tag management
+- Edit task metadata after upload
+- One-click transcript copy from the transcript panel
 
-ASR provider：
+### Speech Pipeline
 
-- `whisperx`
-- `openai-compatible`
-- `azure-openai`
-- `local-python`
+- Queue-based processing for long recordings
+- Provider registry and routing layer
+- Local Python runtime for WhisperX and diarization
+- Word timestamps, speaker segmentation, and transcript normalization
 
-知识能力：
+### Knowledge Layer
 
-- 单条录音摘要
-- 单条录音 chat
-- 全局 hybrid search
-- 基于 chunk 的跨任务 knowledge ask
-- 可选 embedding 向量召回
+- Task-level summary generation
+- Task-level chat over transcript context
+- Cross-recording search and knowledge answering
+- Hybrid retrieval with FTS and embeddings
 
-Provider 管理：
+### Operations
 
-- 默认 provider 配置
-- fallback providers 配置
-- circuit breaker threshold / cooldown 配置
-- provider health 与 circuit reset
+- User login / registration / sessions
+- Worker retries for failed jobs
+- Provider health tracking and circuit breaking
+- Docker Compose deployment for app, worker, and CUDA runtime
 
-## 关键文件
+## Repository Layout
 
-- `server.ts`: 主 API 服务
-- `worker.ts`: 队列 worker
-- `db.ts`: schema 初始化
-- `lib/audio-engine/engine.ts`: 音频解析主入口，负责媒体探测、provider fallback、结果标准化
-- `lib/audio-engine/normalize.ts`: 统一整理 provider 返回的 text / segment / word / speaker 数据
-- `lib/audio-engine/speaker-merge.ts`: 参考 TranscriptionSuite 的时间戳对齐策略做说话人合并
-- `lib/audio-engine/providers/*`: 各个 ASR provider 适配器
-- `lib/audio-engine/providers/local-python.ts`: 调用仓库内本地 Python 推理服务
-- `python-runtime/src/local_audio_runtime/server.py`: 本地模型 HTTP runtime
-- `python-runtime/src/local_audio_runtime/model_manager.py`: 本地模型缓存和生命周期管理
-- `python-runtime/src/local_audio_runtime/backends.py`: 本地 faster-whisper / WhisperX backend，含 WhisperX 集成 diarization
-- `python-runtime/src/local_audio_runtime/parallel_diarize.py`: 并行 / 串行 diarization 调度
-- `python-runtime/src/local_audio_runtime/recorder.py`: AudioToTextRecorder 运行时
-- `python-runtime/src/local_audio_runtime/vad.py`: Silero + WebRTC 双 VAD
-- `python-runtime/src/local_audio_runtime/live_engine.py`: 实时 sentence-by-sentence live mode
-- `lib/auth.ts`: 用户与 session
-- `lib/task-queue.ts`: 入队、抢占、失败重试
-- `lib/task-processor.ts`: 实际转写处理
-- `lib/provider-routing.ts`: fallback 与熔断
-- `lib/search-index.ts`: chunk 索引、FTS、向量召回
-- `lib/settings.ts`: 用户策略配置与 provider health
-- `lib/embeddings.ts`: 向量生成与相似度计算
-- `lib/transcription.ts`: provider 注册表
-- `lib/llm.ts`: 摘要与问答
+- [server.ts](/Users/chenyangm/Documents/github-project/audiosense-ai/server.ts)
+  Main API entrypoint
+- [worker.ts](/Users/chenyangm/Documents/github-project/audiosense-ai/worker.ts)
+  Background transcription worker
+- [db.ts](/Users/chenyangm/Documents/github-project/audiosense-ai/db.ts)
+  Schema bootstrap and DB initialization
+- [lib/audio-engine](/Users/chenyangm/Documents/github-project/audiosense-ai/lib/audio-engine)
+  Provider abstraction, normalization, speaker merge, runtime catalog
+- [lib/task-queue.ts](/Users/chenyangm/Documents/github-project/audiosense-ai/lib/task-queue.ts)
+  Queue insert / claim / retry flow
+- [lib/task-processor.ts](/Users/chenyangm/Documents/github-project/audiosense-ai/lib/task-processor.ts)
+  Actual task execution pipeline
+- [src](/Users/chenyangm/Documents/github-project/audiosense-ai/src)
+  React UI
+- [python-runtime](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime)
+  Local inference runtime for WhisperX / diarization / live recording support
 
-## 本地运行
+## Quick Start
 
-1. 安装依赖
+### 1. Install dependencies
 
 ```bash
 npm install
 ```
 
-2. 配置环境变量
+### 2. Create environment file
 
 ```bash
-cp .env.example .env.local
+cp .env.example .env
 ```
 
-至少建议配置：
+Recommended minimum settings:
 
+- `TRANSCRIPTION_PROVIDER=local-python`
 - `LOCAL_AUDIO_ENGINE_ENABLED=true`
 - `LOCAL_AUDIO_ENGINE_URL=http://127.0.0.1:8765`
-- `LLM_API_KEY`
+- `LLM_API_KEY=...` if you want summary and chat
 
-如果你想走其他 provider，再补：
-
-- `OPENAI_TRANSCRIPTION_*`
-- `AZURE_OPENAI_*`
-- `EMBEDDING_*`
-
-如果你想继续细调本地模型，再补：
+Common optional settings:
 
 - `LOCAL_AUDIO_ENGINE_MODEL`
-- `HF_TOKEN` 或 `LOCAL_AUDIO_ENGINE_HF_TOKEN`（启用 diarization 时）
 - `LOCAL_AUDIO_ENGINE_DIARIZATION_STRATEGY=auto|parallel|sequential`
-- `SQLITE_FILENAME`（容器或自定义数据目录时推荐）
-- `UPLOAD_DIR`（容器或共享卷时推荐）
+- `LOCAL_AUDIO_ENGINE_HF_TOKEN`
+- `SQLITE_FILENAME`
+- `UPLOAD_DIR`
+- `EMBEDDING_API_KEY`
 
-并安装 Python runtime 依赖：
+### 3. Start the web app and worker
+
+```bash
+npm run dev
+```
+
+Default URL:
+
+- `http://localhost:3000`
+
+### 4. Start the local Python runtime
 
 ```bash
 cd python-runtime
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[full]'
+PYTHONPATH=src python -m local_audio_runtime.server
 ```
 
-3. 启动 API + worker
-
-```bash
-npm run dev
-```
-
-默认地址：
-
-- `http://localhost:3000`
-
-本地音频 runtime 也可以单独启动：
+Or from the project root:
 
 ```bash
 npm run dev:local-engine
 ```
 
-当前本地 runtime 已支持：
+## Docker Deployment
 
-- `WhisperX transcribe_with_diarization()` 单次集成 speaker 流程
-- 非 WhisperX backend 的并行 / 串行 diarization 调度
-- 基于 `AudioToTextRecorder` 的本地 live VAD / streaming runtime
-- `ws://127.0.0.1:8765/ws/live` 的实时 WebSocket live mode
+The repository includes:
 
-## Docker 部署
+- [Dockerfile](/Users/chenyangm/Documents/github-project/audiosense-ai/Dockerfile)
+  Shared Node image for `app` and `worker`
+- [docker-compose.yml](/Users/chenyangm/Documents/github-project/audiosense-ai/docker-compose.yml)
+  Deployment-focused Compose file using images
+- [docker-compose.build.yml](/Users/chenyangm/Documents/github-project/audiosense-ai/docker-compose.build.yml)
+  Local build override for source-based Docker builds
+- [python-runtime/Dockerfile.cuda](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime/Dockerfile.cuda)
+  CUDA-ready Python runtime image
 
-仓库现在已经带上了这些容器文件：
-
-- `Dockerfile`: Node API + 前端静态产物 + worker 共享镜像
-- `docker-compose.yml`: 面向部署，默认直接拉镜像
-- `docker-compose.build.yml`: 本地源码构建时叠加的 override
-- `python-runtime/Dockerfile.cuda`: 适合 Linux + NVIDIA CUDA 的本地模型 runtime
-
-部署前提：
-
-- Linux 主机已经装好 NVIDIA Driver
-- 已安装 `nvidia-container-toolkit`
-- 使用 `docker compose` v2
-
-推荐步骤：
-
-1. 复制环境变量文件
+### Deploy with images
 
 ```bash
 cp .env.example .env
-```
-
-2. 至少把这些变量填好
-
-- `TRANSCRIPTION_PROVIDER=local-python`
-- `LOCAL_AUDIO_ENGINE_ENABLED=true`
-- `LOCAL_AUDIO_ENGINE_AUTOSTART=false`
-- `LOCAL_AUDIO_ENGINE_HF_TOKEN=...`
-- `LLM_API_KEY=...`（如果你要摘要 / 问答）
-- `EMBEDDING_API_KEY=...`（如果你要向量检索）
-
-3. 启动整套服务
-
-服务器部署推荐直接拉镜像：
-
-```bash
 docker compose pull
 docker compose up -d
 ```
 
-如果你在本地改了代码，想自己构建再启动：
+### Build locally from source
 
 ```bash
+cp .env.example .env
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
-4. 打开服务
+Important deployment notes:
 
-- `http://localhost:3000`
+- `app` and `worker` share the same SQLite volume and uploads volume
+- `app` and `worker` talk to `local-audio-runtime` over the Compose network
+- `local-audio-runtime` is designed for Linux + NVIDIA GPU environments
+- First startup may take a while because Whisper / diarization weights are downloaded
 
-几个部署细节：
+Default image names:
 
-- Compose 里默认让 `local-audio-runtime` 走 `whisperx + cuda + float16`
-- 如果你使用 GitHub Container Registry，可以在 `.env` 里设置：
+- `audiosense-ai`
+- `audiosense-ai-local-runtime-cuda`
 
-```env
-APP_IMAGE=audiosense-ai
-LOCAL_AUDIO_RUNTIME_IMAGE=audiosense-ai-local-runtime-cuda
-```
+## Local Runtime Notes
 
-- `app` 和 `worker` 共用 SQLite 数据卷与 `uploads/` 音频卷
-- `worker` 把文件路径传给 Python runtime，所以 `worker` 和 `local-audio-runtime` 必须挂同一个 `/app/uploads`
-- 模型下载缓存会落在 `audiosense-models`、`audiosense-hf-cache`、`audiosense-torch-cache`
-- 第一次启动会下载 Whisper / PyAnnote 模型，耗时会明显更长
+The Python runtime supports:
 
-如果你要改模型大小，最常调的是：
+- WhisperX transcription
+- diarization with pyannote
+- word timestamps and aligned segments
+- live recording runtime primitives
+- HTTP transcription endpoints and a WebSocket live endpoint
 
-- `LOCAL_AUDIO_ENGINE_MODEL=small|medium|large-v3`
-- `LOCAL_AUDIO_ENGINE_BATCH_SIZE`
-- `LOCAL_AUDIO_ENGINE_COMPUTE_TYPE=float16`
-- `LOCAL_AUDIO_ENGINE_PRELOAD=true|false`
+Relevant files:
 
-## 架构建议
+- [python-runtime/src/local_audio_runtime/server.py](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime/src/local_audio_runtime/server.py)
+- [python-runtime/src/local_audio_runtime/model_manager.py](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime/src/local_audio_runtime/model_manager.py)
+- [python-runtime/src/local_audio_runtime/backends.py](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime/src/local_audio_runtime/backends.py)
+- [python-runtime/src/local_audio_runtime/diarization.py](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime/src/local_audio_runtime/diarization.py)
+- [python-runtime/src/local_audio_runtime/parallel_diarize.py](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime/src/local_audio_runtime/parallel_diarize.py)
 
-当前最推荐的形态不是“把所有语音模型逻辑直接塞进主 API”，也不是一上来就拆成多个完全独立仓库，而是：
+## Current Scope
 
-1. 保持现在这种同仓库、双进程结构
-2. `server.ts` 只负责鉴权、资源管理、入队、检索、LLM 编排
-3. `worker.ts` 专注转写任务执行
-4. provider 适配器放在 `lib/transcription.ts` 或后续拆到独立目录
+AudioSense AI is already suitable for self-hosted experimentation, internal tooling, and iterative product development. It is not yet presented as a finished enterprise platform.
 
-这样做的好处：
+Current practical boundaries:
 
-- 现在开发快，联调简单
-- 后面加 WhisperX、Qwen ASR、Azure/OpenAI/第三方 API 时，只是在 `audio-engine/providers` 层扩展
-- 文件元数据探测、结果标准化、speaker merge 不会散落在业务逻辑里
-- 真到压力变大时，可以把 worker 单独部署，甚至再拆成独立 speech service，而不动前端和主 API 的业务边界
+- SQLite is the default persistence layer
+- object storage is not the default path yet
+- browser recording works best in foreground sessions
+- large-scale queue orchestration is still intentionally simple
 
-## 如果后面继续往生产走
+## Roadmap Ideas
 
-下一步我建议优先补这些：
+- S3-compatible object storage support
+- alternative queue backends beyond SQLite polling
+- richer transcript segmentation controls
+- more local model backends in `python-runtime`
+- improved mobile recording UX
+- multi-user collaboration and shared notebooks
 
-1. 对象存储，替换本地 `uploads/`
-2. 更强的队列，比如 Redis / SQS / RabbitMQ
-3. provider 级别的限流、熔断、fallback
-4. 更强的 ANN 向量索引和检索服务
-5. Notebook 共享、团队权限、多租户
+## Contributing
+
+Issues and pull requests are welcome.
+
+If you want to contribute:
+
+1. Open an issue for larger changes
+2. Keep changes scoped and reviewable
+3. Include validation notes for runtime, UI, or Docker changes when relevant
+
+## License
+
+This repository currently does not include a license file yet. Add one before publishing it as a fully open-source distribution.
