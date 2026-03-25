@@ -65,23 +65,6 @@ class ModelManager:
     def preload(self) -> None:
         self._ensure_backend()
 
-    def _should_use_integrated_diarization(self, runtime_backend: BaseBackend) -> bool:
-        if not runtime_backend.supports_integrated_diarization():
-            return False
-
-        if not self._config.prefer_integrated_diarization:
-            return False
-
-        diarization_model = (self._config.diarization_model or "").strip().lower()
-        if diarization_model.startswith("pyannote/speaker-diarization-community-"):
-            logger.info(
-                "Skipping integrated diarization for model=%s so exclusive speaker turns can be used in the standalone pyannote pipeline.",
-                self._config.diarization_model,
-            )
-            return False
-
-        return True
-
     def unload_backend(self) -> None:
         with self._lock:
             if self._backend is None:
@@ -151,7 +134,7 @@ class ModelManager:
             )
             effective_word_timestamps = bool(word_timestamps or diarization)
 
-            if diarization and self._should_use_integrated_diarization(runtime_backend):
+            if diarization and runtime_backend.supports_integrated_diarization() and self._config.prefer_integrated_diarization:
                 logger.info("Using integrated diarization path for backend=%s", runtime_backend.backend_name)
                 result = runtime_backend.transcribe_with_diarization(
                     audio_data,
