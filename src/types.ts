@@ -74,6 +74,8 @@ export interface TaskMessage {
   role: 'user' | 'assistant';
   content: string;
   createdAt: number;
+  pending?: boolean;
+  error?: boolean;
 }
 
 export interface TagStat {

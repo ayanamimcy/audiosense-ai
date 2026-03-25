@@ -171,6 +171,26 @@ export function TaskDetail({
       return;
     }
 
+    const now = Date.now();
+    const optimisticUserMessage: TaskMessage = {
+      id: `pending-user-${now}`,
+      taskId: task.id,
+      role: 'user',
+      content: message,
+      createdAt: now,
+    };
+    const optimisticAssistantMessage: TaskMessage = {
+      id: `pending-assistant-${now}`,
+      taskId: task.id,
+      role: 'assistant',
+      content: '',
+      createdAt: now + 1,
+      pending: true,
+    };
+
+    setMessages((prev) => [...prev, optimisticUserMessage, optimisticAssistantMessage]);
+    setMessageInput('');
+    setActivePanel('chat');
     setIsSendingMessage(true);
     try {
       const res = await apiFetch(`/api/tasks/${task.id}/chat`, {
@@ -185,11 +205,20 @@ export function TaskDetail({
       }
 
       setMessages(payload as TaskMessage[]);
-      setMessageInput('');
-      setActivePanel('chat');
     } catch (error: any) {
+      setMessages((prev) =>
+        prev.map((item) =>
+          item.id === optimisticAssistantMessage.id
+            ? {
+                ...item,
+                pending: false,
+                error: true,
+                content: error?.message || 'Failed to send message.',
+              }
+            : item,
+        ),
+      );
       console.error('Failed to chat with transcript:', error);
-      alert(error.message || 'Failed to chat with transcript.');
     } finally {
       setIsSendingMessage(false);
     }
@@ -489,21 +518,34 @@ export function TaskDetail({
                         <p
                           className={cn(
                             'text-xs mb-1 font-medium',
-                            message.role === 'user' ? 'text-white/65' : 'text-slate-500',
+                            message.role === 'user'
+                              ? 'text-white/65'
+                              : message.error
+                                ? 'text-red-500'
+                                : 'text-slate-500',
                           )}
                         >
                           {message.role === 'user' ? 'You' : 'Assistant'}
                         </p>
-                        <div
-                          className={cn(
-                            'prose prose-sm max-w-none prose-p:my-0 prose-headings:my-2 prose-pre:rounded-xl prose-pre:px-4 prose-pre:py-3',
-                            message.role === 'user'
-                              ? 'prose-invert prose-strong:text-white prose-code:text-white prose-li:text-white/95'
-                              : 'prose-slate',
-                          )}
-                        >
-                          <ReactMarkdown>{message.content}</ReactMarkdown>
-                        </div>
+                        {message.pending ? (
+                          <div className="flex items-center gap-2 text-sm text-slate-500">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Thinking...
+                          </div>
+                        ) : (
+                          <div
+                            className={cn(
+                              'prose prose-sm max-w-none prose-p:my-0 prose-headings:my-2 prose-pre:rounded-xl prose-pre:px-4 prose-pre:py-3',
+                              message.role === 'user'
+                                ? 'prose-invert prose-strong:text-white prose-code:text-white prose-li:text-white/95'
+                                : message.error
+                                  ? 'prose-red max-w-none text-red-600'
+                                  : 'prose-slate',
+                            )}
+                          >
+                            <ReactMarkdown>{message.content}</ReactMarkdown>
+                          </div>
+                        )}
                       </div>
                     ))
                   )}
