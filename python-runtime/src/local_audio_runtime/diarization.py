@@ -164,6 +164,18 @@ class DiarizationEngine:
         self._pipeline = None
         self._loaded_model_name = None
 
+    def _select_output_annotation(self, diarization: Any) -> tuple[Any, bool]:
+        exclusive_output = getattr(diarization, "exclusive_speaker_diarization", None)
+        if exclusive_output is not None:
+            return exclusive_output, True
+
+        if isinstance(diarization, dict):
+            exclusive_output = diarization.get("exclusive_speaker_diarization")
+            if exclusive_output is not None:
+                return exclusive_output, True
+
+        return diarization, False
+
     def diarize(
         self,
         audio: np.ndarray,
@@ -185,9 +197,21 @@ class DiarizationEngine:
             {"waveform": waveform, "sample_rate": sample_rate},
             num_speakers=num_speakers,
         )
+        annotation, used_exclusive_output = self._select_output_annotation(diarization)
+        if used_exclusive_output:
+            logger.info(
+                "Using exclusive diarization output for speaker alignment (model=%s)",
+                self._loaded_model_name or self._config.diarization_model,
+            )
+        elif num_speakers is not None:
+            logger.info(
+                "Speaker diarization constrained to exact speaker count=%s using model=%s",
+                num_speakers,
+                self._loaded_model_name or self._config.diarization_model,
+            )
 
         segments: list[dict[str, Any]] = []
-        for turn, _, speaker in diarization.itertracks(yield_label=True):
+        for turn, _, speaker in annotation.itertracks(yield_label=True):
             segments.append(
                 {
                     "start": round(float(turn.start), 3),
