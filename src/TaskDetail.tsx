@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
 import {
@@ -75,6 +75,9 @@ export function TaskDetail({
   const [messageInput, setMessageInput] = useState('');
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [transcriptCopied, setTranscriptCopied] = useState(false);
+  const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const segmentRefs = useRef(new Map<string, HTMLDivElement>());
 
   const availableSummaryPrompts = summaryPrompts.filter((prompt) => {
     if (!prompt.notebookIds.length) {
@@ -94,7 +97,17 @@ export function TaskDetail({
     setSummaryInstructions('');
     setSummaryPromptSelection('default');
     setActivePanel(task.summary ? 'summary' : 'transcript');
+    setActiveSegmentId(null);
   }, [task.id]);
+
+  useEffect(() => {
+    if (activePanel !== 'transcript' || !activeSegmentId) {
+      return;
+    }
+
+    const element = segmentRefs.current.get(activeSegmentId);
+    element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [activePanel, activeSegmentId]);
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -257,6 +270,29 @@ export function TaskDetail({
     }
   };
 
+  const resolveActiveSegmentId = (currentTime: number) => {
+    const matchedSegment = task.segments.find(
+      (segment) => currentTime >= segment.start && currentTime < segment.end,
+    );
+    setActiveSegmentId(matchedSegment?.id || null);
+  };
+
+  const handleSeekToSegment = async (segmentId: string, startTime: number) => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    audio.currentTime = Math.max(startTime, 0);
+    setActiveSegmentId(segmentId);
+
+    try {
+      await audio.play();
+    } catch (error) {
+      console.error('Failed to play selected segment:', error);
+    }
+  };
+
   return (
     <div className="flex flex-col h-full">
       <div className="p-6 border-b border-slate-200 bg-slate-50/60 flex flex-col gap-4 shrink-0">
@@ -366,7 +402,16 @@ export function TaskDetail({
             )}
           </div>
 
-          <audio controls src={`/api/audio/${task.filename}`} className="h-10 w-full sm:w-72 shrink-0" />
+          <audio
+            ref={audioRef}
+            controls
+            src={`/api/audio/${task.filename}`}
+            className="h-10 w-full sm:w-72 shrink-0"
+            onTimeUpdate={(event) => resolveActiveSegmentId(event.currentTarget.currentTime)}
+            onSeeked={(event) => resolveActiveSegmentId(event.currentTarget.currentTime)}
+            onLoadedMetadata={(event) => resolveActiveSegmentId(event.currentTarget.currentTime)}
+            onEnded={() => setActiveSegmentId(null)}
+          />
         </div>
 
         <div className="grid gap-3 md:grid-cols-3">
@@ -518,7 +563,23 @@ export function TaskDetail({
                 {task.segments.length > 0 ? (
                   <div className="space-y-3">
                     {task.segments.map((segment) => (
-                      <div key={segment.id} className="rounded-2xl border border-slate-200 p-4">
+                      <div
+                        key={segment.id}
+                        ref={(element) => {
+                          if (element) {
+                            segmentRefs.current.set(segment.id, element);
+                          } else {
+                            segmentRefs.current.delete(segment.id);
+                          }
+                        }}
+                        onClick={() => void handleSeekToSegment(segment.id, segment.start)}
+                        className={cn(
+                          'rounded-2xl border p-4 cursor-pointer transition-all',
+                          activeSegmentId === segment.id
+                            ? 'border-indigo-400 bg-indigo-50 shadow-sm shadow-indigo-100'
+                            : 'border-slate-200 hover:border-indigo-200 hover:bg-slate-50',
+                        )}
+                      >
                         <div className="flex items-center gap-3 flex-wrap mb-2">
                           <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
                             {formatTime(segment.start)} - {formatTime(segment.end)}

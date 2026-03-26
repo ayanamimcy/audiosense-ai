@@ -63,8 +63,21 @@ const LANGUAGE_OPTIONS = [
   { value: 'es', label: 'Spanish' },
 ];
 
+const AUDIO_FILE_ACCEPT = 'audio/*,.m4a,.mp3,.wav,.ogg,.webm,.aac,.mp4,.flac';
+const AUDIO_FILE_EXTENSIONS = ['.m4a', '.mp3', '.wav', '.ogg', '.webm', '.aac', '.mp4', '.flac'];
+
 function getLocalSetting(key: string, fallback: string) {
   return localStorage.getItem(key) || fallback;
+}
+
+function isLikelyAudioFile(file: File) {
+  const mimeType = file.type.toLowerCase();
+  if (mimeType.startsWith('audio/')) {
+    return true;
+  }
+
+  const lowerName = file.name.toLowerCase();
+  return AUDIO_FILE_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
 }
 
 export default function App() {
@@ -610,8 +623,8 @@ function UploadSection({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = async (file: File) => {
-    if (!file.type.startsWith('audio/')) {
-      alert('Please upload an audio file.');
+    if (!isLikelyAudioFile(file)) {
+      alert('Please upload an audio file (MP3, WAV, M4A, OGG, WEBM, AAC, MP4, or FLAC).');
       return;
     }
 
@@ -680,7 +693,7 @@ function UploadSection({
         <p className="text-xs text-slate-500 mb-4">Supports MP3, WAV, M4A, OGG, WEBM</p>
         <input
           type="file"
-          accept="audio/*"
+          accept={AUDIO_FILE_ACCEPT}
           className="hidden"
           ref={fileInputRef}
           onChange={(event) => {
