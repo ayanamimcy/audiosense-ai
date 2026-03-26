@@ -64,6 +64,9 @@ import {
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const configuredUploadDir = process.env.UPLOAD_DIR?.trim();
+const allowRegistration = ['1', 'true', 'yes', 'on'].includes(
+  String(process.env.ALLOW_REGISTRATION || '').trim().toLowerCase(),
+);
 
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
@@ -189,7 +192,19 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, now: new Date().toISOString() });
 });
 
+app.get('/api/public-config', (_req, res) => {
+  res.json({
+    auth: {
+      allowRegistration,
+    },
+  });
+});
+
 app.post('/api/auth/register', asyncRoute(async (req, res) => {
+  if (!allowRegistration) {
+    return res.status(403).json({ error: 'Registration is disabled.' });
+  }
+
   const name = String(req.body.name || '').trim();
   const email = String(req.body.email || '').trim().toLowerCase();
   const password = String(req.body.password || '');

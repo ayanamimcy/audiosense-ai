@@ -7,6 +7,12 @@ export interface AuthUser {
   createdAt: number;
 }
 
+export interface PublicConfig {
+  auth: {
+    allowRegistration: boolean;
+  };
+}
+
 export interface TranscriptSegment {
   id: string;
   start: number;

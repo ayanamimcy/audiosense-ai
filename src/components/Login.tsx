@@ -1,9 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Mic, ArrowRight, User, Mail, Lock } from 'lucide-react';
 import { loginWithPassword, registerWithPassword } from '../api';
 import type { AuthUser } from '../types';
 
-export function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
+export function Login({
+  onLogin,
+  allowRegistration,
+}: {
+  onLogin: (user: AuthUser) => void;
+  allowRegistration: boolean;
+}) {
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -11,8 +17,19 @@ export function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  useEffect(() => {
+    if (!allowRegistration && isRegister) {
+      setIsRegister(false);
+      setError('Self-service registration is disabled.');
+    }
+  }, [allowRegistration, isRegister]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isRegister && !allowRegistration) {
+      setError('Self-service registration is disabled.');
+      return;
+    }
     if (!email || !password || (isRegister && !name)) {
       return;
     }
@@ -47,6 +64,12 @@ export function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
           <h2 className="text-xl font-semibold text-slate-800 mb-6 text-center">
             {isRegister ? 'Create your workspace account' : 'Welcome back'}
           </h2>
+
+          {!allowRegistration && (
+            <div className="mb-4 text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3">
+              Self-service registration is disabled. Sign in with an existing account.
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {isRegister && (
@@ -116,18 +139,22 @@ export function Login({ onLogin }: { onLogin: (user: AuthUser) => void }) {
           </form>
 
           <div className="mt-8 text-center">
-            <p className="text-sm text-slate-500">
-              {isRegister ? 'Already have an account?' : "Don't have an account?"}
-              <button
-                onClick={() => {
-                  setIsRegister(!isRegister);
-                  setError('');
-                }}
-                className="ml-1.5 text-indigo-600 font-semibold hover:text-indigo-700 hover:underline"
-              >
-                {isRegister ? 'Sign In' : 'Sign Up'}
-              </button>
-            </p>
+            {allowRegistration ? (
+              <p className="text-sm text-slate-500">
+                {isRegister ? 'Already have an account?' : "Don't have an account?"}
+                <button
+                  onClick={() => {
+                    setIsRegister(!isRegister);
+                    setError('');
+                  }}
+                  className="ml-1.5 text-indigo-600 font-semibold hover:text-indigo-700 hover:underline"
+                >
+                  {isRegister ? 'Sign In' : 'Sign Up'}
+                </button>
+              </p>
+            ) : (
+              <p className="text-sm text-slate-500">Ask your administrator to create an account for you.</p>
+            )}
           </div>
         </div>
       </div>

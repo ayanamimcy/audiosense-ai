@@ -22,7 +22,7 @@ import {
 import { format } from 'date-fns';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { apiFetch, apiJson, getCurrentUser, getStoredUser, logout } from './api';
+import { apiFetch, apiJson, getCurrentUser, getPublicConfig, getStoredUser, logout } from './api';
 import { KnowledgeBase } from './KnowledgeBase';
 import NotebookView from './Notebook';
 import { SummaryPromptPage } from './SummaryPromptPage';
@@ -33,6 +33,7 @@ import type {
   AuthUser,
   Notebook,
   ProviderHealth,
+  PublicConfig,
   SummaryPrompt,
   TagStat,
   Task,
@@ -44,6 +45,12 @@ function cn(...inputs: ClassValue[]) {
 }
 
 type Tab = 'upload' | 'record' | 'tasks' | 'notebook' | 'knowledge' | 'prompts' | 'settings';
+
+const DEFAULT_PUBLIC_CONFIG: PublicConfig = {
+  auth: {
+    allowRegistration: false,
+  },
+};
 
 const LANGUAGE_OPTIONS = [
   { value: 'auto', label: 'Auto Detect' },
@@ -70,6 +77,7 @@ export default function App() {
   const [capabilities, setCapabilities] = useState<AppCapabilities | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const [providerHealth, setProviderHealth] = useState<ProviderHealth[]>([]);
+  const [publicConfig, setPublicConfig] = useState<PublicConfig>(DEFAULT_PUBLIC_CONFIG);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getStoredUser());
@@ -141,6 +149,12 @@ export default function App() {
 
   useEffect(() => {
     const bootstrap = async () => {
+      const configResult = await getPublicConfig().catch((error) => {
+        console.error('Failed to load public config:', error);
+        return DEFAULT_PUBLIC_CONFIG;
+      });
+      setPublicConfig(configResult);
+
       try {
         const user = await getCurrentUser();
         setCurrentUser(user);
@@ -180,7 +194,7 @@ export default function App() {
   }
 
   if (!currentUser) {
-    return <Login onLogin={setCurrentUser} />;
+    return <Login onLogin={setCurrentUser} allowRegistration={publicConfig.auth.allowRegistration} />;
   }
 
   return (

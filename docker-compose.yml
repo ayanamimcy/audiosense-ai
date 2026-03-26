@@ -4,6 +4,7 @@ x-node-environment: &node-environment
   DB_TYPE: sqlite3
   SQLITE_FILENAME: /app/runtime-data/database.sqlite
   UPLOAD_DIR: /app/uploads
+  ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
   TRANSCRIPTION_PROVIDER: ${TRANSCRIPTION_PROVIDER:-local-python}
   LOCAL_AUDIO_ENGINE_ENABLED: ${LOCAL_AUDIO_ENGINE_ENABLED:-true}
   LOCAL_AUDIO_ENGINE_AUTOSTART: "false"
@@ -27,7 +28,7 @@ services:
     init: true
     restart: unless-stopped
     ports:
-      - "${PORT:-3000}:3000"
+      - "${PORT:-3000}:${PORT:-3000}"
     environment: *node-environment
     volumes: *node-volumes
     depends_on:

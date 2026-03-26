@@ -1,4 +1,4 @@
-import type { AuthUser } from './types';
+import type { AuthUser, PublicConfig } from './types';
 
 const CURRENT_USER_KEY = 'currentUser';
 
@@ -47,6 +47,10 @@ export async function getCurrentUser() {
   const payload = await apiJson<{ user: AuthUser }>('/api/auth/me');
   storeUser(payload.user);
   return payload.user;
+}
+
+export async function getPublicConfig() {
+  return apiJson<PublicConfig>('/api/public-config');
 }
 
 export async function loginWithPassword(input: { email: string; password: string }) {
