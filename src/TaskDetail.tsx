@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import ReactMarkdown from 'react-markdown';
 import {
   Book,
   Check,
@@ -18,6 +17,7 @@ import {
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { apiFetch } from './api';
+import { MarkdownContent } from './components/MarkdownContent';
 import type { AppCapabilities, Notebook, SummaryPrompt, Task, TaskMessage } from './types';
 
 function cn(...inputs: ClassValue[]) {
@@ -524,9 +524,10 @@ export function TaskDetail({
                 </div>
 
                 {task.summary ? (
-                  <div className="prose prose-slate max-w-none prose-headings:font-semibold prose-a:text-indigo-600">
-                    <ReactMarkdown>{task.summary}</ReactMarkdown>
-                  </div>
+                  <MarkdownContent
+                    content={task.summary}
+                    proseClassName="prose prose-slate max-w-none prose-headings:font-semibold prose-a:text-indigo-600"
+                  />
                 ) : (
                   <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500">
                     还没有生成摘要。你可以直接生成，也可以先写一段自定义总结要求。
@@ -593,9 +594,10 @@ export function TaskDetail({
                     ))}
                   </div>
                 ) : (
-                  <div className="prose prose-slate max-w-none prose-headings:font-semibold prose-a:text-indigo-600">
-                    <ReactMarkdown>{task.result || task.transcript || ''}</ReactMarkdown>
-                  </div>
+                  <MarkdownContent
+                    content={task.result || task.transcript || ''}
+                    proseClassName="prose prose-slate max-w-none prose-headings:font-semibold prose-a:text-indigo-600"
+                  />
                 )}
               </div>
             )}
@@ -636,8 +638,9 @@ export function TaskDetail({
                             Thinking...
                           </div>
                         ) : (
-                          <div
-                            className={cn(
+                          <MarkdownContent
+                            content={message.content}
+                            proseClassName={cn(
                               'prose prose-sm max-w-none prose-p:my-0 prose-headings:my-2 prose-pre:rounded-xl prose-pre:px-4 prose-pre:py-3',
                               message.role === 'user'
                                 ? 'prose-invert prose-strong:text-white prose-code:text-white prose-li:text-white/95'
@@ -645,9 +648,14 @@ export function TaskDetail({
                                   ? 'prose-red max-w-none text-red-600'
                                   : 'prose-slate',
                             )}
-                          >
-                            <ReactMarkdown>{message.content}</ReactMarkdown>
-                          </div>
+                            tableVariant={
+                              message.role === 'user'
+                                ? 'inverse'
+                                : message.error
+                                  ? 'error'
+                                  : 'default'
+                            }
+                          />
                         )}
                       </div>
                     ))

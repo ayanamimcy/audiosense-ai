@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   BrainCircuit,
+  ChevronLeft,
   ChevronRight,
   FileAudio,
   FolderKanban,
@@ -22,7 +23,7 @@ import {
 import { format } from 'date-fns';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { apiFetch, apiJson, getCurrentUser, getPublicConfig, getStoredUser, logout } from './api';
+import { apiFetch, apiJson, getCurrentUser, getPublicConfig, getStoredUser, logout, storeUser } from './api';
 import { KnowledgeBase } from './KnowledgeBase';
 import NotebookView from './Notebook';
 import { SummaryPromptPage } from './SummaryPromptPage';
@@ -95,7 +96,36 @@ export default function App() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [selectedTaskLoading, setSelectedTaskLoading] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [mobileTaskView, setMobileTaskView] = useState<'list' | 'detail'>('list');
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getStoredUser());
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+  const mobileTaskListScrollTopRef = useRef(0);
+  const pendingMobileTaskScrollRestoreRef = useRef<number | null>(null);
+
+  const openTaskDetail = (taskId: string) => {
+    if (activeTab === 'tasks' && mobileTaskView === 'list') {
+      mobileTaskListScrollTopRef.current = mainScrollRef.current?.scrollTop ?? 0;
+    } else if (activeTab !== 'tasks') {
+      mobileTaskListScrollTopRef.current = 0;
+    }
+
+    setSelectedTaskId(taskId);
+    setActiveTab('tasks');
+    setMobileTaskView('detail');
+    setIsMobileMenuOpen(false);
+  };
+
+  const showTasksList = () => {
+    pendingMobileTaskScrollRestoreRef.current = mobileTaskListScrollTopRef.current;
+    setMobileTaskView('list');
+  };
+
+  const openTasksTab = () => {
+    pendingMobileTaskScrollRestoreRef.current = mobileTaskListScrollTopRef.current;
+    setMobileTaskView('list');
+    setActiveTab('tasks');
+    setIsMobileMenuOpen(false);
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -261,6 +291,33 @@ export default function App() {
     };
   }, [currentUser, selectedTaskId]);
 
+  useEffect(() => {
+    if (activeTab !== 'tasks') {
+      return;
+    }
+
+    const container = mainScrollRef.current;
+    if (!container) {
+      return;
+    }
+
+    if (mobileTaskView === 'detail') {
+      container.scrollTop = 0;
+      return;
+    }
+
+    if (pendingMobileTaskScrollRestoreRef.current !== null) {
+      container.scrollTop = pendingMobileTaskScrollRestoreRef.current;
+      pendingMobileTaskScrollRestoreRef.current = null;
+    }
+  }, [activeTab, mobileTaskView]);
+
+  useEffect(() => {
+    if (activeTab === 'tasks' && mobileTaskView === 'detail' && !selectedTaskId) {
+      setMobileTaskView('list');
+    }
+  }, [activeTab, mobileTaskView, selectedTaskId]);
+
   if (authLoading) {
     return (
       <div className="min-h-[100dvh] flex items-center justify-center bg-slate-50 text-slate-500">
@@ -346,17 +403,14 @@ export default function App() {
       </aside>
 
       <main className="flex-1 overflow-hidden relative bg-slate-50">
-        <div className="absolute inset-0 overflow-y-auto custom-scrollbar pb-[80px] lg:pb-0">
-          <div className="max-w-7xl w-full mx-auto p-4 lg:p-6 h-full flex flex-col">
+        <div ref={mainScrollRef} className="absolute inset-0 overflow-y-auto custom-scrollbar pb-[80px] lg:pb-0">
+          <div className="max-w-7xl w-full mx-auto px-2 py-3 sm:px-4 sm:py-4 lg:p-6 h-full flex flex-col">
             {activeTab === 'notebook' ? (
               <NotebookView
                 tasks={tasks}
                 notebooks={notebooks}
                 tags={tags}
-                onSelectTask={(taskId) => {
-                  setSelectedTaskId(taskId);
-                  setActiveTab('tasks');
-                }}
+                onSelectTask={openTaskDetail}
                 onUpdateNotebooks={fetchNotebooks}
                 onUpdateTasks={async () => {
                   await fetchTasks();
@@ -368,10 +422,7 @@ export default function App() {
                 tasks={tasks}
                 notebooks={notebooks}
                 userSettings={userSettings}
-                onSelectTask={(taskId) => {
-                  setSelectedTaskId(taskId);
-                  setActiveTab('tasks');
-                }}
+                onSelectTask={openTaskDetail}
               />
             ) : activeTab === 'settings' ? (
               <div className="h-full pb-6">
@@ -381,6 +432,10 @@ export default function App() {
                   capabilities={capabilities}
                   userSettings={userSettings}
                   providerHealth={providerHealth}
+                  onUserUpdated={(user) => {
+                    storeUser(user);
+                    setCurrentUser(user);
+                  }}
                   onSettingsSaved={async () => {
                     await fetchSettings();
                     await fetchCapabilities();
@@ -398,7 +453,12 @@ export default function App() {
               </div>
             ) : (
               <div className="flex flex-col lg:grid lg:grid-cols-3 gap-6 h-full lg:overflow-hidden">
-                <div className="lg:col-span-1 space-y-6 lg:overflow-y-auto pr-2 custom-scrollbar shrink-0">
+                <div
+                  className={cn(
+                    'lg:col-span-1 space-y-6 lg:overflow-y-auto pr-2 custom-scrollbar shrink-0',
+                    activeTab === 'tasks' && mobileTaskView === 'detail' ? 'hidden lg:block' : '',
+                  )}
+                >
                   {activeTab === 'upload' && (
                     <UploadSection
                       notebooks={notebooks}
@@ -426,14 +486,36 @@ export default function App() {
                       tasks={tasks}
                       notebooks={notebooks}
                       tags={tags}
-                      onSelectTask={setSelectedTaskId}
+                      onSelectTask={openTaskDetail}
                       selectedTaskId={selectedTaskId || undefined}
                       onRefresh={() => refreshAll(selectedTaskId)}
                     />
                   )}
                 </div>
 
-                <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col lg:h-full min-h-[500px] shrink-0">
+                <div
+                  className={cn(
+                    'lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col lg:h-full min-h-[500px] shrink-0',
+                    activeTab === 'tasks' && mobileTaskView === 'list' ? 'hidden lg:flex' : 'flex',
+                  )}
+                >
+                  {activeTab === 'tasks' && (
+                    <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white shrink-0">
+                      <button
+                        type="button"
+                        onClick={showTasksList}
+                        className="inline-flex items-center gap-2 text-sm font-medium text-slate-600 hover:text-slate-900 transition-colors"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        Back to tasks
+                      </button>
+                      {selectedTask && (
+                        <div className="min-w-0 text-sm font-semibold text-slate-900 truncate">
+                          {selectedTask.originalName || selectedTask.filename}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {selectedTask ? (
                     <TaskDetail
                       task={selectedTask}
@@ -506,7 +588,7 @@ export default function App() {
 
               <div className="space-y-2">
                 <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-2">Workspace</h3>
-                <DrawerButton icon={<List className="w-5 h-5 text-slate-500" />} label="Tasks" onClick={() => { setActiveTab('tasks'); setIsMobileMenuOpen(false); }} />
+                <DrawerButton icon={<List className="w-5 h-5 text-slate-500" />} label="Tasks" onClick={openTasksTab} />
                 <DrawerButton icon={<Sparkles className="w-5 h-5 text-slate-500" />} label="Summary Prompts" onClick={() => { setActiveTab('prompts'); setIsMobileMenuOpen(false); }} />
                 <DrawerButton icon={<Settings className="w-5 h-5 text-slate-500" />} label="Settings & Preferences" onClick={() => { setActiveTab('settings'); setIsMobileMenuOpen(false); }} />
               </div>
@@ -617,18 +699,13 @@ function UploadSection({
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; filename: string } | null>(null);
   const [selectedNotebookId, setSelectedNotebookId] = useState('');
   const [tags, setTags] = useState('');
   const [provider, setProvider] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFile = async (file: File) => {
-    if (!isLikelyAudioFile(file)) {
-      alert('Please upload an audio file (MP3, WAV, M4A, OGG, WEBM, AAC, MP4, or FLAC).');
-      return;
-    }
-
-    setIsUploading(true);
+  const queueUpload = async (file: File) => {
     const formData = new FormData();
     formData.append('audio', file);
     formData.append('language', getLocalSetting('parseLanguage', 'auto'));
@@ -651,16 +728,59 @@ function UploadSection({
         throw new Error(payload?.error || 'Upload failed.');
       }
 
-      setTags('');
-      await onUploadSuccess(
-        payload && typeof payload === 'object' && 'taskId' in payload
-          ? String((payload as { taskId?: string }).taskId || '')
-          : undefined,
-      );
+      return payload && typeof payload === 'object' && 'taskId' in payload
+        ? String((payload as { taskId?: string }).taskId || '')
+        : undefined;
     } catch (error: unknown) {
       console.error('Upload error:', error);
-      alert(error instanceof Error ? error.message : 'Upload failed.');
+      throw error instanceof Error ? error : new Error('Upload failed.');
+    }
+  };
+
+  const handleFiles = async (files: File[]) => {
+    const validFiles = files.filter((file) => isLikelyAudioFile(file));
+    const invalidFiles = files.filter((file) => !isLikelyAudioFile(file));
+
+    if (invalidFiles.length > 0) {
+      alert(`Skipped unsupported files: ${invalidFiles.map((file) => file.name).join(', ')}`);
+    }
+
+    if (validFiles.length === 0) {
+      return;
+    }
+
+    setIsUploading(true);
+    const uploadErrors: string[] = [];
+    let latestTaskId: string | undefined;
+
+    try {
+      for (const [index, file] of validFiles.entries()) {
+        setUploadProgress({
+          current: index + 1,
+          total: validFiles.length,
+          filename: file.name,
+        });
+
+        try {
+          const taskId = await queueUpload(file);
+          if (taskId) {
+            latestTaskId = taskId;
+          }
+        } catch (error: unknown) {
+          uploadErrors.push(`${file.name}: ${error instanceof Error ? error.message : 'Upload failed.'}`);
+        }
+      }
+
+      if (latestTaskId) {
+        setTags('');
+        await onUploadSuccess(latestTaskId);
+      }
+
+      if (uploadErrors.length > 0) {
+        alert(`Some files could not be queued:\n${uploadErrors.join('\n')}`);
+      }
     } finally {
+      setUploadProgress(null);
       setIsUploading(false);
     }
   };
@@ -682,25 +802,33 @@ function UploadSection({
         onDrop={(event) => {
           event.preventDefault();
           setIsDragging(false);
-          const file = event.dataTransfer.files[0];
-          if (file) {
-            void handleFile(file);
+          const droppedFiles = Array.from(event.dataTransfer.files);
+          if (droppedFiles.length > 0) {
+            void handleFiles(droppedFiles);
           }
         }}
       >
         {isUploading ? <Loader2 className="w-10 h-10 text-indigo-500 animate-spin mb-4" /> : <Upload className="w-10 h-10 text-slate-400 mb-4" />}
-        <p className="text-sm font-medium text-slate-700 mb-1">{isUploading ? 'Queuing upload...' : 'Drag your audio file here'}</p>
-        <p className="text-xs text-slate-500 mb-4">Supports MP3, WAV, M4A, OGG, WEBM</p>
+        <p className="text-sm font-medium text-slate-700 mb-1">
+          {isUploading
+            ? uploadProgress
+              ? `Queuing ${uploadProgress.current}/${uploadProgress.total}: ${uploadProgress.filename}`
+              : 'Queuing upload...'
+            : 'Drag your audio files here'}
+        </p>
+        <p className="text-xs text-slate-500 mb-4">Supports batch upload for MP3, WAV, M4A, OGG, WEBM, AAC, MP4, and FLAC</p>
         <input
           type="file"
+          multiple
           accept={AUDIO_FILE_ACCEPT}
           className="hidden"
           ref={fileInputRef}
           onChange={(event) => {
-            const file = event.target.files?.[0];
-            if (file) {
-              void handleFile(file);
+            const selectedFiles = Array.from(event.target.files || []);
+            if (selectedFiles.length > 0) {
+              void handleFiles(selectedFiles);
             }
+            event.target.value = '';
           }}
         />
         <button
@@ -1142,6 +1270,7 @@ function SettingsSection({
   capabilities,
   userSettings,
   providerHealth,
+  onUserUpdated,
   onSettingsSaved,
 }: {
   onLogout: () => void | Promise<void>;
@@ -1149,12 +1278,19 @@ function SettingsSection({
   capabilities: AppCapabilities | null;
   userSettings: UserSettings | null;
   providerHealth: ProviderHealth[];
+  onUserUpdated: (user: AuthUser) => void;
   onSettingsSaved: () => void | Promise<void>;
 }) {
   const [language, setLanguage] = useState('auto');
   const [enableDiarization, setEnableDiarization] = useState(true);
   const [draft, setDraft] = useState<UserSettings | null>(userSettings);
   const [isSaving, setIsSaving] = useState(false);
+  const [profileName, setProfileName] = useState(currentUser.name);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
 
   useEffect(() => {
     setLanguage(getLocalSetting('parseLanguage', 'auto'));
@@ -1168,6 +1304,10 @@ function SettingsSection({
 
     setDraft(userSettings);
   }, [userSettings]);
+
+  useEffect(() => {
+    setProfileName(currentUser.name);
+  }, [currentUser.name]);
 
   const updateDraft = (updater: (current: UserSettings) => UserSettings) => {
     setDraft((current) => (current ? updater(current) : current));
@@ -1204,6 +1344,67 @@ function SettingsSection({
       alert(error instanceof Error ? error.message : 'Failed to save settings.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleProfileSave = async () => {
+    const trimmedName = profileName.trim();
+    if (!trimmedName) {
+      alert('Display name is required.');
+      return;
+    }
+
+    setIsSavingProfile(true);
+    try {
+      const payload = await apiJson<{ user: AuthUser }>('/api/account/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmedName }),
+      });
+      onUserUpdated(payload.user);
+      alert('Profile updated successfully.');
+    } catch (error) {
+      console.error('Failed to update profile:', error);
+      alert(error instanceof Error ? error.message : 'Failed to update profile.');
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const handlePasswordSave = async () => {
+    if (!currentPassword) {
+      alert('Current password is required.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      alert('New password must be at least 8 characters.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      alert('New password and confirmation do not match.');
+      return;
+    }
+
+    setIsSavingPassword(true);
+    try {
+      await apiJson('/api/account/password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+          confirmPassword,
+        }),
+      });
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      alert('Password updated successfully.');
+    } catch (error) {
+      console.error('Failed to update password:', error);
+      alert(error instanceof Error ? error.message : 'Failed to update password.');
+    } finally {
+      setIsSavingPassword(false);
     }
   };
 
@@ -1862,6 +2063,83 @@ function SettingsSection({
               <p className="text-sm text-slate-500">{currentUser.email}</p>
             </div>
           </div>
+
+          <div className="grid gap-6 mb-6">
+            <div className="rounded-2xl border border-slate-200 p-5 space-y-4">
+              <div>
+                <h4 className="text-base font-semibold text-slate-900">Profile</h4>
+                <p className="text-sm text-slate-500 mt-1">Update the display name shown across your workspace.</p>
+              </div>
+
+              <label className="block">
+                <span className="text-sm font-medium text-slate-700">Display name</span>
+                <input
+                  type="text"
+                  value={profileName}
+                  onChange={(event) => setProfileName(event.target.value)}
+                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="Your name"
+                />
+              </label>
+
+              <button
+                onClick={() => void handleProfileSave()}
+                disabled={isSavingProfile}
+                className="px-5 py-2.5 bg-slate-900 text-white font-medium rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-60"
+              >
+                {isSavingProfile ? 'Saving profile...' : 'Save Profile'}
+              </button>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 p-5 space-y-4">
+              <div>
+                <h4 className="text-base font-semibold text-slate-900">Password</h4>
+                <p className="text-sm text-slate-500 mt-1">Use your current password to set a new one.</p>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block md:col-span-2">
+                  <span className="text-sm font-medium text-slate-700">Current password</span>
+                  <input
+                    type="password"
+                    value={currentPassword}
+                    onChange={(event) => setCurrentPassword(event.target.value)}
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Current password"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">New password</span>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="At least 8 characters"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">Confirm new password</span>
+                  <input
+                    type="password"
+                    value={confirmPassword}
+                    onChange={(event) => setConfirmPassword(event.target.value)}
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Repeat new password"
+                  />
+                </label>
+              </div>
+
+              <button
+                onClick={() => void handlePasswordSave()}
+                disabled={isSavingPassword}
+                className="px-5 py-2.5 bg-slate-900 text-white font-medium rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-60"
+              >
+                {isSavingPassword ? 'Updating password...' : 'Update Password'}
+              </button>
+            </div>
+          </div>
+
           <button
             onClick={() => void onLogout()}
             className="w-full sm:w-auto px-6 py-2.5 bg-red-50 text-red-600 font-medium rounded-xl hover:bg-red-100 transition-colors flex items-center justify-center gap-2"

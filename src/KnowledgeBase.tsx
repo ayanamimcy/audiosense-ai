@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
 import { BrainCircuit, Loader2, Search } from 'lucide-react';
 import { apiJson } from './api';
+import { MarkdownContent } from './components/MarkdownContent';
 import type { KnowledgeAnswer, Notebook, Task, UserSettings } from './types';
 
 export function KnowledgeBase({
@@ -174,9 +174,10 @@ export function KnowledgeBase({
           </div>
         ) : (
           <div className="space-y-6">
-            <div className="prose prose-slate max-w-none prose-headings:font-semibold">
-              <ReactMarkdown>{answer.answer}</ReactMarkdown>
-            </div>
+            <MarkdownContent
+              content={answer.answer}
+              proseClassName="prose prose-slate max-w-none prose-headings:font-semibold"
+            />
 
             <div className="border-t border-slate-100 pt-5">
               <h3 className="text-sm font-semibold text-slate-900 mb-3">Sources</h3>

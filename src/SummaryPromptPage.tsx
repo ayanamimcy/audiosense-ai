@@ -132,7 +132,7 @@ export function SummaryPromptPage({
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] h-full">
+    <div className="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)] lg:h-full pb-28 lg:pb-0">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col min-h-[520px]">
         <div className="flex items-center justify-between gap-3 px-2 mb-4">
           <div>
@@ -186,7 +186,7 @@ export function SummaryPromptPage({
         </div>
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 min-h-[520px]">
+      <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 pb-28 lg:pb-6 min-h-[520px]">
         <div className="flex items-center justify-between gap-4 mb-6">
           <div>
             <h2 className="text-xl font-semibold text-slate-900">

@@ -10,6 +10,7 @@ import { createServer as createViteServer } from 'vite';
 import { db, initDb } from './db.js';
 import {
   authenticateUser,
+  changeUserPassword,
   createSession,
   createUser,
   destroySession,
@@ -18,6 +19,7 @@ import {
   readCookie,
   serializeClearedSessionCookie,
   serializeSessionCookie,
+  updateUserProfile,
   type AuthUser,
 } from './lib/auth.js';
 import {
@@ -293,6 +295,49 @@ protectedApi.patch('/settings', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const settings = await saveUserSettings(user.id, req.body || {});
   return res.json({ settings });
+}));
+
+protectedApi.patch('/account/profile', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  const name = String(req.body.name || '').trim();
+  if (!name) {
+    return res.status(400).json({ error: 'Display name is required.' });
+  }
+
+  try {
+    const updatedUser = await updateUserProfile({ userId: user.id, name });
+    return res.json({ user: updatedUser });
+  } catch (error: unknown) {
+    return res.status(400).json({
+      error: error instanceof Error ? error.message : 'Failed to update profile.',
+    });
+  }
+}));
+
+protectedApi.post('/account/password', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  const currentPassword = String(req.body.currentPassword || '');
+  const newPassword = String(req.body.newPassword || '');
+  const confirmPassword = String(req.body.confirmPassword || '');
+
+  if (!currentPassword) {
+    return res.status(400).json({ error: 'Current password is required.' });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+  }
+  if (newPassword !== confirmPassword) {
+    return res.status(400).json({ error: 'New password and confirmation do not match.' });
+  }
+
+  try {
+    await changeUserPassword({ userId: user.id, currentPassword, newPassword });
+    return res.json({ success: true });
+  } catch (error: unknown) {
+    return res.status(400).json({
+      error: error instanceof Error ? error.message : 'Failed to update password.',
+    });
+  }
 }));
 
 protectedApi.get('/provider-health', asyncRoute(async (req, res) => {

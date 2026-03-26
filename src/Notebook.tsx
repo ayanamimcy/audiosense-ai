@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import {
   addMonths,
+  addWeeks,
   eachDayOfInterval,
   endOfMonth,
   endOfWeek,
@@ -11,6 +12,7 @@ import {
   startOfMonth,
   startOfWeek,
   subMonths,
+  subWeeks,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, Edit2, FileAudio, Folder, Plus, Tag, Trash2, X } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
@@ -39,7 +41,8 @@ export default function NotebookView({
   onUpdateNotebooks,
   onUpdateTasks,
 }: NotebookProps) {
-  const [currentMonth, setCurrentMonth] = useState(new Date());
+  const [currentPeriodDate, setCurrentPeriodDate] = useState(new Date());
+  const [calendarView, setCalendarView] = useState<'week' | 'month'>('week');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedNotebookId, setSelectedNotebookId] = useState<string | null>(null);
   const [selectedTag, setSelectedTag] = useState('');
@@ -51,11 +54,21 @@ export default function NotebookView({
   const [editTaskDate, setEditTaskDate] = useState('');
   const [editTaskTags, setEditTaskTags] = useState('');
 
-  const monthStart = startOfMonth(currentMonth);
+  const monthStart = startOfMonth(currentPeriodDate);
   const monthEnd = endOfMonth(monthStart);
-  const startDate = startOfWeek(monthStart, { weekStartsOn: 1 });
-  const endDate = endOfWeek(monthEnd, { weekStartsOn: 1 });
-  const days = eachDayOfInterval({ start: startDate, end: endDate });
+  const monthGridStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const monthGridEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const weekStart = startOfWeek(currentPeriodDate, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(currentPeriodDate, { weekStartsOn: 1 });
+  const days = eachDayOfInterval(
+    calendarView === 'week'
+      ? { start: weekStart, end: weekEnd }
+      : { start: monthGridStart, end: monthGridEnd },
+  );
+  const calendarTitle =
+    calendarView === 'week'
+      ? `${format(weekStart, 'yyyy年MM月d日')} - ${format(weekEnd, isSameMonth(weekStart, weekEnd) ? 'd日' : 'MM月d日')}`
+      : format(currentPeriodDate, 'yyyy年MM月');
 
   const filteredTasks = useMemo(() => {
     return tasks.filter((task) => {
@@ -160,8 +173,8 @@ export default function NotebookView({
   };
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 h-full lg:overflow-hidden overflow-y-auto custom-scrollbar">
-      <div className="w-full lg:w-80 lg:h-full max-h-[420px] bg-white border border-slate-200 rounded-2xl p-4 flex flex-col shadow-sm lg:overflow-hidden shrink-0">
+    <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 h-full lg:overflow-hidden overflow-y-auto custom-scrollbar">
+      <div className="w-full lg:w-80 lg:h-full max-h-[420px] bg-white border border-slate-200 rounded-2xl p-3 sm:p-4 flex flex-col shadow-sm lg:overflow-hidden shrink-0">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-slate-900">Notebooks</h2>
           <button onClick={() => setIsCreatingNotebook(true)} className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors">
@@ -287,31 +300,72 @@ export default function NotebookView({
         </div>
       </div>
 
-      <div className="lg:flex-1 flex-none h-auto bg-white border border-slate-200 rounded-2xl p-6 flex flex-col shadow-sm lg:overflow-y-auto custom-scrollbar shrink-0">
-        <div className="flex items-center justify-between mb-6 shrink-0">
+      <div className="lg:flex-1 flex-none h-auto bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 flex flex-col shadow-sm lg:overflow-y-auto custom-scrollbar shrink-0">
+        <div className="flex items-start justify-between gap-4 mb-6 shrink-0 flex-wrap">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">{format(currentMonth, 'yyyy年MM月')}</h2>
+            <h2 className="text-xl font-bold text-slate-900">{calendarTitle}</h2>
             <p className="text-sm text-slate-500 mt-1">按 Notebook 和 Tag 浏览你的音频内容</p>
           </div>
-          <div className="flex bg-slate-100 rounded-full border border-slate-200 p-1">
-            <button onClick={() => setCurrentMonth(subMonths(currentMonth, 1))} className="p-1.5 hover:bg-white rounded-full text-slate-600 transition-colors shadow-sm">
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <button onClick={() => setCurrentMonth(addMonths(currentMonth, 1))} className="p-1.5 hover:bg-white rounded-full text-slate-600 transition-colors shadow-sm">
-              <ChevronRight className="w-4 h-4" />
-            </button>
+          <div className="flex items-center gap-3 ml-auto">
+            <div className="flex bg-slate-100 rounded-full border border-slate-200 p-1">
+              <button
+                onClick={() => setCalendarView('week')}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium rounded-full transition-colors',
+                  calendarView === 'week' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+                )}
+              >
+                Week
+              </button>
+              <button
+                onClick={() => setCalendarView('month')}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium rounded-full transition-colors',
+                  calendarView === 'month' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900',
+                )}
+              >
+                Month
+              </button>
+            </div>
+            <div className="flex bg-slate-100 rounded-full border border-slate-200 p-1">
+              <button
+                onClick={() =>
+                  setCurrentPeriodDate(
+                    calendarView === 'week' ? subWeeks(currentPeriodDate, 1) : subMonths(currentPeriodDate, 1),
+                  )
+                }
+                className="p-1.5 hover:bg-white rounded-full text-slate-600 transition-colors shadow-sm"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() =>
+                  setCurrentPeriodDate(
+                    calendarView === 'week' ? addWeeks(currentPeriodDate, 1) : addMonths(currentPeriodDate, 1),
+                  )
+                }
+                className="p-1.5 hover:bg-white rounded-full text-slate-600 transition-colors shadow-sm"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-7 gap-px bg-slate-200 border border-slate-200 rounded-xl overflow-hidden flex-grow shrink-0 min-h-[500px]">
+        <div
+          className={cn(
+            'grid grid-cols-7 gap-px bg-slate-200 border border-slate-200 rounded-xl overflow-hidden flex-grow shrink-0',
+            calendarView === 'week' ? 'min-h-[240px] lg:min-h-[280px]' : 'min-h-[500px]',
+          )}
+        >
           {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((day) => (
-            <div key={day} className="bg-slate-50 p-3 text-xs font-semibold text-slate-500 text-center tracking-wider">
+            <div key={day} className="bg-slate-50 p-2.5 sm:p-3 text-[11px] sm:text-xs font-semibold text-slate-500 text-center tracking-wider">
               {day}
             </div>
           ))}
           {days.map((day) => {
             const isSelected = selectedDate ? isSameDay(day, selectedDate) : false;
-            const isCurrentMonth = isSameMonth(day, currentMonth);
+            const isCurrentMonth = isSameMonth(day, currentPeriodDate);
             const calendarTasks = filteredTasks.filter((task) => isSameDay(new Date(task.eventDate || task.createdAt), day));
 
             return (
@@ -319,7 +373,8 @@ export default function NotebookView({
                 key={day.toISOString()}
                 onClick={() => setSelectedDate((current) => (current && isSameDay(current, day) ? null : day))}
                 className={cn(
-                  'bg-white p-3 min-h-[100px] cursor-pointer transition-colors relative group border-t border-slate-200',
+                  'bg-white p-2 sm:p-3 cursor-pointer transition-colors relative group border-t border-slate-200',
+                  calendarView === 'week' ? 'min-h-[150px] lg:min-h-[180px]' : 'min-h-[100px]',
                   !isCurrentMonth && 'text-slate-400 bg-slate-50/50',
                   isSelected && 'bg-indigo-50/30 ring-1 ring-inset ring-indigo-500/20',
                   !isSelected && 'hover:bg-slate-50',

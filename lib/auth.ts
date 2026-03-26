@@ -76,6 +76,50 @@ export async function authenticateUser(email: string, password: string) {
   return valid ? sanitizeUser(user) : null;
 }
 
+export async function updateUserProfile(input: { userId: string; name: string }) {
+  const nextName = input.name.trim();
+  if (!nextName) {
+    throw new Error('Display name is required.');
+  }
+
+  await db('users').where({ id: input.userId }).update({ name: nextName });
+  const user = (await db('users').where({ id: input.userId }).first()) as UserRow | undefined;
+  if (!user) {
+    throw new Error('User not found.');
+  }
+
+  return sanitizeUser(user);
+}
+
+export async function changeUserPassword(input: {
+  userId: string;
+  currentPassword: string;
+  newPassword: string;
+}) {
+  const currentPassword = input.currentPassword || '';
+  const newPassword = input.newPassword || '';
+  if (!currentPassword) {
+    throw new Error('Current password is required.');
+  }
+  if (newPassword.length < 8) {
+    throw new Error('New password must be at least 8 characters.');
+  }
+
+  const user = (await db('users').where({ id: input.userId }).first()) as UserRow | undefined;
+  if (!user) {
+    throw new Error('User not found.');
+  }
+
+  const valid = await verifyPassword(currentPassword, user.passwordHash);
+  if (!valid) {
+    throw new Error('Current password is incorrect.');
+  }
+
+  await db('users').where({ id: input.userId }).update({
+    passwordHash: await hashPassword(newPassword),
+  });
+}
+
 export async function createSession(userId: string) {
   const token = randomBytes(32).toString('hex');
   const now = Date.now();
