@@ -26,7 +26,7 @@ interface NotebookProps {
   tasks: Task[];
   notebooks: Notebook[];
   tags: TagStat[];
-  onSelectTask: (task: Task) => void;
+  onSelectTask: (taskId: string) => void;
   onUpdateNotebooks: () => void | Promise<void>;
   onUpdateTasks: () => void | Promise<void>;
 }
@@ -236,7 +236,7 @@ export default function NotebookView({
                       {notebookTasks.slice(0, 5).map((task) => (
                         <div
                           key={task.id}
-                          onClick={() => onSelectTask(task)}
+                          onClick={() => onSelectTask(task.id)}
                           className="p-2 text-sm text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer truncate flex items-center justify-between group transition-colors"
                         >
                           <div className="flex items-center gap-2 truncate">
@@ -336,7 +336,7 @@ export default function NotebookView({
                 {calendarTasks.length > 0 && (
                   <div className="flex flex-col gap-1.5">
                     {calendarTasks.slice(0, 3).map((task) => (
-                      <div key={task.id} onClick={(event) => { event.stopPropagation(); onSelectTask(task); }} className="flex items-center gap-1.5 p-1 rounded hover:bg-slate-100 transition-colors">
+                      <div key={task.id} onClick={(event) => { event.stopPropagation(); onSelectTask(task.id); }} className="flex items-center gap-1.5 p-1 rounded hover:bg-slate-100 transition-colors">
                         <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', task.status === 'completed' ? 'bg-emerald-500' : task.status === 'processing' ? 'bg-amber-500' : task.status === 'failed' ? 'bg-red-500' : 'bg-slate-400')} />
                         <span className="text-xs text-slate-600 truncate font-medium">{task.originalName}</span>
                       </div>
@@ -381,7 +381,7 @@ export default function NotebookView({
               {visibleTasks.map((task) => (
                 <div
                   key={task.id}
-                  onClick={() => onSelectTask(task)}
+                  onClick={() => onSelectTask(task.id)}
                   className="p-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-white hover:border-indigo-300 hover:shadow-sm cursor-pointer transition-all flex flex-col gap-2 relative group"
                 >
                   <button

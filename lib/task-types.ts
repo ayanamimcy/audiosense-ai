@@ -91,3 +91,27 @@ export function toTaskResponse(task: TaskRow) {
     metadata: parseJsonField<Record<string, unknown>>(task.metadata, {}),
   };
 }
+
+export function toTaskListResponse(task: TaskRow) {
+  return {
+    id: task.id,
+    userId: task.userId,
+    filename: task.filename,
+    originalName: repairPossiblyMojibakeText(task.originalName),
+    status: task.status,
+    createdAt: task.createdAt,
+    notebookId: task.notebookId,
+    eventDate: task.eventDate,
+    tags: parseJsonField<string[]>(task.tags, []),
+    language: task.language,
+    provider: task.provider,
+    sourceType: task.sourceType,
+    durationSeconds: task.durationSeconds,
+    startedAt: task.startedAt,
+    completedAt: task.completedAt,
+    updatedAt: task.updatedAt,
+    segments: [],
+    speakers: [],
+    metadata: {},
+  };
+}

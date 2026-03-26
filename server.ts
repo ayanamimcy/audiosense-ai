@@ -56,6 +56,7 @@ import { getAvailableTranscriptionProviders } from './lib/transcription.js';
 import {
   normalizeTags,
   parseJsonField,
+  toTaskListResponse,
   toTaskResponse,
   type TaskMessageRow,
   type TaskRow,
@@ -491,7 +492,7 @@ protectedApi.get('/tasks', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const tasks = ((await db('tasks')
     .where({ userId: user.id })
-    .orderBy('createdAt', 'desc')) as TaskRow[]).map(toTaskResponse);
+    .orderBy('createdAt', 'desc')) as TaskRow[]).map(toTaskListResponse);
   return res.json(tasks);
 }));
 

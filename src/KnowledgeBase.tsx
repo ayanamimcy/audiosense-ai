@@ -13,7 +13,7 @@ export function KnowledgeBase({
   tasks: Task[];
   notebooks: Notebook[];
   userSettings: UserSettings | null;
-  onSelectTask: (task: Task) => void;
+  onSelectTask: (taskId: string) => void;
 }) {
   const [query, setQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Task[]>([]);
@@ -119,7 +119,7 @@ export function KnowledgeBase({
               {searchResults.map((task) => (
                 <button
                   key={task.id}
-                  onClick={() => onSelectTask(task)}
+                  onClick={() => onSelectTask(task.id)}
                   className="w-full text-left p-3 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/30 transition-colors"
                 >
                   <div className="flex items-start justify-between gap-3">

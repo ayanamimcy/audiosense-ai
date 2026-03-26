@@ -386,7 +386,7 @@ export function TaskDetail({
         <PanelButton active={activePanel === 'chat'} onClick={() => setActivePanel('chat')} icon={<MessageSquare className="w-4 h-4" />}>
           Chat
         </PanelButton>
-        {task.status === 'completed' && (
+        {(task.status === 'completed' || task.status === 'failed') && (
           <button
             onClick={async () => {
               await apiFetch(`/api/tasks/${task.id}/reprocess`, { method: 'POST' });

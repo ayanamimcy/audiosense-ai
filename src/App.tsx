@@ -77,8 +77,10 @@ export default function App() {
   const [capabilities, setCapabilities] = useState<AppCapabilities | null>(null);
   const [userSettings, setUserSettings] = useState<UserSettings | null>(null);
   const [providerHealth, setProviderHealth] = useState<ProviderHealth[]>([]);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [publicConfig, setPublicConfig] = useState<PublicConfig>(DEFAULT_PUBLIC_CONFIG);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [selectedTaskLoading, setSelectedTaskLoading] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getStoredUser());
 
@@ -92,22 +94,31 @@ export default function App() {
     setCapabilities(null);
     setUserSettings(null);
     setProviderHealth([]);
+    setSelectedTaskId(null);
+    setSelectedTask(null);
+  };
+
+  const fetchTaskDetail = async (taskId: string) => {
+    const data = await apiJson<Task>(`/api/tasks/${taskId}`);
+    setSelectedTask(data);
+    return data;
   };
 
   const fetchTasks = async (preferredTaskId?: string | null) => {
     const data = await apiJson<Task[]>('/api/tasks');
     setTasks(data);
-    setSelectedTask((current) => {
-      if (preferredTaskId) {
-        return data.find((task) => task.id === preferredTaskId) || data[0] || null;
-      }
+    const nextSelectedTaskId = preferredTaskId
+      ? data.find((task) => task.id === preferredTaskId)?.id || data[0]?.id || null
+      : selectedTaskId
+        ? data.find((task) => task.id === selectedTaskId)?.id || data[0]?.id || null
+        : data[0]?.id || null;
 
-      if (!current) {
-        return data[0] || null;
-      }
+    setSelectedTaskId(nextSelectedTaskId);
+    if (!nextSelectedTaskId) {
+      setSelectedTask(null);
+    }
 
-      return data.find((task) => task.id === current.id) || null;
-    });
+    return nextSelectedTaskId;
   };
 
   const fetchNotebooks = async () => {
@@ -135,9 +146,16 @@ export default function App() {
     setProviderHealth(await apiJson<ProviderHealth[]>('/api/provider-health'));
   };
 
-  const refreshAll = async () => {
-    await Promise.all([
-      fetchTasks(),
+  const refreshTasksAndSelection = async (preferredTaskId?: string | null) => {
+    const nextSelectedTaskId = await fetchTasks(preferredTaskId);
+    if (nextSelectedTaskId) {
+      await fetchTaskDetail(nextSelectedTaskId);
+    }
+  };
+
+  const refreshAll = async (preferredTaskId?: string | null) => {
+    const [nextSelectedTaskId] = await Promise.all([
+      fetchTasks(preferredTaskId),
       fetchNotebooks(),
       fetchTags(),
       fetchSummaryPrompts(),
@@ -145,6 +163,10 @@ export default function App() {
       fetchSettings(),
       fetchProviderHealth(),
     ]);
+
+    if (nextSelectedTaskId) {
+      await fetchTaskDetail(nextSelectedTaskId);
+    }
   };
 
   useEffect(() => {
@@ -174,13 +196,57 @@ export default function App() {
     }
 
     void refreshAll();
+  }, [currentUser]);
+
+  const hasActiveTasks = tasks.some((task) => task.status === 'pending' || task.status === 'processing');
+
+  useEffect(() => {
+    if (!currentUser || !hasActiveTasks) {
+      return;
+    }
+
     const interval = window.setInterval(() => {
-      void fetchTasks().catch((error) => {
-        console.error('Failed to refresh tasks:', error);
+      void refreshTasksAndSelection(selectedTaskId).catch((error) => {
+        console.error('Failed to poll active tasks:', error);
       });
     }, 5000);
+
     return () => window.clearInterval(interval);
-  }, [currentUser]);
+  }, [currentUser, hasActiveTasks, selectedTaskId]);
+
+  useEffect(() => {
+    if (!currentUser || !selectedTaskId) {
+      setSelectedTask(null);
+      setSelectedTaskLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    setSelectedTask((current) => (current?.id === selectedTaskId ? current : null));
+    setSelectedTaskLoading(true);
+
+    void apiJson<Task>(`/api/tasks/${selectedTaskId}`)
+      .then((task) => {
+        if (!cancelled) {
+          setSelectedTask(task);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          console.error('Failed to load selected task:', error);
+          setSelectedTask(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setSelectedTaskLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser, selectedTaskId]);
 
   if (authLoading) {
     return (
@@ -274,8 +340,8 @@ export default function App() {
                 tasks={tasks}
                 notebooks={notebooks}
                 tags={tags}
-                onSelectTask={(task) => {
-                  setSelectedTask(task);
+                onSelectTask={(taskId) => {
+                  setSelectedTaskId(taskId);
                   setActiveTab('tasks');
                 }}
                 onUpdateNotebooks={fetchNotebooks}
@@ -289,8 +355,8 @@ export default function App() {
                 tasks={tasks}
                 notebooks={notebooks}
                 userSettings={userSettings}
-                onSelectTask={(task) => {
-                  setSelectedTask(task);
+                onSelectTask={(taskId) => {
+                  setSelectedTaskId(taskId);
                   setActiveTab('tasks');
                 }}
               />
@@ -326,7 +392,7 @@ export default function App() {
                       capabilities={capabilities}
                       userSettings={userSettings}
                       onUploadSuccess={async (taskId) => {
-                        await fetchTasks(taskId);
+                        await refreshTasksAndSelection(taskId);
                         await fetchTags();
                       }}
                     />
@@ -337,7 +403,7 @@ export default function App() {
                       capabilities={capabilities}
                       userSettings={userSettings}
                       onUploadSuccess={async (taskId) => {
-                        await fetchTasks(taskId);
+                        await refreshTasksAndSelection(taskId);
                         await fetchTags();
                       }}
                     />
@@ -347,9 +413,9 @@ export default function App() {
                       tasks={tasks}
                       notebooks={notebooks}
                       tags={tags}
-                      onSelectTask={setSelectedTask}
-                      selectedTaskId={selectedTask?.id}
-                      onRefresh={refreshAll}
+                      onSelectTask={setSelectedTaskId}
+                      selectedTaskId={selectedTaskId || undefined}
+                      onRefresh={() => refreshAll(selectedTaskId)}
                     />
                   )}
                 </div>
@@ -361,8 +427,14 @@ export default function App() {
                       notebooks={notebooks}
                       capabilities={capabilities}
                       summaryPrompts={summaryPrompts}
-                      onUpdateTask={refreshAll}
+                      onUpdateTask={() => refreshAll(selectedTask.id)}
                     />
+                  ) : selectedTaskLoading ? (
+                    <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center bg-slate-50/50">
+                      <Loader2 className="w-10 h-10 mb-4 animate-spin text-indigo-500" />
+                      <h3 className="text-lg font-medium text-slate-600">Loading task</h3>
+                      <p className="text-sm mt-1">Fetching transcript, segments, and summary details.</p>
+                    </div>
                   ) : (
                     <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center bg-slate-50/50">
                       <FileAudio className="w-16 h-16 mb-4 opacity-20 text-indigo-500" />
@@ -922,7 +994,7 @@ function TasksList({
   tasks: Task[];
   notebooks: Notebook[];
   tags: TagStat[];
-  onSelectTask: (task: Task) => void;
+  onSelectTask: (taskId: string) => void;
   selectedTaskId?: string;
   onRefresh: () => void | Promise<void>;
 }) {
@@ -944,7 +1016,6 @@ function TasksList({
     const matchesSearch =
       !query ||
       task.originalName.toLowerCase().includes(query) ||
-      task.transcript?.toLowerCase().includes(query) ||
       task.tags.some((tag) => tag.toLowerCase().includes(query));
 
     const matchesTag = !tagFilter || task.tags.includes(tagFilter);
@@ -965,7 +1036,7 @@ function TasksList({
           <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search task, transcript, or tag..."
+            placeholder="Search task or tag..."
             value={searchQuery}
             onChange={(event) => setSearchQuery(event.target.value)}
             className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
@@ -1007,7 +1078,7 @@ function TasksList({
             return (
               <div
                 key={task.id}
-                onClick={() => onSelectTask(task)}
+                onClick={() => onSelectTask(task.id)}
                 className={cn(
                   'p-3 rounded-xl border cursor-pointer transition-all flex items-start gap-3',
                   selectedTaskId === task.id ? 'border-indigo-500 bg-indigo-50/50' : 'border-slate-200 hover:border-slate-300 hover:bg-slate-50',
