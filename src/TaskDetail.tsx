@@ -400,7 +400,7 @@ export function TaskDetail({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 bg-white custom-scrollbar">
+      <div className="flex-1 overflow-y-auto p-6 pb-28 lg:pb-6 bg-white custom-scrollbar">
         {task.status === 'processing' || task.status === 'pending' ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-500 space-y-4">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
