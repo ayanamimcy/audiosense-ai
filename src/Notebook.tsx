@@ -65,6 +65,7 @@ export default function NotebookView({
       ? { start: weekStart, end: weekEnd }
       : { start: monthGridStart, end: monthGridEnd },
   );
+  const calendarWeekCount = Math.ceil(days.length / 7);
   const calendarTitle =
     calendarView === 'week'
       ? `${format(weekStart, 'yyyy年MM月d日')} - ${format(weekEnd, isSameMonth(weekStart, weekEnd) ? 'd日' : 'MM月d日')}`
@@ -300,7 +301,12 @@ export default function NotebookView({
         </div>
       </div>
 
-      <div className="lg:flex-1 flex-none h-auto bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 flex flex-col shadow-sm lg:overflow-y-auto custom-scrollbar shrink-0">
+      <div
+        className={cn(
+          'lg:flex-1 flex-none h-auto bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 flex flex-col shadow-sm shrink-0',
+          calendarView === 'week' ? 'lg:overflow-hidden' : 'lg:overflow-y-auto custom-scrollbar',
+        )}
+      >
         <div className="flex items-start justify-between gap-4 mb-6 shrink-0 flex-wrap">
           <div>
             <h2 className="text-xl font-bold text-slate-900">{calendarTitle}</h2>
@@ -354,9 +360,15 @@ export default function NotebookView({
 
         <div
           className={cn(
-            'grid grid-cols-7 gap-px bg-slate-200 border border-slate-200 rounded-xl overflow-hidden flex-grow shrink-0',
-            calendarView === 'week' ? 'min-h-[240px] lg:min-h-[280px]' : 'min-h-[500px]',
+            'grid grid-cols-7 gap-px bg-slate-200 border border-slate-200 rounded-xl overflow-hidden shrink-0',
+            calendarView === 'week' ? 'min-h-[142px]' : 'min-h-[500px] flex-grow',
           )}
+          style={{
+            gridTemplateRows:
+              calendarView === 'week'
+                ? 'auto minmax(100px, auto)'
+                : `auto repeat(${calendarWeekCount}, minmax(0, 1fr))`,
+          }}
         >
           {['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'].map((day) => (
             <div key={day} className="bg-slate-50 p-2.5 sm:p-3 text-[11px] sm:text-xs font-semibold text-slate-500 text-center tracking-wider">
@@ -374,7 +386,7 @@ export default function NotebookView({
                 onClick={() => setSelectedDate((current) => (current && isSameDay(current, day) ? null : day))}
                 className={cn(
                   'bg-white p-2 sm:p-3 cursor-pointer transition-colors relative group border-t border-slate-200',
-                  calendarView === 'week' ? 'min-h-[150px] lg:min-h-[180px]' : 'min-h-[100px]',
+                  calendarView === 'week' ? 'min-h-[100px]' : 'min-h-[100px]',
                   !isCurrentMonth && 'text-slate-400 bg-slate-50/50',
                   isSelected && 'bg-indigo-50/30 ring-1 ring-inset ring-indigo-500/20',
                   !isSelected && 'hover:bg-slate-50',
@@ -389,11 +401,11 @@ export default function NotebookView({
                   {format(day, 'd')}
                 </div>
                 {calendarTasks.length > 0 && (
-                  <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-col gap-1">
                     {calendarTasks.slice(0, 3).map((task) => (
-                      <div key={task.id} onClick={(event) => { event.stopPropagation(); onSelectTask(task.id); }} className="flex items-center gap-1.5 p-1 rounded hover:bg-slate-100 transition-colors">
+                      <div key={task.id} onClick={(event) => { event.stopPropagation(); onSelectTask(task.id); }} className="flex items-center gap-1.5 p-0.5 rounded hover:bg-slate-100 transition-colors">
                         <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', task.status === 'completed' ? 'bg-emerald-500' : task.status === 'processing' ? 'bg-amber-500' : task.status === 'failed' ? 'bg-red-500' : 'bg-slate-400')} />
-                        <span className="text-xs text-slate-600 truncate font-medium">{task.originalName}</span>
+                        <span className="text-[11px] text-slate-600 truncate font-medium">{task.originalName}</span>
                       </div>
                     ))}
                     {calendarTasks.length > 3 && <span className="text-[10px] text-slate-500 pl-3">+{calendarTasks.length - 3} more</span>}
@@ -404,7 +416,12 @@ export default function NotebookView({
           })}
         </div>
 
-        <div className="mt-6 pt-6 border-t border-slate-200 shrink-0">
+        <div
+          className={cn(
+            'mt-6 pt-6 border-t border-slate-200',
+            calendarView === 'week' ? 'lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1 custom-scrollbar' : 'shrink-0',
+          )}
+        >
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <h3 className="text-sm font-semibold text-slate-900">

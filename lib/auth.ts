@@ -105,18 +105,22 @@ export async function changeUserPassword(input: {
     throw new Error('New password must be at least 8 characters.');
   }
 
-  const user = (await db('users').where({ id: input.userId }).first()) as UserRow | undefined;
-  if (!user) {
-    throw new Error('User not found.');
-  }
+  await db.transaction(async (trx) => {
+    const user = (await trx('users').where({ id: input.userId }).first()) as UserRow | undefined;
+    if (!user) {
+      throw new Error('User not found.');
+    }
 
-  const valid = await verifyPassword(currentPassword, user.passwordHash);
-  if (!valid) {
-    throw new Error('Current password is incorrect.');
-  }
+    const valid = await verifyPassword(currentPassword, user.passwordHash);
+    if (!valid) {
+      throw new Error('Current password is incorrect.');
+    }
 
-  await db('users').where({ id: input.userId }).update({
-    passwordHash: await hashPassword(newPassword),
+    await trx('users').where({ id: input.userId }).update({
+      passwordHash: await hashPassword(newPassword),
+    });
+
+    await trx('sessions').where({ userId: input.userId }).delete();
   });
 }
 
@@ -186,11 +190,13 @@ export function getSessionCookieName() {
 
 export function serializeSessionCookie(token: string) {
   const maxAge = Math.floor(SESSION_TTL_MS / 1000);
-  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}`;
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=${maxAge}`;
 }
 
 export function serializeClearedSessionCookie() {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`;
+  const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax${secure}; Max-Age=0`;
 }
 
 export function readCookie(header: string | undefined, name: string) {

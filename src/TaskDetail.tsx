@@ -47,6 +47,82 @@ function buildTranscriptClipboardText(task: Task) {
   return task.transcript || task.result || '';
 }
 
+async function consumeSseStream(
+  response: Response,
+  handlers: {
+    onDelta?: (payload: any) => Promise<void> | void;
+    onDone?: (payload: any) => Promise<void> | void;
+    onError?: (payload: any) => Promise<void> | void;
+  },
+) {
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error('Streaming is not available in this browser.');
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  const flushEvent = async (rawEvent: string) => {
+    const lines = rawEvent.split(/\r?\n/);
+    let eventName = 'message';
+    const dataLines: string[] = [];
+
+    for (const line of lines) {
+      if (line.startsWith('event:')) {
+        eventName = line.slice(6).trim();
+      } else if (line.startsWith('data:')) {
+        dataLines.push(line.slice(5).trim());
+      }
+    }
+
+    if (!dataLines.length) {
+      return;
+    }
+
+    const rawData = dataLines.join('\n');
+    let payload: any = rawData;
+    try {
+      payload = JSON.parse(rawData);
+    } catch {
+      // Keep raw string payload for non-JSON events.
+    }
+
+    if (eventName === 'delta') {
+      await handlers.onDelta?.(payload);
+      return;
+    }
+    if (eventName === 'done') {
+      await handlers.onDone?.(payload);
+      return;
+    }
+    if (eventName === 'error') {
+      await handlers.onError?.(payload);
+    }
+  };
+
+  while (true) {
+    const { value, done } = await reader.read();
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+    let separatorIndex = buffer.indexOf('\n\n');
+    while (separatorIndex !== -1) {
+      const rawEvent = buffer.slice(0, separatorIndex);
+      buffer = buffer.slice(separatorIndex + 2);
+      await flushEvent(rawEvent);
+      separatorIndex = buffer.indexOf('\n\n');
+    }
+
+    if (done) {
+      break;
+    }
+  }
+
+  if (buffer.trim()) {
+    await flushEvent(buffer);
+  }
+}
+
 type Panel = 'summary' | 'transcript' | 'chat';
 
 export function TaskDetail({
@@ -221,18 +297,74 @@ export function TaskDetail({
     setActivePanel('chat');
     setIsSendingMessage(true);
     try {
-      const res = await apiFetch(`/api/tasks/${task.id}/chat`, {
+      const res = await apiFetch(`/api/tasks/${task.id}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message }),
       });
-      const payload = await res.json().catch(() => null);
 
       if (!res.ok) {
+        const payload = await res.json().catch(() => null);
         throw new Error(payload?.error || 'Failed to send message.');
       }
 
-      setMessages(payload as TaskMessage[]);
+      let completed = false;
+
+      await consumeSseStream(res, {
+        onDelta: (payload) => {
+          const delta = typeof payload?.text === 'string' ? payload.text : '';
+          if (!delta) {
+            return;
+          }
+
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === optimisticAssistantMessage.id
+                ? {
+                    ...item,
+                    content: `${item.content}${delta}`,
+                  }
+                : item,
+            ),
+          );
+        },
+        onDone: (payload) => {
+          completed = true;
+          if (Array.isArray(payload?.messages)) {
+            setMessages(payload.messages as TaskMessage[]);
+            return;
+          }
+
+          setMessages((prev) =>
+            prev.map((item) =>
+              item.id === optimisticAssistantMessage.id
+                ? {
+                    ...item,
+                    pending: false,
+                  }
+                : item,
+            ),
+          );
+        },
+        onError: (payload) => {
+          throw new Error(
+            typeof payload?.error === 'string' ? payload.error : 'Failed to send message.',
+          );
+        },
+      });
+
+      if (!completed) {
+        setMessages((prev) =>
+          prev.map((item) =>
+            item.id === optimisticAssistantMessage.id
+              ? {
+                  ...item,
+                  pending: false,
+                }
+              : item,
+          ),
+        );
+      }
     } catch (error: any) {
       setMessages((prev) =>
         prev.map((item) =>
@@ -445,7 +577,7 @@ export function TaskDetail({
         )}
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 pb-28 lg:pb-6 bg-white custom-scrollbar">
+      <div className="flex-1 overflow-y-auto p-6 pb-6 bg-white custom-scrollbar">
         {task.status === 'processing' || task.status === 'pending' ? (
           <div className="flex flex-col items-center justify-center h-full text-slate-500 space-y-4">
             <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />

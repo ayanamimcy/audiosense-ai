@@ -403,7 +403,10 @@ export default function App() {
       </aside>
 
       <main className="flex-1 overflow-hidden relative bg-slate-50">
-        <div ref={mainScrollRef} className="absolute inset-0 overflow-y-auto custom-scrollbar pb-[80px] lg:pb-0">
+        <div
+          ref={mainScrollRef}
+          className="absolute inset-x-0 top-0 bottom-0 overflow-y-auto custom-scrollbar mobile-main-scroll-region"
+        >
           <div className="max-w-7xl w-full mx-auto px-2 py-3 sm:px-4 sm:py-4 lg:p-6 h-full flex flex-col">
             {activeTab === 'notebook' ? (
               <NotebookView
@@ -544,7 +547,7 @@ export default function App() {
         </div>
       </main>
 
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center justify-around px-2 py-2 pb-safe z-30 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+      <nav className="lg:hidden mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center justify-around px-2 py-2 z-30 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
         <BottomNavButton active={activeTab === 'notebook'} onClick={() => { setActiveTab('notebook'); setIsMobileMenuOpen(false); }} icon={<FolderKanban className="w-5 h-5" />} label="Workspace" />
         <BottomNavButton active={activeTab === 'knowledge'} onClick={() => { setActiveTab('knowledge'); setIsMobileMenuOpen(false); }} icon={<BrainCircuit className="w-5 h-5" />} label="Search" />
         <div className="relative -top-5">

@@ -1,4 +1,9 @@
 import { db } from '../db.js';
+import {
+  canEncryptStoredSettings,
+  decryptStoredSettings,
+  encryptStoredSettings,
+} from './secure-settings.js';
 import { getAvailableTranscriptionProviders } from './audio-engine/providers/index.js';
 import {
   getDefaultSettings,
@@ -9,17 +14,53 @@ import {
 export { getDefaultSettings, sanitizeUserSettings };
 export type { LlmSettings, LocalRuntimeSettings, OpenAIWhisperSettings, UserSettings } from './user-settings-schema.js';
 
-export async function getUserSettings(userId: string) {
+async function loadStoredUserSettingsInput(userId: string) {
   const row = await db('user_settings').where({ userId }).first();
   if (!row?.settings) {
-    return getDefaultSettings();
+    return null;
   }
 
+  const stored = decryptStoredSettings(String(row.settings));
+  if (!stored.encrypted && canEncryptStoredSettings()) {
+    await db('user_settings').where({ userId }).update({
+      settings: encryptStoredSettings(stored.plaintext),
+      updatedAt: Date.now(),
+    });
+  }
+
+  return JSON.parse(stored.plaintext) as Partial<UserSettings>;
+}
+
+export async function getUserSettings(userId: string) {
   try {
-    return sanitizeUserSettings(JSON.parse(row.settings) as Partial<UserSettings>);
+    const storedInput = await loadStoredUserSettingsInput(userId);
+    if (!storedInput) {
+      return getDefaultSettings();
+    }
+
+    return sanitizeUserSettings(storedInput);
   } catch {
     return getDefaultSettings();
   }
+}
+
+export async function getUserSettingsForClient(userId: string) {
+  const storedInput = await loadStoredUserSettingsInput(userId).catch(() => null);
+  const settings = sanitizeUserSettings(storedInput || {});
+
+  // Do not leak environment-derived defaults to the browser. Only include the
+  // secret fields when the user explicitly saved them in their own settings.
+  if (!storedInput?.openaiWhisper?.apiKey) {
+    settings.openaiWhisper.apiKey = '';
+  }
+  if (!storedInput?.localRuntime?.hfToken) {
+    settings.localRuntime.hfToken = '';
+  }
+  if (!storedInput?.llm?.apiKey) {
+    settings.llm.apiKey = '';
+  }
+
+  return settings;
 }
 
 export async function saveUserSettings(userId: string, input: Partial<UserSettings>) {
@@ -30,13 +71,13 @@ export async function saveUserSettings(userId: string, input: Partial<UserSettin
 
   if (existing) {
     await db('user_settings').where({ userId }).update({
-      settings: JSON.stringify(settings),
+      settings: encryptStoredSettings(JSON.stringify(settings)),
       updatedAt: now,
     });
   } else {
     await db('user_settings').insert({
       userId,
-      settings: JSON.stringify(settings),
+      settings: encryptStoredSettings(JSON.stringify(settings)),
       createdAt: now,
       updatedAt: now,
     });

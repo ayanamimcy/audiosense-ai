@@ -2,6 +2,8 @@ import 'dotenv/config';
 
 import cors from 'cors';
 import express from 'express';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import fs from 'fs';
 import multer from 'multer';
 import path from 'path';
@@ -28,6 +30,7 @@ import {
   generateTaskSummary,
   getLlmInfo,
   isLlmConfigured,
+  streamChatWithTranscript,
   type LlmMessage,
 } from './lib/llm.js';
 import { getEmbeddingsInfo } from './lib/embeddings.js';
@@ -46,9 +49,9 @@ import {
   searchChunksHybrid,
 } from './lib/search-index.js';
 import {
-  getDefaultSettings,
   getProviderHealth,
   getUserSettings,
+  getUserSettingsForClient,
   saveUserSettings,
 } from './lib/settings.js';
 import { getLocalRuntimeCatalogSnapshot } from './lib/user-settings-schema.js';
@@ -71,8 +74,28 @@ const allowRegistration = ['1', 'true', 'yes', 'on'].includes(
   String(process.env.ALLOW_REGISTRATION || '').trim().toLowerCase(),
 );
 
-app.use(cors());
+const allowedOrigins = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+  : undefined;
+
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(
+  cors(
+    allowedOrigins
+      ? { origin: allowedOrigins, credentials: true }
+      : undefined,
+  ),
+);
 app.use(express.json({ limit: '2mb' }));
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many requests, please try again later.' },
+});
+app.use('/api/auth', authLimiter);
 
 const uploadDir = path.resolve(configuredUploadDir || path.join(process.cwd(), 'uploads'));
 if (!fs.existsSync(uploadDir)) {
@@ -88,12 +111,16 @@ const storage = multer.diskStorage({
   },
 });
 
-const upload = multer({ storage });
+const upload = multer({
+  storage,
+  limits: { fileSize: 500 * 1024 * 1024 },
+});
 
 declare global {
   namespace Express {
     interface Request {
       authUser?: AuthUser;
+      authSessionId?: string;
     }
   }
 }
@@ -119,6 +146,7 @@ async function authenticateRequest(
   }
 
   req.authUser = session.user;
+  req.authSessionId = session.sessionId;
   return next();
 }
 
@@ -286,8 +314,7 @@ protectedApi.get('/capabilities', asyncRoute(async (req, res) => {
 protectedApi.get('/settings', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   return res.json({
-    settings: await getUserSettings(user.id),
-    defaults: getDefaultSettings(),
+    settings: await getUserSettingsForClient(user.id),
   });
 }));
 
@@ -332,6 +359,8 @@ protectedApi.post('/account/password', asyncRoute(async (req, res) => {
 
   try {
     await changeUserPassword({ userId: user.id, currentPassword, newPassword });
+    const token = await createSession(user.id);
+    setSessionCookie(res, token);
     return res.json({ success: true });
   } catch (error: unknown) {
     return res.status(400).json({
@@ -805,6 +834,110 @@ protectedApi.post('/tasks/:id/chat', asyncRoute(async (req, res) => {
   return res.json(messages);
 }));
 
+protectedApi.post('/tasks/:id/chat/stream', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  const task = await findTaskForUser(user.id, req.params.id);
+  if (!task) {
+    return res.status(404).json({ error: 'Task not found.' });
+  }
+  if (!task.transcript) {
+    return res.status(400).json({ error: 'Task transcript is not ready yet.' });
+  }
+
+  const userSettings = await getUserSettings(user.id);
+  if (!isLlmConfigured(userSettings)) {
+    return res.status(400).json({ error: 'LLM API is not configured.' });
+  }
+
+  const message = String(req.body.message || '').trim();
+  if (!message) {
+    return res.status(400).json({ error: 'Message is required.' });
+  }
+
+  const history = (await db('task_messages')
+    .where({ taskId: task.id })
+    .orderBy('createdAt', 'asc')) as TaskMessageRow[];
+  const normalizedHistory: LlmMessage[] = history.map((item) => ({
+    role: item.role,
+    content: item.content,
+  }));
+
+  const abortController = new AbortController();
+  let clientClosed = false;
+  req.on('close', () => {
+    clientClosed = true;
+    abortController.abort();
+  });
+
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, no-transform');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  const writeEvent = (event: string, payload: Record<string, unknown>) => {
+    if (clientClosed || res.writableEnded) {
+      return;
+    }
+
+    res.write(`event: ${event}\n`);
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  try {
+    // Persist user message before streaming so it is not lost on client disconnect.
+    const userMsgId = uuidv4();
+    const userMsgTs = Date.now();
+    await db('task_messages').insert({
+      id: userMsgId,
+      taskId: task.id,
+      role: 'user',
+      content: message,
+      createdAt: userMsgTs,
+    });
+
+    writeEvent('start', { taskId: task.id });
+
+    const reply = await streamChatWithTranscript(
+      buildTaskContext(task),
+      normalizedHistory,
+      message,
+      userSettings,
+      (text) => {
+        writeEvent('delta', { text });
+      },
+      abortController.signal,
+    );
+
+    if (clientClosed) {
+      return;
+    }
+
+    await db('task_messages').insert({
+      id: uuidv4(),
+      taskId: task.id,
+      role: 'assistant',
+      content: reply,
+      createdAt: Date.now(),
+    });
+
+    const messages = (await db('task_messages')
+      .where({ taskId: task.id })
+      .orderBy('createdAt', 'asc')) as TaskMessageRow[];
+    writeEvent('done', { messages });
+    res.end();
+  } catch (error: unknown) {
+    if (clientClosed) {
+      return;
+    }
+
+    writeEvent('error', {
+      error: error instanceof Error ? error.message : 'Failed to stream message.',
+    });
+    res.end();
+  }
+}));
+
 protectedApi.get('/search/tasks', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const query = String(req.query.q || '').trim();
@@ -882,9 +1015,6 @@ protectedApi.post('/knowledge/ask', asyncRoute(async (req, res) => {
 
   const notebooks = await db('notebooks').where({ userId: user.id });
   const notebookMap = new Map(notebooks.map((item) => [item.id, item.name]));
-  const chunkMap = new Map(
-    retrieval.chunkRanking.map((chunk) => [`${chunk.taskId}:${chunk.chunkId}`, chunk]),
-  );
   const answer = await answerAcrossKnowledgeBase(
     query,
     candidateTasks.map((task) => ({
@@ -930,7 +1060,10 @@ protectedApi.get('/audio/:filename', asyncRoute(async (req, res) => {
     return res.status(404).send('File not found');
   }
 
-  const filePath = path.join(uploadDir, req.params.filename);
+  const filePath = path.resolve(uploadDir, req.params.filename);
+  if (!filePath.startsWith(uploadDir + path.sep) && filePath !== uploadDir) {
+    return res.status(400).send('Invalid filename');
+  }
   if (!fs.existsSync(filePath)) {
     return res.status(404).send('File not found');
   }
@@ -947,7 +1080,12 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
   }
 
   res.status(500).json({
-    error: error instanceof Error ? error.message : 'Internal server error.',
+    error:
+      process.env.NODE_ENV === 'production'
+        ? 'Internal server error.'
+        : error instanceof Error
+          ? error.message
+          : 'Internal server error.',
   });
 });
 

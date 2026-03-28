@@ -1,7 +1,30 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+:root {
+  --mobile-bottom-nav-height: 84px;
+}
+
 @layer utilities {
+  .mobile-main-scroll-region {
+    bottom: 0;
+  }
+
+  .mobile-bottom-nav {
+    min-height: var(--mobile-bottom-nav-height);
+    padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
+  }
+
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  @media (max-width: 1023px) {
+    .mobile-main-scroll-region {
+      bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom));
+    }
+  }
+
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
     height: 6px;
