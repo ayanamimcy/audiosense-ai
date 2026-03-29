@@ -70,6 +70,17 @@ import {
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const configuredUploadDir = process.env.UPLOAD_DIR?.trim();
+const configuredTrustProxy = process.env.TRUST_PROXY?.trim();
+const trustProxy =
+  configuredTrustProxy === undefined || configuredTrustProxy === ''
+    ? 1
+    : ['true', 'yes', 'on'].includes(configuredTrustProxy.toLowerCase())
+      ? true
+      : ['false', 'no', 'off'].includes(configuredTrustProxy.toLowerCase())
+        ? false
+        : Number.isFinite(Number(configuredTrustProxy))
+          ? Number(configuredTrustProxy)
+          : configuredTrustProxy;
 const allowRegistration = ['1', 'true', 'yes', 'on'].includes(
   String(process.env.ALLOW_REGISTRATION || '').trim().toLowerCase(),
 );
@@ -78,6 +89,7 @@ const allowedOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
   : undefined;
 
+app.set('trust proxy', trustProxy);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors(

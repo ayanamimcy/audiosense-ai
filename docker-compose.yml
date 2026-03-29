@@ -3,6 +3,8 @@ x-node-environment: &node-environment
   PORT: "3000"
   DB_TYPE: sqlite3
   SQLITE_FILENAME: /app/runtime-data/database.sqlite
+  TRUST_PROXY: ${TRUST_PROXY:-1}
+  CORS_ORIGIN: https://your-domain.com
   UPLOAD_DIR: /app/uploads
   ALLOW_REGISTRATION: ${ALLOW_REGISTRATION:-false}
   USER_SETTINGS_ENCRYPTION_KEY: ${USER_SETTINGS_ENCRYPTION_KEY:-}
