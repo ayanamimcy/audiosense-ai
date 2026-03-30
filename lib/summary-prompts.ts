@@ -1,16 +1,10 @@
-import { db } from '../db.js';
+import {
+  clearDefaultSummaryPromptRows,
+  findSummaryPromptRow,
+  listSummaryPromptRows,
+  type SummaryPromptRow,
+} from '../database/repositories/summary-prompts-repository.js';
 import { parseJsonField } from './task-types.js';
-
-export interface SummaryPromptRow {
-  id: string;
-  userId: string;
-  name: string;
-  prompt: string;
-  notebookIds?: string | null;
-  isDefault?: boolean | number | null;
-  createdAt: number;
-  updatedAt: number;
-}
 
 export interface SummaryPromptRecord {
   id: string;
@@ -45,15 +39,11 @@ export function toSummaryPromptRecord(row: SummaryPromptRow): SummaryPromptRecor
 }
 
 export async function listSummaryPrompts(userId: string) {
-  const rows = (await db('summary_prompts')
-    .where({ userId })
-    .orderBy([{ column: 'isDefault', order: 'desc' }, { column: 'updatedAt', order: 'desc' }])) as SummaryPromptRow[];
-
-  return rows.map(toSummaryPromptRecord);
+  return (await listSummaryPromptRows(userId)).map(toSummaryPromptRecord);
 }
 
 export async function findSummaryPrompt(userId: string, id: string) {
-  const row = (await db('summary_prompts').where({ userId, id }).first()) as SummaryPromptRow | undefined;
+  const row = await findSummaryPromptRow(userId, id);
   return row ? toSummaryPromptRecord(row) : null;
 }
 
@@ -83,13 +73,5 @@ export function getDefaultSummaryPromptForNotebook(
 }
 
 export async function clearDefaultSummaryPrompts(userId: string, exceptId?: string | null) {
-  const query = db('summary_prompts').where({ userId });
-  if (exceptId) {
-    query.whereNot({ id: exceptId });
-  }
-
-  await query.update({
-    isDefault: 0,
-    updatedAt: Date.now(),
-  });
+  await clearDefaultSummaryPromptRows(userId, exceptId);
 }

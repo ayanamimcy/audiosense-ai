@@ -1,5 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '../db.js';
+import { insertTaskRow } from '../database/repositories/tasks-repository.js';
 import { repairPossiblyMojibakeText } from './text-encoding.js';
 import { enqueueTaskJob } from './task-queue.js';
 import { getUserSettings } from './settings.js';
@@ -80,7 +80,7 @@ export async function createUploadTask(input: UploadTaskInput) {
     updatedAt: now,
   };
 
-  await db('tasks').insert(task);
+  await insertTaskRow(task);
   await enqueueTaskJob({
     taskId,
     userId,

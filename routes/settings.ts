@@ -1,6 +1,11 @@
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '../db.js';
+import {
+  clearDefaultSummaryPromptRows,
+  deleteSummaryPromptRow,
+  insertSummaryPromptRow,
+  updateSummaryPromptRow,
+} from '../database/repositories/summary-prompts-repository.js';
 import {
   authenticateUser,
   changeUserPassword,
@@ -149,10 +154,10 @@ router.post('/summary-prompts', asyncRoute(async (req, res) => {
   };
 
   if (isDefault) {
-    await clearDefaultSummaryPrompts(user.id);
+    await clearDefaultSummaryPromptRows(user.id);
   }
 
-  await db('summary_prompts').insert(record);
+  await insertSummaryPromptRow(record);
   return res.json(await findSummaryPrompt(user.id, record.id));
 }));
 
@@ -178,10 +183,10 @@ router.patch('/summary-prompts/:id', asyncRoute(async (req, res) => {
       : current.notebookIds;
   const isDefault = req.body.isDefault !== undefined ? req.body.isDefault === true : current.isDefault;
   if (isDefault) {
-    await clearDefaultSummaryPrompts(user.id, current.id);
+    await clearDefaultSummaryPromptRows(user.id, current.id);
   }
 
-  await db('summary_prompts').where({ id: current.id, userId: user.id }).update({
+  await updateSummaryPromptRow(user.id, current.id, {
     name: nextName,
     prompt: nextPrompt,
     notebookIds: JSON.stringify(notebookIds),
@@ -194,7 +199,7 @@ router.patch('/summary-prompts/:id', asyncRoute(async (req, res) => {
 
 router.delete('/summary-prompts/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const deleted = await db('summary_prompts').where({ id: req.params.id, userId: user.id }).delete();
+  const deleted = await deleteSummaryPromptRow(user.id, req.params.id);
   if (!deleted) {
     return res.status(404).json({ error: 'Summary prompt not found.' });
   }

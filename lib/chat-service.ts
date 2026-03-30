@@ -1,5 +1,13 @@
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '../db.js';
+import {
+  insertTaskMessageRow,
+  insertTaskMessageRows,
+  listTaskMessageRows,
+} from '../database/repositories/task-messages-repository.js';
+import {
+  findTaskRowById,
+  updateTaskRowForUser,
+} from '../database/repositories/tasks-repository.js';
 import {
   chatWithTranscript,
   generateTaskSummary,
@@ -16,7 +24,6 @@ import {
 import { reindexTask } from './search-index.js';
 import {
   toTaskResponse,
-  type TaskMessageRow,
   type TaskRow,
 } from './task-types.js';
 import { buildTaskContext, findTaskForUser } from './task-helpers.js';
@@ -24,7 +31,7 @@ import { buildTaskContext, findTaskForUser } from './task-helpers.js';
 export interface ChatValidationResult {
   task: TaskRow;
   userSettings: ReturnType<typeof getUserSettings> extends Promise<infer T> ? T : never;
-  history: TaskMessageRow[];
+  history: Awaited<ReturnType<typeof listTaskMessageRows>>;
   normalizedHistory: LlmMessage[];
 }
 
@@ -61,9 +68,7 @@ async function validateChatPrerequisites(userId: string, taskId: string) {
     throw new LlmNotConfiguredError();
   }
 
-  const history = (await db('task_messages')
-    .where({ taskId: task.id })
-    .orderBy('createdAt', 'asc')) as TaskMessageRow[];
+  const history = await listTaskMessageRows(task.id);
   const normalizedHistory: LlmMessage[] = history.map((item) => ({
     role: item.role,
     content: item.content,
@@ -83,7 +88,7 @@ export async function handleChatMessage(userId: string, taskId: string, message:
   );
   const now = Date.now();
 
-  await db('task_messages').insert([
+  await insertTaskMessageRows([
     {
       id: uuidv4(),
       taskId: task.id,
@@ -100,9 +105,7 @@ export async function handleChatMessage(userId: string, taskId: string, message:
     },
   ]);
 
-  return (await db('task_messages')
-    .where({ taskId: task.id })
-    .orderBy('createdAt', 'asc')) as TaskMessageRow[];
+  return await listTaskMessageRows(task.id);
 }
 
 export async function handleStreamChat(
@@ -115,7 +118,7 @@ export async function handleStreamChat(
   const { task, userSettings, normalizedHistory } = await validateChatPrerequisites(userId, taskId);
 
   const userMsgTs = Date.now();
-  await db('task_messages').insert({
+  await insertTaskMessageRow({
     id: uuidv4(),
     taskId: task.id,
     role: 'user',
@@ -132,7 +135,7 @@ export async function handleStreamChat(
     signal,
   );
 
-  await db('task_messages').insert({
+  await insertTaskMessageRow({
     id: uuidv4(),
     taskId: task.id,
     role: 'assistant',
@@ -142,9 +145,7 @@ export async function handleStreamChat(
 
   return {
     reply,
-    messages: (await db('task_messages')
-      .where({ taskId: task.id })
-      .orderBy('createdAt', 'asc')) as TaskMessageRow[],
+    messages: await listTaskMessageRows(task.id),
   };
 }
 
@@ -191,11 +192,11 @@ export async function handleGenerateSummary(
     userSettings,
     resolvedPrompt,
   );
-  await db('tasks').where({ id: task.id, userId }).update({
+  await updateTaskRowForUser(userId, task.id, {
     summary,
     updatedAt: Date.now(),
   });
-  const updated = (await db('tasks').where({ id: task.id }).first()) as TaskRow;
+  const updated = (await findTaskRowById(task.id)) as TaskRow;
   await reindexTask(updated);
   return toTaskResponse(updated);
 }

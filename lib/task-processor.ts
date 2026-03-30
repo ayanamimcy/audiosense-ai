@@ -1,5 +1,8 @@
 import path from 'path';
-import { db } from '../db.js';
+import {
+  findTaskRowById,
+  updateTaskRowById,
+} from '../database/repositories/tasks-repository.js';
 import { parseAudioWithFallback } from './audio-engine/engine.js';
 import { formatTranscriptMarkdown } from './audio-engine/markdown.js';
 import { generateTaskSummary, isLlmConfigured } from './llm.js';
@@ -13,7 +16,7 @@ const configuredUploadDir = process.env.UPLOAD_DIR?.trim();
 const uploadDir = path.resolve(configuredUploadDir || path.join(process.cwd(), 'uploads'));
 
 export async function processQueuedJob(job: TaskJobRow) {
-  const task = (await db('tasks').where({ id: job.taskId }).first()) as TaskRow | undefined;
+  const task = (await findTaskRowById(job.taskId)) as TaskRow | undefined;
   if (!task) {
     throw new Error(`Task ${job.taskId} not found.`);
   }
@@ -29,7 +32,7 @@ export async function processQueuedJob(job: TaskJobRow) {
         ? Number(metadata.expectedSpeakers)
         : undefined;
 
-  await db('tasks').where({ id: task.id }).update({
+  await updateTaskRowById(task.id, {
     status: 'processing',
     startedAt: now,
     updatedAt: now,
@@ -76,7 +79,7 @@ export async function processQueuedJob(job: TaskJobRow) {
       : null;
   const completedAt = Date.now();
 
-  await db('tasks').where({ id: task.id }).update({
+  await updateTaskRowById(task.id, {
     status: 'completed',
     result: formatTranscriptMarkdown(result),
     transcript,
@@ -101,6 +104,6 @@ export async function processQueuedJob(job: TaskJobRow) {
     }),
   });
 
-  const updatedTask = (await db('tasks').where({ id: task.id }).first()) as TaskRow;
+  const updatedTask = (await findTaskRowById(task.id)) as TaskRow;
   await reindexTask(updatedTask);
 }

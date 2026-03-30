@@ -1,22 +1,14 @@
 import express from 'express';
-import fs from 'fs';
-import path from 'path';
-import { db } from '../db.js';
-import { repairPossiblyMojibakeText } from '../lib/text-encoding.js';
-import { enqueueTaskJob } from '../lib/task-queue.js';
 import {
-  clearTaskIndex,
-  reindexTask,
-} from '../lib/search-index.js';
-import {
-  normalizeTags,
-  toTaskListResponse,
-  toTaskResponse,
-  type TaskMessageRow,
-  type TaskRow,
-} from '../lib/task-types.js';
-import { findTaskForUser } from '../lib/task-helpers.js';
-import { createUploadTask } from '../lib/upload-service.js';
+  UserTaskNotFoundError,
+  createUploadTaskForUser,
+  deleteTaskForUserAndCleanup,
+  getTaskDetailForUser,
+  listTaskMessagesForUser,
+  listTasksForUser,
+  reprocessTaskForUser,
+  updateTaskForUser,
+} from '../application/services/tasks-service.js';
 import { asyncRoute, requireAuthUser, upload, uploadDir } from './middleware.js';
 
 const router = express.Router();
@@ -28,7 +20,7 @@ router.post('/upload', upload.single('audio'), asyncRoute(async (req, res) => {
 
   const user = requireAuthUser(req);
   try {
-    const taskId = await createUploadTask({
+    const taskId = await createUploadTaskForUser({
       userId: user.id,
       file: req.file,
       body: req.body,
@@ -42,106 +34,69 @@ router.post('/upload', upload.single('audio'), asyncRoute(async (req, res) => {
 
 router.post('/tasks/:id/reprocess', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const task = await findTaskForUser(user.id, req.params.id);
-  if (!task) {
-    return res.status(404).json({ error: 'Task not found.' });
+  try {
+    await reprocessTaskForUser(user.id, req.params.id, req.body.provider);
+    return res.json({ success: true });
+  } catch (error) {
+    if (error instanceof UserTaskNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    throw error;
   }
-
-  const provider = String(
-    req.body.provider || task.provider || process.env.TRANSCRIPTION_PROVIDER || 'local-python',
-  );
-  await db('tasks').where({ id: task.id }).update({
-    status: 'pending',
-    summary: null,
-    result: null,
-    updatedAt: Date.now(),
-  });
-  await enqueueTaskJob({ taskId: task.id, userId: user.id, provider });
-
-  return res.json({ success: true });
 }));
 
 router.get('/tasks', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const tasks = ((await db('tasks')
-    .where({ userId: user.id })
-    .orderBy('createdAt', 'desc')) as TaskRow[]).map(toTaskListResponse);
-  return res.json(tasks);
+  return res.json(await listTasksForUser(user.id));
 }));
 
 router.get('/tasks/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const task = await findTaskForUser(user.id, req.params.id);
-  if (!task) {
-    return res.status(404).json({ error: 'Task not found.' });
+  try {
+    return res.json(await getTaskDetailForUser(user.id, req.params.id));
+  } catch (error) {
+    if (error instanceof UserTaskNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    throw error;
   }
-
-  return res.json(toTaskResponse(task));
 }));
 
 router.patch('/tasks/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const task = await findTaskForUser(user.id, req.params.id);
-  if (!task) {
-    return res.status(404).json({ error: 'Task not found.' });
+  try {
+    return res.json(await updateTaskForUser(user.id, req.params.id, req.body || {}));
+  } catch (error) {
+    if (error instanceof UserTaskNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    throw error;
   }
-
-  const updates: Partial<TaskRow> = {
-    updatedAt: Date.now(),
-  };
-  if (req.body.originalName !== undefined) {
-    updates.originalName = repairPossiblyMojibakeText(String(req.body.originalName).trim());
-  }
-  if (req.body.tags !== undefined) {
-    updates.tags = JSON.stringify(normalizeTags(req.body.tags));
-  }
-  if (req.body.notebookId !== undefined) {
-    updates.notebookId = req.body.notebookId || null;
-  }
-  if (req.body.eventDate !== undefined) {
-    updates.eventDate = req.body.eventDate ? Number(req.body.eventDate) : null;
-  }
-  if (req.body.summary !== undefined) {
-    updates.summary = req.body.summary ? String(req.body.summary) : null;
-  }
-  await db('tasks').where({ id: task.id, userId: user.id }).update(updates);
-  const updatedTask = (await db('tasks').where({ id: task.id }).first()) as TaskRow;
-  if (updatedTask.status === 'completed' && updatedTask.transcript) {
-    await reindexTask(updatedTask);
-  }
-  return res.json(toTaskResponse(updatedTask));
 }));
 
 router.delete('/tasks/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const task = await findTaskForUser(user.id, req.params.id);
-  if (!task) {
-    return res.status(404).json({ error: 'Task not found.' });
+  try {
+    await deleteTaskForUserAndCleanup(user.id, req.params.id, uploadDir);
+    return res.json({ success: true });
+  } catch (error) {
+    if (error instanceof UserTaskNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    throw error;
   }
-
-  const filePath = path.join(uploadDir, task.filename);
-  if (fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
-  }
-
-  await clearTaskIndex(task.id);
-  await db('task_jobs').where({ taskId: task.id }).delete();
-  await db('task_messages').where({ taskId: task.id }).delete();
-  await db('tasks').where({ id: task.id, userId: user.id }).delete();
-  return res.json({ success: true });
 }));
 
 router.get('/tasks/:id/messages', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const task = await findTaskForUser(user.id, req.params.id);
-  if (!task) {
-    return res.status(404).json({ error: 'Task not found.' });
+  try {
+    return res.json(await listTaskMessagesForUser(user.id, req.params.id));
+  } catch (error) {
+    if (error instanceof UserTaskNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    throw error;
   }
-
-  const messages = (await db('task_messages')
-    .where({ taskId: task.id })
-    .orderBy('createdAt', 'asc')) as TaskMessageRow[];
-  return res.json(messages);
 }));
 
 export const tasksRouter = router;

@@ -1,4 +1,5 @@
-import { db } from '../db.js';
+import { listNotebookRowsByUser } from '../database/repositories/notebooks-repository.js';
+import { listTaskRowsByUser } from '../database/repositories/tasks-repository.js';
 import {
   answerAcrossKnowledgeBase,
   isLlmConfigured,
@@ -10,9 +11,7 @@ import { toTaskResponse, type TaskRow } from './task-types.js';
 import { scoreTask } from './task-helpers.js';
 
 export async function searchTasks(userId: string, query: string) {
-  const tasks = ((await db('tasks')
-    .where({ userId })
-    .orderBy('createdAt', 'desc')) as TaskRow[]).map(toTaskResponse);
+  const tasks = ((await listTaskRowsByUser(userId)) as TaskRow[]).map(toTaskResponse);
 
   if (!query) {
     return tasks.slice(0, 20);
@@ -56,9 +55,7 @@ export async function answerFromKnowledgeBase(
     throw new Error('LLM API is not configured.');
   }
 
-  const allTasks = ((await db('tasks')
-    .where({ userId })
-    .orderBy('createdAt', 'desc')) as TaskRow[]).map(toTaskResponse);
+  const allTasks = ((await listTaskRowsByUser(userId)) as TaskRow[]).map(toTaskResponse);
   const selectedIds = taskIds?.length ? taskIds : [];
   const retrieval = await searchChunksHybrid(userId, query, {
     taskIds: selectedIds.length ? selectedIds : undefined,
@@ -77,7 +74,7 @@ export async function answerFromKnowledgeBase(
     throw new Error('No matching transcripts found.');
   }
 
-  const notebooks = await db('notebooks').where({ userId });
+  const notebooks = await listNotebookRowsByUser(userId);
   const notebookMap = new Map(notebooks.map((item) => [item.id, item.name]));
   const answer = await answerAcrossKnowledgeBase(
     query,

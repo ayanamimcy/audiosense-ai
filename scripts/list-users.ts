@@ -1,20 +1,12 @@
 import 'dotenv/config';
 
+import { listUserAuthRows } from '../database/repositories/users-sessions-repository.js';
 import { db, initDb } from '../db.js';
-
-interface UserRow {
-  id: string;
-  name: string;
-  email: string;
-  createdAt: number;
-}
 
 async function main() {
   await initDb();
 
-  const users = (await db('users')
-    .select('id', 'name', 'email', 'createdAt')
-    .orderBy('createdAt', 'asc')) as UserRow[];
+  const users = await listUserAuthRows();
 
   if (!users.length) {
     console.log('No users found.');

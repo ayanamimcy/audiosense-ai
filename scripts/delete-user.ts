@@ -1,5 +1,10 @@
 import 'dotenv/config';
 
+import {
+  deleteUserAuthRowById,
+  findUserAuthRowByEmail,
+  findUserAuthRowById,
+} from '../database/repositories/users-sessions-repository.js';
 import { db, initDb } from '../db.js';
 
 function printUsage() {
@@ -58,19 +63,12 @@ async function main() {
 
   await initDb();
 
-  const query = db('users').select('id', 'email', 'name');
-  if (id) {
-    query.where({ id });
-  } else {
-    query.whereRaw('lower(email) = ?', [email]);
-  }
-
-  const user = await query.first();
+  const user = id ? await findUserAuthRowById(id) : await findUserAuthRowByEmail(email);
   if (!user) {
     throw new Error('User not found.');
   }
 
-  await db('users').where({ id: String(user.id) }).delete();
+  await deleteUserAuthRowById(String(user.id));
   console.log(`Deleted user ${String(user.email)} (${String(user.id)}).`);
 }
 

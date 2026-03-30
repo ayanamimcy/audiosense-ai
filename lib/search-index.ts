@@ -16,6 +16,15 @@ type SearchChunk = {
   updatedAt: number;
 };
 
+function toSqliteFtsQuery(query: string) {
+  const tokens = query.match(/[\p{L}\p{N}]+/gu) || [];
+  if (tokens.length === 0) {
+    return '';
+  }
+
+  return tokens.join(' ');
+}
+
 function chunkTranscript(transcript: string, maxLength = 1200) {
   const cleaned = transcript.replace(/\s+/g, ' ').trim();
   if (!cleaned) {
@@ -126,20 +135,36 @@ export async function searchTasksByText(userId: string, query: string) {
     return rows.map((row) => ({ taskId: row.id as string, score: 1, snippet: row.originalName as string }));
   }
 
+  const sqliteQuery = toSqliteFtsQuery(query);
+  if (!sqliteQuery) {
+    return [];
+  }
+
   const result = await db.raw(
-    `SELECT taskId, MAX(-bm25(task_chunk_fts)) AS score, snippet(task_chunk_fts, 6, '[', ']', '...', 12) AS snippet
+    `SELECT taskId, -bm25(task_chunk_fts) AS score, snippet(task_chunk_fts, 6, '[', ']', '...', 12) AS snippet
      FROM task_chunk_fts
      WHERE task_chunk_fts MATCH ? AND userId = ?
-     GROUP BY taskId
      ORDER BY score DESC
-     LIMIT 20`,
-    [query, userId],
+     LIMIT 50`,
+    [sqliteQuery, userId],
   );
 
-  return (result as Array<{ taskId: string; score: number; snippet: string }> | { rows: Array<{ taskId: string; score: number; snippet: string }> })
+  const rows = (result as Array<{ taskId: string; score: number; snippet: string }> | { rows: Array<{ taskId: string; score: number; snippet: string }> })
     && Array.isArray((result as { rows?: unknown }).rows)
     ? ((result as { rows: Array<{ taskId: string; score: number; snippet: string }> }).rows)
     : (result as Array<{ taskId: string; score: number; snippet: string }>);
+
+  const bestByTask = new Map<string, { taskId: string; score: number; snippet: string }>();
+  for (const row of rows) {
+    const current = bestByTask.get(row.taskId);
+    if (!current || row.score > current.score) {
+      bestByTask.set(row.taskId, row);
+    }
+  }
+
+  return [...bestByTask.values()]
+    .sort((left, right) => right.score - left.score)
+    .slice(0, 20);
 }
 
 export async function searchChunksHybrid(

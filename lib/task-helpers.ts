@@ -1,10 +1,11 @@
-import { db } from '../db.js';
+import { listNotebookIdRowsByUser } from '../database/repositories/notebooks-repository.js';
+import { findTaskRowForUser } from '../database/repositories/tasks-repository.js';
 import { repairPossiblyMojibakeText } from './text-encoding.js';
 import { normalizeSummaryPromptNotebookIds } from './summary-prompts.js';
 import { parseJsonField, toTaskResponse, type TaskRow } from './task-types.js';
 
 export async function findTaskForUser(userId: string, taskId: string) {
-  return (await db('tasks').where({ id: taskId, userId }).first()) as TaskRow | undefined;
+  return findTaskRowForUser(userId, taskId);
 }
 
 export async function getValidatedNotebookIdsForUser(userId: string, input: unknown) {
@@ -13,9 +14,7 @@ export async function getValidatedNotebookIdsForUser(userId: string, input: unkn
     return [];
   }
 
-  const rows = (await db('notebooks').where({ userId }).whereIn('id', requestedIds).select('id')) as Array<{
-    id: string;
-  }>;
+  const rows = await listNotebookIdRowsByUser(userId, requestedIds);
   const validIds = new Set(rows.map((row) => row.id));
   return requestedIds.filter((id) => validIds.has(id));
 }

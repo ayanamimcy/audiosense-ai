@@ -1,5 +1,12 @@
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '../db.js';
+import {
+  findTaskJobRowById,
+  findNextQueuedTaskJob,
+  insertTaskJobRow,
+  markTaskJobProcessing,
+  updateTaskJobRowById,
+} from '../database/repositories/task-jobs-repository.js';
+import { findTaskRowById, updateTaskRowById } from '../database/repositories/tasks-repository.js';
 import { processQueuedJob } from './task-processor.js';
 import { parseJsonField, type TaskJobRow } from './task-types.js';
 
@@ -29,8 +36,8 @@ export async function enqueueTaskJob(input: {
     updatedAt: now,
   };
 
-  await db('task_jobs').insert(job);
-  await db('tasks').where({ id: input.taskId }).update({
+  await insertTaskJobRow(job);
+  await updateTaskRowById(input.taskId, {
     status: 'pending',
     provider: job.provider,
     updatedAt: now,
@@ -41,34 +48,23 @@ export async function enqueueTaskJob(input: {
 
 export async function claimNextJob(workerId: string) {
   const now = Date.now();
-  const candidate = (await db('task_jobs')
-    .where({ status: 'queued' })
-    .andWhere('runAfter', '<=', now)
-    .orderBy('createdAt', 'asc')
-    .first()) as TaskJobRow | undefined;
+  const candidate = await findNextQueuedTaskJob(now);
 
   if (!candidate) {
     return null;
   }
 
-  const updated = await db('task_jobs')
-    .where({ id: candidate.id, status: 'queued' })
-    .update({
-      status: 'processing',
-      lockedAt: now,
-      workerId,
-      updatedAt: now,
-    });
+  const updated = await markTaskJobProcessing(candidate.id, workerId, now);
 
   if (!updated) {
     return null;
   }
 
-  return (await db('task_jobs').where({ id: candidate.id }).first()) as TaskJobRow;
+  return await findTaskJobRowById(candidate.id) || null;
 }
 
 export async function completeJob(jobId: string) {
-  await db('task_jobs').where({ id: jobId }).update({
+  await updateTaskJobRowById(jobId, {
     status: 'completed',
     updatedAt: Date.now(),
   });
@@ -80,7 +76,7 @@ export async function failJob(job: TaskJobRow, error: unknown) {
   const shouldRetry = nextAttemptCount < 3;
   const now = Date.now();
 
-  await db('task_jobs').where({ id: job.id }).update({
+  await updateTaskJobRowById(job.id, {
     status: shouldRetry ? 'queued' : 'failed',
     attemptCount: nextAttemptCount,
     lastError: message,
@@ -91,13 +87,14 @@ export async function failJob(job: TaskJobRow, error: unknown) {
   });
 
   if (!shouldRetry) {
-    await db('tasks').where({ id: job.taskId }).update({
+    const task = await findTaskRowById(job.taskId);
+    await updateTaskRowById(job.taskId, {
       status: 'failed',
       result: message,
       updatedAt: now,
       metadata: JSON.stringify({
         ...parseJsonField<Record<string, unknown>>(
-          (await db('tasks').where({ id: job.taskId }).first())?.metadata,
+          task?.metadata,
           {},
         ),
         failedAt: now,

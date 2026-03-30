@@ -1,7 +1,19 @@
 import { randomBytes, scrypt as scryptCallback, timingSafeEqual, createHash } from 'crypto';
 import { promisify } from 'util';
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '../db.js';
+import {
+  deleteSessionRowById,
+  deleteSessionRowByTokenHash,
+  deleteSessionRowsByUserId,
+  findSessionUserRowByTokenHash,
+  findUserAuthRowByEmail,
+  findUserAuthRowById,
+  insertSessionRow,
+  insertUserAuthRow,
+  updateSessionRowById,
+  updateUserAuthRowById,
+  type UserAuthRow,
+} from '../database/repositories/users-sessions-repository.js';
 
 const scrypt = promisify(scryptCallback);
 const SESSION_COOKIE = 'audiosense_session';
@@ -12,10 +24,6 @@ export interface AuthUser {
   name: string;
   email: string;
   createdAt: number;
-}
-
-interface UserRow extends AuthUser {
-  passwordHash: string;
 }
 
 function hashToken(token: string) {
@@ -45,14 +53,12 @@ export async function verifyPassword(password: string, passwordHash: string) {
 }
 
 export async function createUser(input: { name: string; email: string; password: string }) {
-  const existing = (await db('users').whereRaw('lower(email) = ?', [input.email.toLowerCase()]).first()) as
-    | UserRow
-    | undefined;
+  const existing = await findUserAuthRowByEmail(input.email);
   if (existing) {
     throw new Error('Email is already registered.');
   }
 
-  const user: UserRow = {
+  const user: UserAuthRow = {
     id: uuidv4(),
     name: input.name.trim(),
     email: input.email.trim().toLowerCase(),
@@ -60,14 +66,12 @@ export async function createUser(input: { name: string; email: string; password:
     createdAt: Date.now(),
   };
 
-  await db('users').insert(user);
+  await insertUserAuthRow(user);
   return sanitizeUser(user);
 }
 
 export async function authenticateUser(email: string, password: string) {
-  const user = (await db('users').whereRaw('lower(email) = ?', [email.trim().toLowerCase()]).first()) as
-    | UserRow
-    | undefined;
+  const user = await findUserAuthRowByEmail(email.trim().toLowerCase());
   if (!user) {
     return null;
   }
@@ -82,8 +86,8 @@ export async function updateUserProfile(input: { userId: string; name: string })
     throw new Error('Display name is required.');
   }
 
-  await db('users').where({ id: input.userId }).update({ name: nextName });
-  const user = (await db('users').where({ id: input.userId }).first()) as UserRow | undefined;
+  await updateUserAuthRowById(input.userId, { name: nextName });
+  const user = await findUserAuthRowById(input.userId);
   if (!user) {
     throw new Error('User not found.');
   }
@@ -105,30 +109,27 @@ export async function changeUserPassword(input: {
     throw new Error('New password must be at least 8 characters.');
   }
 
-  await db.transaction(async (trx) => {
-    const user = (await trx('users').where({ id: input.userId }).first()) as UserRow | undefined;
-    if (!user) {
-      throw new Error('User not found.');
-    }
+  const user = await findUserAuthRowById(input.userId);
+  if (!user) {
+    throw new Error('User not found.');
+  }
 
-    const valid = await verifyPassword(currentPassword, user.passwordHash);
-    if (!valid) {
-      throw new Error('Current password is incorrect.');
-    }
+  const valid = await verifyPassword(currentPassword, user.passwordHash);
+  if (!valid) {
+    throw new Error('Current password is incorrect.');
+  }
 
-    await trx('users').where({ id: input.userId }).update({
-      passwordHash: await hashPassword(newPassword),
-    });
-
-    await trx('sessions').where({ userId: input.userId }).delete();
+  await updateUserAuthRowById(input.userId, {
+    passwordHash: await hashPassword(newPassword),
   });
+  await deleteSessionRowsByUserId(input.userId);
 }
 
 export async function createSession(userId: string) {
   const token = randomBytes(32).toString('hex');
   const now = Date.now();
 
-  await db('sessions').insert({
+  await insertSessionRow({
     id: uuidv4(),
     userId,
     tokenHash: hashToken(token),
@@ -146,29 +147,18 @@ export async function getSessionUser(token: string | undefined) {
   }
 
   const hashed = hashToken(token);
-  const session = await db('sessions')
-    .join('users', 'sessions.userId', 'users.id')
-    .select(
-      'users.id',
-      'users.name',
-      'users.email',
-      'users.createdAt',
-      'sessions.id as sessionId',
-      'sessions.expiresAt',
-    )
-    .where('sessions.tokenHash', hashed)
-    .first();
+  const session = await findSessionUserRowByTokenHash(hashed);
 
   if (!session) {
     return null;
   }
 
   if (Number(session.expiresAt) < Date.now()) {
-    await db('sessions').where({ id: session.sessionId }).delete();
+    await deleteSessionRowById(String(session.sessionId));
     return null;
   }
 
-  await db('sessions').where({ id: session.sessionId }).update({ lastSeenAt: Date.now() });
+  await updateSessionRowById(String(session.sessionId), { lastSeenAt: Date.now() });
 
   return {
     user: sanitizeUser(session),
@@ -181,7 +171,7 @@ export async function destroySession(token: string | undefined) {
     return;
   }
 
-  await db('sessions').where({ tokenHash: hashToken(token) }).delete();
+  await deleteSessionRowByTokenHash(hashToken(token));
 }
 
 export function getSessionCookieName() {
@@ -215,7 +205,7 @@ export function readCookie(header: string | undefined, name: string) {
   return undefined;
 }
 
-function sanitizeUser(user: Pick<UserRow, 'id' | 'name' | 'email' | 'createdAt'>) {
+function sanitizeUser(user: Pick<UserAuthRow, 'id' | 'name' | 'email' | 'createdAt'>) {
   return {
     id: user.id,
     name: user.name,

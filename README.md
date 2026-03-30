@@ -116,6 +116,14 @@ Common optional settings:
 
 ### 3. Start the web app and worker
 
+Run database migrations first:
+
+```bash
+npm run db:migrate
+```
+
+Then start the app and worker:
+
 ```bash
 npm run dev
 ```
@@ -158,6 +166,7 @@ The repository includes:
 ```bash
 cp .env.example .env
 docker compose pull
+docker compose run --rm app npm run db:migrate
 docker compose up -d
 ```
 
@@ -165,6 +174,8 @@ docker compose up -d
 
 ```bash
 cp .env.example .env
+docker compose -f docker-compose.yml -f docker-compose.build.yml build app worker
+docker compose -f docker-compose.yml -f docker-compose.build.yml run --rm app npm run db:migrate
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 ```
 
@@ -174,6 +185,7 @@ Important deployment notes:
 - `app` and `worker` talk to `local-audio-runtime` over the Compose network
 - `local-audio-runtime` is designed for Linux + NVIDIA GPU environments
 - First startup may take a while because Whisper / diarization weights are downloaded
+- `app` / `worker` no longer create tables implicitly on boot; run `npm run db:migrate` first
 
 Default image names:
 
@@ -208,6 +220,32 @@ Current practical boundaries:
 - object storage is not the default path yet
 - browser recording works best in foreground sessions
 - large-scale queue orchestration is still intentionally simple
+
+## Database Workflow
+
+Database schema changes are managed through Knex migrations in [database/migrations](/Users/chenyangm/Documents/github-project/audiosense-ai/database/migrations).
+
+Common commands:
+
+```bash
+npm run db:migrate
+npm run db:rollback
+npm run db:status
+npm run db:migrate:make -- add_new_column
+```
+
+Optional helpers:
+
+```bash
+npm run db:reindex-search
+npm run db:migrate:sqlite-to-pg -- --from /path/to/database.sqlite --to postgres://user:pass@host:5432/audiosense
+```
+
+Runtime behavior:
+
+- development can opt into automatic migrations with `AUTO_RUN_MIGRATIONS=true`
+- production should keep `AUTO_RUN_MIGRATIONS=false`
+- if migrations are pending, `app` and `worker` fail fast with a clear error
 
 ## Roadmap Ideas
 
