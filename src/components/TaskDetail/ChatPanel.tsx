@@ -2,7 +2,8 @@ import React from 'react';
 import { Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { MarkdownContent } from '../MarkdownContent';
-import type { AppCapabilities, TaskMessage } from '../../types';
+import { useAppDataContext } from '../../contexts/AppDataContext';
+import type { TaskMessage } from '../../types';
 
 export function ChatPanel({
   messages,
@@ -10,15 +11,14 @@ export function ChatPanel({
   onMessageInputChange,
   isSendingMessage,
   onSendMessage,
-  capabilities,
 }: {
   messages: TaskMessage[];
   messageInput: string;
   onMessageInputChange: (value: string) => void;
   isSendingMessage: boolean;
   onSendMessage: () => void;
-  capabilities: AppCapabilities | null;
 }) {
+  const { capabilities } = useAppDataContext();
   return (
     <div className="flex flex-col h-full min-h-[420px]">
       <div className="flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1">

@@ -8,7 +8,7 @@ import { PanelButton } from './PanelButton';
 import { SummaryPanel } from './SummaryPanel';
 import { TranscriptPanel } from './TranscriptPanel';
 import { ChatPanel } from './ChatPanel';
-import type { AppCapabilities, Notebook, SummaryPrompt, Task, TaskMessage } from '../../types';
+import type { Task, TaskMessage } from '../../types';
 
 function buildTranscriptClipboardText(task: Task) {
   if (task.segments.length > 0) {
@@ -27,17 +27,12 @@ type Panel = 'summary' | 'transcript' | 'chat';
 
 export function TaskDetail({
   task,
-  notebooks,
-  capabilities,
-  summaryPrompts,
   onUpdateTask,
 }: {
   task: Task;
-  notebooks: Notebook[];
-  capabilities: AppCapabilities | null;
-  summaryPrompts: SummaryPrompt[];
   onUpdateTask: () => void | Promise<void>;
 }) {
+
   const [activePanel, setActivePanel] = useState<Panel>('summary');
   const [summaryInstructions, setSummaryInstructions] = useState('');
   const [summaryPromptSelection, setSummaryPromptSelection] = useState('default');
@@ -279,8 +274,6 @@ export function TaskDetail({
     <div className="flex flex-col h-full">
       <TaskHeader
         task={task}
-        notebooks={notebooks}
-        capabilities={capabilities}
         audioRef={audioRef}
         onUpdateTask={onUpdateTask}
         onTimeUpdate={resolveActiveSegmentId}
@@ -326,8 +319,6 @@ export function TaskDetail({
             {activePanel === 'summary' && (
               <SummaryPanel
                 task={task}
-                capabilities={capabilities}
-                summaryPrompts={summaryPrompts}
                 summaryInstructions={summaryInstructions}
                 onSummaryInstructionsChange={setSummaryInstructions}
                 summaryPromptSelection={summaryPromptSelection}
@@ -355,7 +346,6 @@ export function TaskDetail({
                 onMessageInputChange={setMessageInput}
                 isSendingMessage={isSendingMessage}
                 onSendMessage={() => void handleSendMessage()}
-                capabilities={capabilities}
               />
             )}
           </>

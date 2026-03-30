@@ -2,19 +2,15 @@ import React, { useMemo, useState } from 'react';
 import { BrainCircuit, Loader2, Search } from 'lucide-react';
 import { apiJson } from './api';
 import { MarkdownContent } from './components/MarkdownContent';
-import type { KnowledgeAnswer, Notebook, Task, UserSettings } from './types';
+import { useAppDataContext } from './contexts/AppDataContext';
+import type { KnowledgeAnswer, Task } from './types';
 
 export function KnowledgeBase({
-  tasks,
-  notebooks,
-  userSettings,
   onSelectTask,
 }: {
-  tasks: Task[];
-  notebooks: Notebook[];
-  userSettings: UserSettings | null;
   onSelectTask: (taskId: string) => void;
 }) {
+  const { tasks, notebooks, userSettings } = useAppDataContext();
   const [query, setQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Task[]>([]);
   const [answer, setAnswer] = useState<KnowledgeAnswer | null>(null);

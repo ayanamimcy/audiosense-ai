@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { LogOut } from 'lucide-react';
 import { apiJson } from '../api';
 import { cn, getLocalSetting } from '../lib/utils';
-import type { AppCapabilities, AuthUser, ProviderHealth, UserSettings } from '../types';
+import { useAppDataContext } from '../contexts/AppDataContext';
+import { useAuthContext } from '../contexts/AuthContext';
+import type { AuthUser, UserSettings } from '../types';
 
 const LANGUAGE_OPTIONS = [
   { value: 'auto', label: 'Auto Detect' },
@@ -17,21 +19,15 @@ const LANGUAGE_OPTIONS = [
 
 export function SettingsPage({
   onLogout,
-  currentUser,
-  capabilities,
-  userSettings,
-  providerHealth,
   onUserUpdated,
   onSettingsSaved,
 }: {
   onLogout: () => void | Promise<void>;
-  currentUser: AuthUser;
-  capabilities: AppCapabilities | null;
-  userSettings: UserSettings | null;
-  providerHealth: ProviderHealth[];
   onUserUpdated: (user: AuthUser) => void;
   onSettingsSaved: () => void | Promise<void>;
 }) {
+  const { capabilities, userSettings, providerHealth } = useAppDataContext();
+  const { currentUser } = useAuthContext();
   const [language, setLanguage] = useState('auto');
   const [enableDiarization, setEnableDiarization] = useState(true);
   const [draft, setDraft] = useState<UserSettings | null>(userSettings);

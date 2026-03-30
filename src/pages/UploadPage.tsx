@@ -2,7 +2,7 @@ import React, { useRef, useState } from 'react';
 import { Loader2, Upload } from 'lucide-react';
 import { apiFetch } from '../api';
 import { cn, getLocalSetting } from '../lib/utils';
-import type { AppCapabilities, Notebook, UserSettings } from '../types';
+import { useAppDataContext } from '../contexts/AppDataContext';
 
 const AUDIO_FILE_ACCEPT = 'audio/*,.m4a,.mp3,.wav,.ogg,.webm,.aac,.mp4,.flac';
 const AUDIO_FILE_EXTENSIONS = ['.m4a', '.mp3', '.wav', '.ogg', '.webm', '.aac', '.mp4', '.flac'];
@@ -18,16 +18,11 @@ function isLikelyAudioFile(file: File) {
 }
 
 export function UploadPage({
-  notebooks,
-  capabilities,
-  userSettings,
   onUploadSuccess,
 }: {
-  notebooks: Notebook[];
-  capabilities: AppCapabilities | null;
-  userSettings: UserSettings | null;
   onUploadSuccess: (taskId?: string) => void | Promise<void>;
 }) {
+  const { notebooks, capabilities, userSettings } = useAppDataContext();
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; filename: string } | null>(null);

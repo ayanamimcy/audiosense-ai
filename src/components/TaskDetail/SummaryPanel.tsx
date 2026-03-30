@@ -1,12 +1,11 @@
 import React from 'react';
 import { HelpCircle } from 'lucide-react';
 import { MarkdownContent } from '../MarkdownContent';
-import type { AppCapabilities, SummaryPrompt, Task } from '../../types';
+import { useAppDataContext } from '../../contexts/AppDataContext';
+import type { Task } from '../../types';
 
 export function SummaryPanel({
   task,
-  capabilities,
-  summaryPrompts,
   summaryInstructions,
   onSummaryInstructionsChange,
   summaryPromptSelection,
@@ -15,8 +14,6 @@ export function SummaryPanel({
   onGenerate,
 }: {
   task: Task;
-  capabilities: AppCapabilities | null;
-  summaryPrompts: SummaryPrompt[];
   summaryInstructions: string;
   onSummaryInstructionsChange: (value: string) => void;
   summaryPromptSelection: string;
@@ -24,6 +21,7 @@ export function SummaryPanel({
   isGenerating: boolean;
   onGenerate: () => void;
 }) {
+  const { capabilities, summaryPrompts } = useAppDataContext();
   const availableSummaryPrompts = summaryPrompts.filter((prompt) => {
     if (!prompt.notebookIds.length) {
       return true;

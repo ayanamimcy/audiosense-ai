@@ -3,24 +3,22 @@ import { format } from 'date-fns';
 import { Book, Check, Edit2, Sparkles, Tag, Users, Waves } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { apiFetch } from '../../api';
+import { useAppDataContext } from '../../contexts/AppDataContext';
 import { StatCard } from './StatCard';
-import type { AppCapabilities, Notebook, Task } from '../../types';
+import type { Task } from '../../types';
 
 export function TaskHeader({
   task,
-  notebooks,
-  capabilities,
   audioRef,
   onUpdateTask,
   onTimeUpdate,
 }: {
   task: Task;
-  notebooks: Notebook[];
-  capabilities: AppCapabilities | null;
   audioRef: React.RefObject<HTMLAudioElement | null>;
   onUpdateTask: () => void | Promise<void>;
   onTimeUpdate: (currentTime: number) => void;
 }) {
+  const { notebooks, capabilities } = useAppDataContext();
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState(task.originalName);
   const [editTags, setEditTags] = useState(task.tags.join(', '));

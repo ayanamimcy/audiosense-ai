@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   BrainCircuit,
   FolderKanban,
@@ -20,27 +21,54 @@ import type { AuthUser } from '../types';
 
 export type Tab = 'upload' | 'record' | 'tasks' | 'notebook' | 'knowledge' | 'prompts' | 'settings';
 
+const TAB_TO_PATH: Record<Tab, string> = {
+  notebook: '/',
+  knowledge: '/knowledge',
+  upload: '/upload',
+  record: '/record',
+  tasks: '/tasks',
+  prompts: '/prompts',
+  settings: '/settings',
+};
+
+const PATH_TO_TAB: Record<string, Tab> = {
+  '/': 'notebook',
+  '/notebook': 'notebook',
+  '/knowledge': 'knowledge',
+  '/upload': 'upload',
+  '/record': 'record',
+  '/tasks': 'tasks',
+  '/prompts': 'prompts',
+  '/settings': 'settings',
+};
+
+function useActiveTab(): Tab {
+  const { pathname } = useLocation();
+  // Match /tasks/:id as 'tasks' tab
+  if (pathname.startsWith('/tasks')) return 'tasks';
+  return PATH_TO_TAB[pathname] || 'notebook';
+}
+
 export function AppShell({
   currentUser,
-  activeTab,
-  onTabChange,
   onLogout,
-  isMobileMenuOpen,
-  onMobileMenuChange,
-  onOpenTasksTab,
   mainScrollRef,
   children,
 }: {
   currentUser: AuthUser;
-  activeTab: Tab;
-  onTabChange: (tab: Tab) => void;
   onLogout: () => void;
-  isMobileMenuOpen: boolean;
-  onMobileMenuChange: (open: boolean) => void;
-  onOpenTasksTab: () => void;
   mainScrollRef: React.RefObject<HTMLDivElement | null>;
   children: React.ReactNode;
 }) {
+  const navigate = useNavigate();
+  const activeTab = useActiveTab();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+
+  const goTo = (tab: Tab) => {
+    navigate(TAB_TO_PATH[tab]);
+    setIsMobileMenuOpen(false);
+  };
+
   return (
     <div className="h-[100dvh] bg-slate-50 text-slate-900 flex flex-col lg:flex-row overflow-hidden relative">
       <header className="lg:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between shrink-0 z-20 shadow-sm">
@@ -67,22 +95,22 @@ export function AppShell({
         </div>
 
         <nav className="flex-1 p-4 flex-col space-y-1 overflow-y-auto custom-scrollbar">
-          <SidebarButton active={activeTab === 'notebook'} onClick={() => onTabChange('notebook')} icon={<FolderKanban className="w-5 h-5" />}>
+          <SidebarButton active={activeTab === 'notebook'} onClick={() => goTo('notebook')} icon={<FolderKanban className="w-5 h-5" />}>
             Workspace
           </SidebarButton>
-          <SidebarButton active={activeTab === 'knowledge'} onClick={() => onTabChange('knowledge')} icon={<BrainCircuit className="w-5 h-5" />}>
+          <SidebarButton active={activeTab === 'knowledge'} onClick={() => goTo('knowledge')} icon={<BrainCircuit className="w-5 h-5" />}>
             Knowledge
           </SidebarButton>
-          <SidebarButton active={activeTab === 'upload'} onClick={() => onTabChange('upload')} icon={<Upload className="w-5 h-5" />}>
+          <SidebarButton active={activeTab === 'upload'} onClick={() => goTo('upload')} icon={<Upload className="w-5 h-5" />}>
             Upload
           </SidebarButton>
-          <SidebarButton active={activeTab === 'record'} onClick={() => onTabChange('record')} icon={<Mic className="w-5 h-5" />}>
+          <SidebarButton active={activeTab === 'record'} onClick={() => goTo('record')} icon={<Mic className="w-5 h-5" />}>
             Record
           </SidebarButton>
-          <SidebarButton active={activeTab === 'tasks'} onClick={() => onTabChange('tasks')} icon={<List className="w-5 h-5" />}>
+          <SidebarButton active={activeTab === 'tasks'} onClick={() => goTo('tasks')} icon={<List className="w-5 h-5" />}>
             Tasks
           </SidebarButton>
-          <SidebarButton active={activeTab === 'prompts'} onClick={() => onTabChange('prompts')} icon={<Sparkles className="w-5 h-5" />}>
+          <SidebarButton active={activeTab === 'prompts'} onClick={() => goTo('prompts')} icon={<Sparkles className="w-5 h-5" />}>
             Prompts
           </SidebarButton>
         </nav>
@@ -97,7 +125,7 @@ export function AppShell({
               <p className="text-xs text-slate-500 truncate">{currentUser.email}</p>
             </div>
           </div>
-          <SidebarButton active={activeTab === 'settings'} onClick={() => onTabChange('settings')} icon={<Settings className="w-5 h-5" />}>
+          <SidebarButton active={activeTab === 'settings'} onClick={() => goTo('settings')} icon={<Settings className="w-5 h-5" />}>
             Settings
           </SidebarButton>
           <button
@@ -122,11 +150,11 @@ export function AppShell({
       </main>
 
       <nav className="lg:hidden mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center justify-around px-2 py-2 z-30 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-        <BottomNavButton active={activeTab === 'notebook'} onClick={() => { onTabChange('notebook'); onMobileMenuChange(false); }} icon={<FolderKanban className="w-5 h-5" />} label="Workspace" />
-        <BottomNavButton active={activeTab === 'knowledge'} onClick={() => { onTabChange('knowledge'); onMobileMenuChange(false); }} icon={<BrainCircuit className="w-5 h-5" />} label="Search" />
+        <BottomNavButton active={activeTab === 'notebook'} onClick={() => goTo('notebook')} icon={<FolderKanban className="w-5 h-5" />} label="Workspace" />
+        <BottomNavButton active={activeTab === 'knowledge'} onClick={() => goTo('knowledge')} icon={<BrainCircuit className="w-5 h-5" />} label="Search" />
         <div className="relative -top-5">
           <button
-            onClick={() => { onTabChange('record'); onMobileMenuChange(false); }}
+            onClick={() => goTo('record')}
             className={cn(
               'w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95',
               activeTab === 'record' ? 'bg-indigo-700 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700',
@@ -135,19 +163,19 @@ export function AppShell({
             <Mic className="w-6 h-6" />
           </button>
         </div>
-        <BottomNavButton active={activeTab === 'upload'} onClick={() => { onTabChange('upload'); onMobileMenuChange(false); }} icon={<Upload className="w-5 h-5" />} label="Upload" />
-        <BottomNavButton active={isMobileMenuOpen} onClick={() => onMobileMenuChange(true)} icon={<Menu className="w-5 h-5" />} label="More" />
+        <BottomNavButton active={activeTab === 'upload'} onClick={() => goTo('upload')} icon={<Upload className="w-5 h-5" />} label="Upload" />
+        <BottomNavButton active={isMobileMenuOpen} onClick={() => setIsMobileMenuOpen(true)} icon={<Menu className="w-5 h-5" />} label="More" />
       </nav>
 
       {isMobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm transition-opacity" onClick={() => onMobileMenuChange(false)}>
+        <div className="lg:hidden fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm transition-opacity" onClick={() => setIsMobileMenuOpen(false)}>
           <div
             className="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl shadow-2xl transition-transform transform translate-y-0 max-h-[85vh] flex flex-col"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
               <h2 className="text-xl font-bold text-slate-800">More</h2>
-              <button onClick={() => onMobileMenuChange(false)} className="p-2 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200">
+              <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 bg-slate-100 rounded-full text-slate-500 hover:bg-slate-200">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -165,14 +193,14 @@ export function AppShell({
 
               <div className="space-y-2">
                 <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-2">Workspace</h3>
-                <DrawerButton icon={<List className="w-5 h-5 text-slate-500" />} label="Tasks" onClick={onOpenTasksTab} />
-                <DrawerButton icon={<Sparkles className="w-5 h-5 text-slate-500" />} label="Summary Prompts" onClick={() => { onTabChange('prompts'); onMobileMenuChange(false); }} />
-                <DrawerButton icon={<Settings className="w-5 h-5 text-slate-500" />} label="Settings & Preferences" onClick={() => { onTabChange('settings'); onMobileMenuChange(false); }} />
+                <DrawerButton icon={<List className="w-5 h-5 text-slate-500" />} label="Tasks" onClick={() => goTo('tasks')} />
+                <DrawerButton icon={<Sparkles className="w-5 h-5 text-slate-500" />} label="Summary Prompts" onClick={() => goTo('prompts')} />
+                <DrawerButton icon={<Settings className="w-5 h-5 text-slate-500" />} label="Settings & Preferences" onClick={() => goTo('settings')} />
               </div>
 
               <div className="space-y-2">
                 <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-2">Help</h3>
-                <DrawerButton icon={<HelpCircle className="w-5 h-5 text-slate-500" />} label="How It Works" onClick={() => { alert('Use upload or record to create queued transcription jobs, then manage them by notebook, tags, summaries, and global knowledge search.'); onMobileMenuChange(false); }} />
+                <DrawerButton icon={<HelpCircle className="w-5 h-5 text-slate-500" />} label="How It Works" onClick={() => { alert('Use upload or record to create queued transcription jobs, then manage them by notebook, tags, summaries, and global knowledge search.'); setIsMobileMenuOpen(false); }} />
               </div>
 
               <button

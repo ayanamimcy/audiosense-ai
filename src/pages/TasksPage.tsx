@@ -3,23 +3,16 @@ import { format } from 'date-fns';
 import { RefreshCw, Search, Trash2 } from 'lucide-react';
 import { apiFetch } from '../api';
 import { cn } from '../lib/utils';
-import type { Notebook, TagStat, Task } from '../types';
+import { useAppDataContext } from '../contexts/AppDataContext';
 
 export function TasksPage({
-  tasks,
-  notebooks,
-  tags,
   onSelectTask,
-  selectedTaskId,
   onRefresh,
 }: {
-  tasks: Task[];
-  notebooks: Notebook[];
-  tags: TagStat[];
   onSelectTask: (taskId: string) => void;
-  selectedTaskId?: string;
   onRefresh: () => void | Promise<void>;
 }) {
+  const { tasks, notebooks, tags, selectedTaskId } = useAppDataContext();
   const [searchQuery, setSearchQuery] = useState('');
   const [tagFilter, setTagFilter] = useState('');
 

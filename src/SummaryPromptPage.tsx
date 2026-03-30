@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, Sparkles, Trash2 } from 'lucide-react';
 import { apiFetch, apiJson } from './api';
-import type { Notebook, SummaryPrompt } from './types';
+import { useAppDataContext } from './contexts/AppDataContext';
+import type { SummaryPrompt } from './types';
 
 type PromptDraft = {
   name: string;
@@ -32,15 +33,8 @@ function buildDraft(prompt: SummaryPrompt | null): PromptDraft {
   };
 }
 
-export function SummaryPromptPage({
-  prompts,
-  notebooks,
-  onRefresh,
-}: {
-  prompts: SummaryPrompt[];
-  notebooks: Notebook[];
-  onRefresh: () => void | Promise<void>;
-}) {
+export function SummaryPromptPage() {
+  const { summaryPrompts: prompts, notebooks, fetchSummaryPrompts: onRefresh } = useAppDataContext();
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(prompts[0]?.id || null);
   const [draft, setDraft] = useState<PromptDraft>(createEmptyDraft());
   const [isSaving, setIsSaving] = useState(false);

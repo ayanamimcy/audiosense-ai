@@ -2,19 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Mic, Square } from 'lucide-react';
 import { apiFetch } from '../api';
 import { formatTime, getLocalSetting } from '../lib/utils';
-import type { AppCapabilities, Notebook, UserSettings } from '../types';
+import { useAppDataContext } from '../contexts/AppDataContext';
 
 export function RecordPage({
-  notebooks,
-  capabilities,
-  userSettings,
   onUploadSuccess,
 }: {
-  notebooks: Notebook[];
-  capabilities: AppCapabilities | null;
-  userSettings: UserSettings | null;
   onUploadSuccess: (taskId?: string) => void | Promise<void>;
 }) {
+  const { notebooks, capabilities, userSettings } = useAppDataContext();
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
