@@ -39,3 +39,4 @@ Thumbs.db
 .idea/
 .vscode/
 runtime-data/.user-settings.key
+.claude/

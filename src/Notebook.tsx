@@ -15,14 +15,9 @@ import {
   subWeeks,
 } from 'date-fns';
 import { ChevronLeft, ChevronRight, Edit2, FileAudio, Folder, Plus, Tag, Trash2, X } from 'lucide-react';
-import { clsx, type ClassValue } from 'clsx';
-import { twMerge } from 'tailwind-merge';
 import { apiFetch } from './api';
+import { cn } from './lib/utils';
 import type { Notebook, TagStat, Task } from './types';
-
-function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
 
 interface NotebookProps {
   tasks: Task[];
