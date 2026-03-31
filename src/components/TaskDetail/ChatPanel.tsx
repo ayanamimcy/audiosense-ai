@@ -11,17 +11,27 @@ export function ChatPanel({
   onMessageInputChange,
   isSendingMessage,
   onSendMessage,
+  compact = false,
+  scrollContainerRef,
+  onScroll,
 }: {
   messages: TaskMessage[];
   messageInput: string;
   onMessageInputChange: (value: string) => void;
   isSendingMessage: boolean;
   onSendMessage: () => void;
+  compact?: boolean;
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
+  onScroll?: (event: React.UIEvent<HTMLDivElement>) => void;
 }) {
   const { capabilities } = useAppDataContext();
   return (
-    <div className="flex flex-col h-full min-h-[420px]">
-      <div className="flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1">
+    <div className={cn('flex flex-col h-full min-h-0', compact ? 'px-4 py-4 pb-28' : 'p-6 pb-6')}>
+      <div
+        ref={scrollContainerRef}
+        onScroll={onScroll}
+        className="flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1"
+      >
         {messages.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500">
             还没有对话。你可以直接问"这段录音的结论是什么？"或"列出所有 action items"。

@@ -142,6 +142,9 @@ export default function NotebookView({
                 <ArrowLeft className="w-4 h-4" />
                 <span className="text-sm font-medium">Back</span>
               </button>
+              <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
+                {selectedTask?.originalName || 'Loading task'}
+              </h2>
             </div>
             <div className="flex-1 overflow-hidden flex flex-col">
               {selectedTask ? (

@@ -197,7 +197,7 @@ export function TasksPage({
 
       <div className={cn(
         "flex-1 overflow-y-auto pr-2 space-y-2 custom-scrollbar",
-        isBatchMode && selectedIds.length > 0 ? "pb-20" : "",
+        isBatchMode && selectedIds.length > 0 ? "pb-28 lg:pb-20" : "",
       )}>
         {filteredTasks.length === 0 ? (
           <div className="text-center py-8 text-slate-500 text-sm">{searchQuery || tagFilter ? 'No matching tasks found.' : 'No tasks yet.'}</div>
@@ -267,9 +267,9 @@ export function TasksPage({
         )}
       </div>
 
-      {/* Batch Action Bar */}
+      {/* Batch Action Bar — fixed on mobile so it's always visible, absolute on desktop */}
       {isBatchMode && selectedIds.length > 0 && (
-        <div className="absolute bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-3 shadow-[0_-10px_20px_rgba(0,0,0,0.05)] z-10">
+        <div className="batch-action-bar fixed left-0 right-0 lg:absolute lg:bottom-0 lg:left-0 lg:right-0 bg-white border-t border-slate-200 p-3 shadow-[0_-10px_20px_rgba(0,0,0,0.05)] z-40 lg:z-10">
           {isProcessing ? (
             <div className="flex items-center justify-center py-2 gap-2 text-indigo-600">
               <Loader2 className="w-5 h-5 animate-spin" />

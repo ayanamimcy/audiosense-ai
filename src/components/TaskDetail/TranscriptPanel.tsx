@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, Copy } from 'lucide-react';
+import { Check, ChevronDown, Copy } from 'lucide-react';
 import { cn, formatTime } from '../../lib/utils';
 import { MarkdownContent } from '../MarkdownContent';
 import type { Task } from '../../types';
@@ -11,6 +11,9 @@ export function TranscriptPanel({
   activeSegmentId,
   onSeekToSegment,
   segmentRefs,
+  compact = false,
+  scrollContainerRef,
+  onScroll,
 }: {
   task: Task;
   transcriptCopied: boolean;
@@ -18,70 +21,118 @@ export function TranscriptPanel({
   activeSegmentId: string | null;
   onSeekToSegment: (segmentId: string, startTime: number) => void;
   segmentRefs: React.MutableRefObject<Map<string, HTMLDivElement>>;
+  compact?: boolean;
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
+  onScroll?: (event: React.UIEvent<HTMLDivElement>) => void;
 }) {
+  const [isSpeakerBreakdownVisible, setIsSpeakerBreakdownVisible] = React.useState(false);
+
+  React.useEffect(() => {
+    setIsSpeakerBreakdownVisible(false);
+  }, [task.id]);
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-end">
-        <button
-          onClick={onCopyTranscript}
-          disabled={!task.transcript && !task.result && task.segments.length === 0}
-          className="px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2 border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          {transcriptCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-          {transcriptCopied ? 'Copied' : 'Copy Transcript'}
-        </button>
-      </div>
-
-      {task.speakers.length > 0 && (
-        <div className="grid gap-3 md:grid-cols-2">
-          {task.speakers.map((speaker) => (
-            <div key={speaker.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-slate-900">{speaker.label}</p>
-              <p className="text-sm text-slate-500 mt-1">{speaker.segmentCount} segments</p>
-              <p className="text-sm text-slate-500">{speaker.durationSeconds.toFixed(1)} seconds</p>
-            </div>
-          ))}
-        </div>
+    <div
+      ref={scrollContainerRef}
+      onScroll={onScroll}
+      className={cn(
+        'h-full overflow-y-auto custom-scrollbar',
+        compact ? 'px-4 py-3 pb-28' : 'p-6 pb-6',
       )}
+    >
+      <div className="space-y-6">
+        <div className={cn('flex items-center justify-between', compact ? 'pb-1' : '')}>
+          {compact ? <div /> : <p className="text-sm text-slate-500"></p>}
+          <button
+            onClick={onCopyTranscript}
+            disabled={!task.transcript && !task.result && task.segments.length === 0}
+            className={cn(
+              'rounded-xl font-medium flex items-center gap-2 border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 disabled:opacity-50 disabled:cursor-not-allowed',
+              compact ? 'px-3 py-2 text-xs' : 'px-3 py-2 text-sm',
+            )}
+          >
+            {transcriptCopied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
+            {transcriptCopied ? 'Copied' : 'Copy Transcript'}
+          </button>
+        </div>
 
-      {task.segments.length > 0 ? (
-        <div className="space-y-3">
-          {task.segments.map((segment) => (
-            <div
-              key={segment.id}
-              ref={(element) => {
-                if (element) {
-                  segmentRefs.current.set(segment.id, element);
-                } else {
-                  segmentRefs.current.delete(segment.id);
-                }
-              }}
-              onClick={() => onSeekToSegment(segment.id, segment.start)}
-              className={cn(
-                'rounded-2xl border p-4 cursor-pointer transition-all',
-                activeSegmentId === segment.id
-                  ? 'border-indigo-400 bg-indigo-50 shadow-sm shadow-indigo-100'
-                  : 'border-slate-200 hover:border-indigo-200 hover:bg-slate-50',
-              )}
+        {task.speakers.length > 0 && !compact && (
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <button
+              type="button"
+              onClick={() => setIsSpeakerBreakdownVisible((current) => !current)}
+              className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
+              aria-expanded={isSpeakerBreakdownVisible}
             >
-              <div className="flex items-center gap-3 flex-wrap mb-2">
-                <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
-                  {formatTime(segment.start)} - {formatTime(segment.end)}
-                </span>
-                <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
-                  {segment.speaker || 'Speaker'}
-                </span>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Speaker breakdown</p>
+                <p className="text-xs text-slate-500">
+                  {isSpeakerBreakdownVisible ? 'Hide per-speaker segment and duration stats.' : 'Show per-speaker segment and duration stats.'}
+                </p>
               </div>
-              <p className="text-sm leading-6 text-slate-700">{segment.text}</p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <MarkdownContent
-          content={task.result || task.transcript || ''}
-          proseClassName="prose prose-slate max-w-none prose-headings:font-semibold prose-a:text-indigo-600"
-        />
-      )}
+              <ChevronDown
+                className={cn(
+                  'w-4 h-4 text-slate-500 transition-transform',
+                  isSpeakerBreakdownVisible ? 'rotate-180' : '',
+                )}
+              />
+            </button>
+
+            {isSpeakerBreakdownVisible ? (
+              <div className="border-t border-slate-200 p-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  {task.speakers.map((speaker) => (
+                    <div key={speaker.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                      <p className="text-sm font-semibold text-slate-900">{speaker.label}</p>
+                      <p className="text-sm text-slate-500 mt-1">{speaker.segmentCount} segments</p>
+                      <p className="text-sm text-slate-500">{speaker.durationSeconds.toFixed(1)} seconds</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )}
+
+        {task.segments.length > 0 ? (
+          <div className="space-y-3">
+            {task.segments.map((segment) => (
+              <div
+                key={segment.id}
+                ref={(element) => {
+                  if (element) {
+                    segmentRefs.current.set(segment.id, element);
+                  } else {
+                    segmentRefs.current.delete(segment.id);
+                  }
+                }}
+                onClick={() => onSeekToSegment(segment.id, segment.start)}
+                className={cn(
+                  'rounded-2xl border p-4 cursor-pointer transition-all',
+                  activeSegmentId === segment.id
+                    ? 'border-indigo-400 bg-indigo-50 shadow-sm shadow-indigo-100'
+                    : 'border-slate-200 hover:border-indigo-200 hover:bg-slate-50',
+                )}
+              >
+                <div className="flex items-center gap-3 flex-wrap mb-2">
+                  <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                    {formatTime(segment.start)} - {formatTime(segment.end)}
+                  </span>
+                  <span className="text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                    {segment.speaker || 'Speaker'}
+                  </span>
+                </div>
+                <p className="text-sm leading-6 text-slate-700">{segment.text}</p>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <MarkdownContent
+            content={task.result || task.transcript || ''}
+            proseClassName="prose prose-slate max-w-none prose-headings:font-semibold prose-a:text-indigo-600"
+          />
+        )}
+      </div>
     </div>
   );
 }

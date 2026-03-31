@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, MessageSquare, RefreshCw, Sparkles, Waves } from 'lucide-react';
-import { formatTime } from '../../lib/utils';
+import { Edit2, Loader2, MessageSquare, RefreshCw, Sparkles, Trash2, Waves } from 'lucide-react';
+import { cn, formatTime } from '../../lib/utils';
 import { consumeSseStream } from '../../hooks/useSseStream';
 import { apiFetch } from '../../api';
 import { TaskHeader } from './TaskHeader';
@@ -8,6 +8,7 @@ import { PanelButton } from './PanelButton';
 import { SummaryPanel } from './SummaryPanel';
 import { TranscriptPanel } from './TranscriptPanel';
 import { ChatPanel } from './ChatPanel';
+import { TaskEditModal } from '../TaskEditModal';
 import type { Task, TaskMessage } from '../../types';
 
 function buildTranscriptClipboardText(task: Task) {
@@ -23,6 +24,14 @@ function buildTranscriptClipboardText(task: Task) {
   return task.transcript || task.result || '';
 }
 
+function getInitialIsDesktop() {
+  if (typeof window === 'undefined') {
+    return true;
+  }
+
+  return window.matchMedia('(min-width: 1024px)').matches;
+}
+
 type Panel = 'summary' | 'transcript' | 'chat';
 
 export function TaskDetail({
@@ -32,7 +41,6 @@ export function TaskDetail({
   task: Task;
   onUpdateTask: () => void | Promise<void>;
 }) {
-
   const [activePanel, setActivePanel] = useState<Panel>('summary');
   const [summaryInstructions, setSummaryInstructions] = useState('');
   const [summaryPromptSelection, setSummaryPromptSelection] = useState('default');
@@ -40,26 +48,52 @@ export function TaskDetail({
   const [messages, setMessages] = useState<TaskMessage[]>([]);
   const [messageInput, setMessageInput] = useState('');
   const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [transcriptCopied, setTranscriptCopied] = useState(false);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
+  const [isDesktop, setIsDesktop] = useState(getInitialIsDesktop);
+  const [isMiniPlayer, setIsMiniPlayer] = useState(false);
   const mediaRef = useRef<HTMLMediaElement | null>(null);
   const segmentRefs = useRef(new Map<string, HTMLDivElement>());
+  const contentScrollRef = useRef<HTMLDivElement | null>(null);
+  const isCompactLayout = !isDesktop;
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const mediaQuery = window.matchMedia('(min-width: 1024px)');
+    const handleChange = (event: MediaQueryListEvent) => setIsDesktop(event.matches);
+
+    setIsDesktop(mediaQuery.matches);
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
+    }
+
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
 
   useEffect(() => {
     setSummaryInstructions('');
     setSummaryPromptSelection('default');
     setActivePanel(task.summary ? 'summary' : 'transcript');
     setActiveSegmentId(null);
-  }, [task.id]);
+    setIsMiniPlayer(false);
+    contentScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+  }, [task.id, task.summary]);
 
   useEffect(() => {
-    if (activePanel !== 'transcript' || !activeSegmentId) {
+    if (activePanel !== 'transcript' || !activeSegmentId || isCompactLayout) {
       return;
     }
 
     const element = segmentRefs.current.get(activeSegmentId);
     element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [activePanel, activeSegmentId]);
+  }, [activePanel, activeSegmentId, isCompactLayout]);
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -79,6 +113,20 @@ export function TaskDetail({
 
     void loadMessages();
   }, [task.id]);
+
+  useEffect(() => {
+    if (!isCompactLayout) {
+      setIsMiniPlayer(false);
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      const scrollTop = contentScrollRef.current?.scrollTop ?? 0;
+      setIsMiniPlayer(scrollTop > 72);
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [activePanel, isCompactLayout]);
 
   const handleGenerateSummary = async () => {
     setIsGeneratingSummary(true);
@@ -248,6 +296,7 @@ export function TaskDetail({
       setActiveSegmentId(null);
       return;
     }
+
     const matchedSegment = task.segments.find(
       (segment) => currentTime >= segment.start && currentTime < segment.end,
     );
@@ -270,87 +319,197 @@ export function TaskDetail({
     }
   };
 
+  const handleDeleteTask = async () => {
+    if (!confirm('Are you sure you want to delete this task?')) {
+      return;
+    }
+
+    try {
+      const res = await apiFetch(`/api/tasks/${task.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        throw new Error('Failed to delete task.');
+      }
+
+      await onUpdateTask();
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+      alert('Failed to delete task.');
+    }
+  };
+
+  const handlePanelScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    if (!isCompactLayout) {
+      return;
+    }
+
+    setIsMiniPlayer(event.currentTarget.scrollTop > 72);
+  };
+
+  const renderPanelTabs = () => (
+    <div
+      className={cn(
+        'border-b border-slate-200 bg-white flex items-center gap-2 shrink-0 overflow-x-auto custom-scrollbar',
+        isCompactLayout ? 'px-3 py-2' : 'px-6 py-3',
+      )}
+    >
+      <PanelButton
+        active={activePanel === 'summary'}
+        onClick={() => setActivePanel('summary')}
+        icon={<Sparkles className="w-4 h-4" />}
+      >
+        Summary
+      </PanelButton>
+      <PanelButton
+        active={activePanel === 'transcript'}
+        onClick={() => setActivePanel('transcript')}
+        icon={<Waves className="w-4 h-4" />}
+      >
+        Transcript
+      </PanelButton>
+      <PanelButton
+        active={activePanel === 'chat'}
+        onClick={() => setActivePanel('chat')}
+        icon={<MessageSquare className="w-4 h-4" />}
+      >
+        Chat
+      </PanelButton>
+      {isCompactLayout ? (
+        <div className="ml-auto flex items-center gap-2 shrink-0">
+          <button
+            onClick={() => setIsEditModalOpen(true)}
+            className="px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2 border border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100"
+          >
+            <Edit2 className="w-4 h-4" />
+            Edit
+          </button>
+          <button
+            onClick={() => void handleDeleteTask()}
+            className="px-3 py-2 rounded-xl text-sm font-medium flex items-center gap-2 border border-slate-200 bg-slate-50 text-red-600 hover:bg-red-50"
+          >
+            <Trash2 className="w-4 h-4" />
+            Delete
+          </button>
+        </div>
+      ) : null}
+      {(task.status === 'completed' || task.status === 'failed') && (
+        <button
+          onClick={async () => {
+            await apiFetch(`/api/tasks/${task.id}/reprocess`, { method: 'POST' });
+            await onUpdateTask();
+          }}
+          className={cn(
+            'px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 bg-slate-100 rounded-lg flex items-center gap-1 shrink-0',
+            isCompactLayout ? '' : 'ml-auto',
+          )}
+        >
+          <RefreshCw className="w-3.5 h-3.5" />
+          Reprocess
+        </button>
+      )}
+    </div>
+  );
+
+  const renderPanelContent = () => {
+    if (task.status === 'processing' || task.status === 'pending') {
+      return (
+        <div className="flex h-full flex-col items-center justify-center text-slate-500 space-y-4 p-6">
+          <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
+          <p>Analyzing audio... This may take a few moments.</p>
+        </div>
+      );
+    }
+
+    if (task.status === 'failed') {
+      return (
+        <div
+          ref={contentScrollRef}
+          onScroll={handlePanelScroll}
+          className={cn(
+            'h-full overflow-y-auto custom-scrollbar',
+            isCompactLayout ? 'px-4 py-4 pb-28' : 'p-6 pb-6',
+          )}
+        >
+          <div className="p-4 bg-red-50 text-red-700 rounded-xl border border-red-100">
+            <h3 className="font-semibold mb-1">Analysis Failed</h3>
+            <p className="text-sm whitespace-pre-wrap">{task.result}</p>
+          </div>
+        </div>
+      );
+    }
+
+    if (activePanel === 'summary') {
+      return (
+        <SummaryPanel
+          task={task}
+          summaryInstructions={summaryInstructions}
+          onSummaryInstructionsChange={setSummaryInstructions}
+          summaryPromptSelection={summaryPromptSelection}
+          onSummaryPromptSelectionChange={setSummaryPromptSelection}
+          isGenerating={isGeneratingSummary}
+          onGenerate={() => void handleGenerateSummary()}
+          compact={isCompactLayout}
+          scrollContainerRef={contentScrollRef}
+          onScroll={handlePanelScroll}
+        />
+      );
+    }
+
+    if (activePanel === 'transcript') {
+      return (
+        <TranscriptPanel
+          task={task}
+          transcriptCopied={transcriptCopied}
+          onCopyTranscript={() => void handleCopyTranscript()}
+          activeSegmentId={activeSegmentId}
+          onSeekToSegment={(segmentId, startTime) => void handleSeekToSegment(segmentId, startTime)}
+          segmentRefs={segmentRefs}
+          compact={isCompactLayout}
+          scrollContainerRef={contentScrollRef}
+          onScroll={handlePanelScroll}
+        />
+      );
+    }
+
+    return (
+      <ChatPanel
+        messages={messages}
+        messageInput={messageInput}
+        onMessageInputChange={setMessageInput}
+        isSendingMessage={isSendingMessage}
+        onSendMessage={() => void handleSendMessage()}
+        compact={isCompactLayout}
+        scrollContainerRef={contentScrollRef}
+        onScroll={handlePanelScroll}
+      />
+    );
+  };
+
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full min-h-0 overflow-hidden">
       <TaskHeader
         task={task}
         mediaRef={mediaRef}
         onUpdateTask={onUpdateTask}
         onTimeUpdate={resolveActiveSegmentId}
+        onDeleteTask={() => void handleDeleteTask()}
+        variant={isCompactLayout ? 'mobile-player' : 'default'}
+        mobilePresentation={isCompactLayout && isMiniPlayer ? 'mini' : 'full'}
+        onExpandMini={() => setIsMiniPlayer(false)}
       />
 
-      <div className="border-b border-slate-200 bg-white px-6 py-3 flex items-center gap-2 shrink-0 overflow-x-auto">
-        <PanelButton active={activePanel === 'summary'} onClick={() => setActivePanel('summary')} icon={<Sparkles className="w-4 h-4" />}>
-          Summary
-        </PanelButton>
-        <PanelButton active={activePanel === 'transcript'} onClick={() => setActivePanel('transcript')} icon={<Waves className="w-4 h-4" />}>
-          Transcript
-        </PanelButton>
-        <PanelButton active={activePanel === 'chat'} onClick={() => setActivePanel('chat')} icon={<MessageSquare className="w-4 h-4" />}>
-          Chat
-        </PanelButton>
-        {(task.status === 'completed' || task.status === 'failed') && (
-          <button
-            onClick={async () => {
-              await apiFetch(`/api/tasks/${task.id}/reprocess`, { method: 'POST' });
-              await onUpdateTask();
-            }}
-            className="ml-auto px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 bg-slate-100 rounded-lg flex items-center gap-1"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            Reprocess
-          </button>
-        )}
-      </div>
+      {renderPanelTabs()}
 
-      <div className="flex-1 overflow-y-auto p-6 pb-6 bg-white custom-scrollbar">
-        {task.status === 'processing' || task.status === 'pending' ? (
-          <div className="flex flex-col items-center justify-center h-full text-slate-500 space-y-4">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-            <p>Analyzing audio... This may take a few moments.</p>
-          </div>
-        ) : task.status === 'failed' ? (
-          <div className="p-4 bg-red-50 text-red-700 rounded-xl border border-red-100">
-            <h3 className="font-semibold mb-1">Analysis Failed</h3>
-            <p className="text-sm whitespace-pre-wrap">{task.result}</p>
-          </div>
-        ) : (
-          <>
-            {activePanel === 'summary' && (
-              <SummaryPanel
-                task={task}
-                summaryInstructions={summaryInstructions}
-                onSummaryInstructionsChange={setSummaryInstructions}
-                summaryPromptSelection={summaryPromptSelection}
-                onSummaryPromptSelectionChange={setSummaryPromptSelection}
-                isGenerating={isGeneratingSummary}
-                onGenerate={() => void handleGenerateSummary()}
-              />
-            )}
+      <div className="flex-1 min-h-0 bg-white overflow-hidden">{renderPanelContent()}</div>
 
-            {activePanel === 'transcript' && (
-              <TranscriptPanel
-                task={task}
-                transcriptCopied={transcriptCopied}
-                onCopyTranscript={() => void handleCopyTranscript()}
-                activeSegmentId={activeSegmentId}
-                onSeekToSegment={(segmentId, startTime) => void handleSeekToSegment(segmentId, startTime)}
-                segmentRefs={segmentRefs}
-              />
-            )}
-
-            {activePanel === 'chat' && (
-              <ChatPanel
-                messages={messages}
-                messageInput={messageInput}
-                onMessageInputChange={setMessageInput}
-                isSendingMessage={isSendingMessage}
-                onSendMessage={() => void handleSendMessage()}
-              />
-            )}
-          </>
-        )}
-      </div>
+      {isEditModalOpen ? (
+        <TaskEditModal
+          task={task}
+          onClose={() => setIsEditModalOpen(false)}
+          onSaved={async () => {
+            await onUpdateTask();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

@@ -25,6 +25,16 @@
     }
   }
 
+  .batch-action-bar {
+    bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + 20px);
+  }
+
+  @media (min-width: 1024px) {
+    .batch-action-bar {
+      bottom: 0;
+    }
+  }
+
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
     height: 6px;
