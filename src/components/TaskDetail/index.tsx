@@ -42,7 +42,7 @@ export function TaskDetail({
   const [isSendingMessage, setIsSendingMessage] = useState(false);
   const [transcriptCopied, setTranscriptCopied] = useState(false);
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const mediaRef = useRef<HTMLMediaElement | null>(null);
   const segmentRefs = useRef(new Map<string, HTMLDivElement>());
 
   useEffect(() => {
@@ -255,16 +255,16 @@ export function TaskDetail({
   };
 
   const handleSeekToSegment = async (segmentId: string, startTime: number) => {
-    const audio = audioRef.current;
-    if (!audio) {
+    const media = mediaRef.current;
+    if (!media) {
       return;
     }
 
-    audio.currentTime = Math.max(startTime, 0);
+    media.currentTime = Math.max(startTime, 0);
     setActiveSegmentId(segmentId);
 
     try {
-      await audio.play();
+      await media.play();
     } catch (error) {
       console.error('Failed to play selected segment:', error);
     }
@@ -274,7 +274,7 @@ export function TaskDetail({
     <div className="flex flex-col h-full">
       <TaskHeader
         task={task}
-        audioRef={audioRef}
+        mediaRef={mediaRef}
         onUpdateTask={onUpdateTask}
         onTimeUpdate={resolveActiveSegmentId}
       />

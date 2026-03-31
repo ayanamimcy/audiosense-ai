@@ -18,6 +18,13 @@ if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
+const DEFAULT_UPLOAD_MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
+const configuredUploadMaxFileSize = Number(process.env.UPLOAD_MAX_FILE_SIZE_BYTES || '');
+const uploadMaxFileSize =
+  Number.isFinite(configuredUploadMaxFileSize) && configuredUploadMaxFileSize > 0
+    ? configuredUploadMaxFileSize
+    : DEFAULT_UPLOAD_MAX_FILE_SIZE_BYTES;
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {
     cb(null, uploadDir);
@@ -29,7 +36,7 @@ const storage = multer.diskStorage({
 
 export const upload = multer({
   storage,
-  limits: { fileSize: 500 * 1024 * 1024 },
+  limits: { fileSize: uploadMaxFileSize },
 });
 
 export function setSessionCookie(res: express.Response, token: string) {

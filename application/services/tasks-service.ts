@@ -14,10 +14,11 @@ import {
   updateTaskRowForUser,
 } from '../../database/repositories/tasks-repository.js';
 import { clearTaskIndex, reindexTask } from '../../lib/search-index.js';
+import { buildWebVttFromSegments } from '../../lib/subtitles.js';
 import { findTaskForUser } from '../../lib/task-helpers.js';
 import { repairPossiblyMojibakeText } from '../../lib/text-encoding.js';
 import { enqueueTaskJob } from '../../lib/task-queue.js';
-import { normalizeTags, toTaskListResponse, toTaskResponse, type TaskRow } from '../../lib/task-types.js';
+import { normalizeTags, parseJsonField, toTaskListResponse, toTaskResponse, type TaskRow } from '../../lib/task-types.js';
 import { createUploadTask, type UploadTaskInput } from '../../lib/upload-service.js';
 
 export class UserTaskNotFoundError extends Error {
@@ -138,4 +139,14 @@ export async function listTaskMessagesForUser(userId: string, taskId: string) {
   }
 
   return listTaskMessageRows(task.id);
+}
+
+export async function buildTaskSubtitlesForUser(userId: string, taskId: string) {
+  const task = await findTaskForUser(userId, taskId);
+  if (!task) {
+    throw new UserTaskNotFoundError();
+  }
+
+  const segments = parseJsonField(task.segments, []);
+  return buildWebVttFromSegments(segments);
 }

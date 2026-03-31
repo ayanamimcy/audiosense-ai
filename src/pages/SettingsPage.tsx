@@ -1,21 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { LogOut } from 'lucide-react';
 import { apiJson } from '../api';
-import { cn, getLocalSetting } from '../lib/utils';
+import { cn, getLocalSetting, LANGUAGE_OPTIONS } from '../lib/utils';
 import { useAppDataContext } from '../contexts/AppDataContext';
 import { useAuthContext } from '../contexts/AuthContext';
 import type { AuthUser, UserSettings } from '../types';
-
-const LANGUAGE_OPTIONS = [
-  { value: 'auto', label: 'Auto Detect' },
-  { value: 'zh', label: 'Chinese' },
-  { value: 'en', label: 'English' },
-  { value: 'ja', label: 'Japanese' },
-  { value: 'ko', label: 'Korean' },
-  { value: 'fr', label: 'French' },
-  { value: 'de', label: 'German' },
-  { value: 'es', label: 'Spanish' },
-];
 
 export function SettingsPage({
   onLogout,

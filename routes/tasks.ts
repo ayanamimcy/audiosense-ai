@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+  buildTaskSubtitlesForUser,
   UserTaskNotFoundError,
   createUploadTaskForUser,
   deleteTaskForUserAndCleanup,
@@ -15,7 +16,7 @@ const router = express.Router();
 
 router.post('/upload', upload.single('audio'), asyncRoute(async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ error: 'No audio file uploaded.' });
+    return res.status(400).json({ error: 'No media file uploaded.' });
   }
 
   const user = requireAuthUser(req);
@@ -54,6 +55,21 @@ router.get('/tasks/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   try {
     return res.json(await getTaskDetailForUser(user.id, req.params.id));
+  } catch (error) {
+    if (error instanceof UserTaskNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    throw error;
+  }
+}));
+
+router.get('/tasks/:id/subtitles.vtt', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  try {
+    const content = await buildTaskSubtitlesForUser(user.id, req.params.id);
+    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+    res.setHeader('Content-Disposition', 'inline');
+    return res.send(content);
   } catch (error) {
     if (error instanceof UserTaskNotFoundError) {
       return res.status(404).json({ error: error.message });

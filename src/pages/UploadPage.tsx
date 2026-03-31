@@ -1,20 +1,20 @@
 import React, { useRef, useState } from 'react';
 import { Loader2, Upload } from 'lucide-react';
 import { apiFetch } from '../api';
-import { cn, getLocalSetting } from '../lib/utils';
+import { cn, getLocalSetting, LANGUAGE_OPTIONS } from '../lib/utils';
 import { useAppDataContext } from '../contexts/AppDataContext';
 
-const AUDIO_FILE_ACCEPT = 'audio/*,.m4a,.mp3,.wav,.ogg,.webm,.aac,.mp4,.flac';
-const AUDIO_FILE_EXTENSIONS = ['.m4a', '.mp3', '.wav', '.ogg', '.webm', '.aac', '.mp4', '.flac'];
+const MEDIA_FILE_ACCEPT = 'audio/*,video/*,.m4a,.mp3,.wav,.ogg,.webm,.aac,.mp4,.m4v,.mov,.flac';
+const MEDIA_FILE_EXTENSIONS = ['.m4a', '.mp3', '.wav', '.ogg', '.webm', '.aac', '.mp4', '.m4v', '.mov', '.flac'];
 
-function isLikelyAudioFile(file: File) {
+function isLikelyMediaFile(file: File) {
   const mimeType = file.type.toLowerCase();
-  if (mimeType.startsWith('audio/')) {
+  if (mimeType.startsWith('audio/') || mimeType.startsWith('video/')) {
     return true;
   }
 
   const lowerName = file.name.toLowerCase();
-  return AUDIO_FILE_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
+  return MEDIA_FILE_EXTENSIONS.some((extension) => lowerName.endsWith(extension));
 }
 
 export function UploadPage({
@@ -29,12 +29,13 @@ export function UploadPage({
   const [selectedNotebookId, setSelectedNotebookId] = useState('');
   const [tags, setTags] = useState('');
   const [provider, setProvider] = useState('');
+  const [language, setLanguage] = useState(() => getLocalSetting('parseLanguage', 'auto'));
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const queueUpload = async (file: File) => {
     const formData = new FormData();
     formData.append('audio', file);
-    formData.append('language', getLocalSetting('parseLanguage', 'auto'));
+    formData.append('language', language);
     formData.append('diarization', getLocalSetting('enableDiarization', 'true'));
     formData.append('sourceType', 'upload');
     if (selectedNotebookId) {
@@ -64,8 +65,8 @@ export function UploadPage({
   };
 
   const handleFiles = async (files: File[]) => {
-    const validFiles = files.filter((file) => isLikelyAudioFile(file));
-    const invalidFiles = files.filter((file) => !isLikelyAudioFile(file));
+    const validFiles = files.filter((file) => isLikelyMediaFile(file));
+    const invalidFiles = files.filter((file) => !isLikelyMediaFile(file));
 
     if (invalidFiles.length > 0) {
       alert(`Skipped unsupported files: ${invalidFiles.map((file) => file.name).join(', ')}`);
@@ -113,7 +114,7 @@ export function UploadPage({
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-      <h2 className="text-lg font-semibold text-slate-900 mb-4">Upload Audio</h2>
+      <h2 className="text-lg font-semibold text-slate-900 mb-4">Upload Audio or Video</h2>
       <div
         className={cn(
           'border-2 border-dashed rounded-xl p-8 text-center transition-colors duration-200 flex flex-col items-center justify-center min-h-[240px]',
@@ -140,13 +141,13 @@ export function UploadPage({
             ? uploadProgress
               ? `Queuing ${uploadProgress.current}/${uploadProgress.total}: ${uploadProgress.filename}`
               : 'Queuing upload...'
-            : 'Drag your audio files here'}
+            : 'Drag your media files here'}
         </p>
-        <p className="text-xs text-slate-500 mb-4">Supports batch upload for MP3, WAV, M4A, OGG, WEBM, AAC, MP4, and FLAC</p>
+        <p className="text-xs text-slate-500 mb-4">Supports batch upload for MP3, WAV, M4A, OGG, WEBM, AAC, MP4, MOV, M4V, and FLAC</p>
         <input
           type="file"
           multiple
-          accept={AUDIO_FILE_ACCEPT}
+          accept={MEDIA_FILE_ACCEPT}
           className="hidden"
           ref={fileInputRef}
           onChange={(event) => {
@@ -180,6 +181,21 @@ export function UploadPage({
             {capabilities?.transcription.providers.map((item) => (
               <option key={item.id} value={item.id} disabled={!item.configured}>
                 {item.label}{item.configured ? '' : ' (Not configured)'}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-medium text-slate-700">Language</span>
+          <select
+            value={language}
+            onChange={(event) => setLanguage(event.target.value)}
+            className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            {LANGUAGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>

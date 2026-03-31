@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Mic, Square } from 'lucide-react';
 import { apiFetch } from '../api';
-import { formatTime, getLocalSetting } from '../lib/utils';
+import { formatTime, getLocalSetting, LANGUAGE_OPTIONS } from '../lib/utils';
 import { useAppDataContext } from '../contexts/AppDataContext';
 
 export function RecordPage({
@@ -16,6 +16,7 @@ export function RecordPage({
   const [selectedNotebookId, setSelectedNotebookId] = useState('');
   const [tags, setTags] = useState('');
   const [provider, setProvider] = useState('');
+  const [language, setLanguage] = useState(() => getLocalSetting('parseLanguage', 'auto'));
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
@@ -30,7 +31,7 @@ export function RecordPage({
   const uploadRecording = async (file: File) => {
     const formData = new FormData();
     formData.append('audio', file);
-    formData.append('language', getLocalSetting('parseLanguage', 'auto'));
+    formData.append('language', language);
     formData.append('diarization', getLocalSetting('enableDiarization', 'true'));
     formData.append('sourceType', 'record');
     if (selectedNotebookId) {
@@ -196,6 +197,21 @@ export function RecordPage({
             {capabilities?.transcription.providers.map((item) => (
               <option key={item.id} value={item.id} disabled={!item.configured}>
                 {item.label}{item.configured ? '' : ' (Not configured)'}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-medium text-slate-700">Language</span>
+          <select
+            value={language}
+            onChange={(event) => setLanguage(event.target.value)}
+            className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            {LANGUAGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>

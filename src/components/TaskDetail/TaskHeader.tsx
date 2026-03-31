@@ -4,17 +4,18 @@ import { Book, Check, Edit2, Sparkles, Tag, Users, Waves } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { apiFetch } from '../../api';
 import { useAppDataContext } from '../../contexts/AppDataContext';
+import { getTaskMediaUrl, getTaskSubtitleUrl, getTaskTrackLanguage, isVideoTask } from '../../lib/media';
 import { StatCard } from './StatCard';
 import type { Task } from '../../types';
 
 export function TaskHeader({
   task,
-  audioRef,
+  mediaRef,
   onUpdateTask,
   onTimeUpdate,
 }: {
   task: Task;
-  audioRef: React.RefObject<HTMLAudioElement | null>;
+  mediaRef: React.RefObject<HTMLMediaElement | null>;
   onUpdateTask: () => void | Promise<void>;
   onTimeUpdate: (currentTime: number) => void;
 }) {
@@ -35,6 +36,10 @@ export function TaskHeader({
   }, [task.id]);
 
   const notebook = notebooks.find((item) => item.id === task.notebookId);
+  const isVideo = isVideoTask(task);
+  const mediaUrl = getTaskMediaUrl(task);
+  const subtitleUrl = task.segments.length > 0 ? getTaskSubtitleUrl(task) : null;
+  const trackLanguage = getTaskTrackLanguage(task);
 
   const handleSave = async () => {
     const tagsArray = editTags
@@ -177,16 +182,33 @@ export function TaskHeader({
           )}
         </div>
 
-        <audio
-          ref={audioRef}
-          controls
-          src={`/api/audio/${task.filename}`}
-          className="h-10 w-full sm:w-72 shrink-0"
-          onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
-          onSeeked={(event) => onTimeUpdate(event.currentTarget.currentTime)}
-          onLoadedMetadata={(event) => onTimeUpdate(event.currentTarget.currentTime)}
-          onEnded={() => onTimeUpdate(-1)}
-        />
+        {isVideo ? (
+          <video
+            ref={mediaRef as React.RefObject<HTMLVideoElement>}
+            controls
+            src={mediaUrl}
+            className="w-full sm:w-[26rem] shrink-0 aspect-video rounded-2xl bg-slate-950 border border-slate-200 shadow-sm"
+            onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
+            onSeeked={(event) => onTimeUpdate(event.currentTarget.currentTime)}
+            onLoadedMetadata={(event) => onTimeUpdate(event.currentTarget.currentTime)}
+            onEnded={() => onTimeUpdate(-1)}
+          >
+            {subtitleUrl && (
+              <track kind="subtitles" src={subtitleUrl} srcLang={trackLanguage} label="Transcript" default />
+            )}
+          </video>
+        ) : (
+          <audio
+            ref={mediaRef as React.RefObject<HTMLAudioElement>}
+            controls
+            src={mediaUrl}
+            className="h-10 w-full sm:w-72 shrink-0"
+            onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
+            onSeeked={(event) => onTimeUpdate(event.currentTarget.currentTime)}
+            onLoadedMetadata={(event) => onTimeUpdate(event.currentTarget.currentTime)}
+            onEnded={() => onTimeUpdate(-1)}
+          />
+        )}
       </div>
 
       <div className="grid gap-3 md:grid-cols-3">
