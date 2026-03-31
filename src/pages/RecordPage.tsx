@@ -124,7 +124,12 @@ export function RecordPage({
       }, 1000);
     } catch (error: unknown) {
       console.error('Error accessing microphone:', error);
-      alert(error instanceof Error ? error.message : 'Could not access microphone.');
+      const err = error instanceof Error ? error : null;
+      if (err && (err.name === 'NotAllowedError' || err.message?.includes('Permission'))) {
+        alert('Microphone access was denied. Please allow microphone access in your browser settings to use this feature.');
+      } else {
+        alert(err?.message || 'Could not access microphone.');
+      }
     }
   };
 

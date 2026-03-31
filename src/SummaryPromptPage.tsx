@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Sparkles, Trash2 } from 'lucide-react';
+import { Check, Plus, Sparkles, Trash2 } from 'lucide-react';
 import { apiFetch, apiJson } from './api';
 import { useAppDataContext } from './contexts/AppDataContext';
 import type { SummaryPrompt } from './types';
@@ -39,6 +39,7 @@ export function SummaryPromptPage() {
   const [draft, setDraft] = useState<PromptDraft>(createEmptyDraft());
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
   const selectedPrompt = useMemo(
     () => prompts.find((prompt) => prompt.id === selectedPromptId) || null,
@@ -95,6 +96,8 @@ export function SummaryPromptPage() {
       }
 
       await onRefresh();
+      setSaveSuccess(true);
+      window.setTimeout(() => setSaveSuccess(false), 2500);
     } catch (error) {
       console.error('Failed to save summary prompt:', error);
       alert(error instanceof Error ? error.message : 'Failed to save Summary Prompt.');
@@ -282,7 +285,13 @@ export function SummaryPromptPage() {
             </div>
           </label>
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-end gap-3">
+            {saveSuccess && (
+              <span className="flex items-center gap-1.5 text-sm font-medium text-emerald-600">
+                <Check className="w-4 h-4" />
+                Saved successfully
+              </span>
+            )}
             <button
               onClick={() => void handleSave()}
               disabled={isSaving}

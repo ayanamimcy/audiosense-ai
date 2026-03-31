@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate, useParams } from 'react-router-dom';
-import { FileAudio, Loader2 } from 'lucide-react';
+import { ArrowLeft, FileAudio, Loader2 } from 'lucide-react';
+import { cn } from './lib/utils';
 import { storeUser } from './api';
 import { useAuth } from './hooks/useAuth';
 import { useAppData } from './hooks/useAppData';
@@ -19,26 +20,60 @@ import { TaskDetail } from './components/TaskDetail';
 import { Login } from './components/Login';
 
 // --- Task panel layout (upload/record/tasks tabs share this) ---
+// Mobile: Master-Detail — list hides when task selected, detail goes full-width with back button.
+// Desktop: side-by-side grid (1/3 list + 2/3 detail).
 
-function TaskPanelLayout({ left }: { left: React.ReactNode }) {
-  const navigate = useNavigate();
-  const { selectedTask, selectedTaskLoading, refreshTasksAndSelection, fetchTags } = useAppDataContext();
+function TaskPanelLayout({
+  left,
+  onMobileBack,
+}: {
+  left: React.ReactNode;
+  onMobileBack?: () => void;
+}) {
+  const { selectedTask, selectedTaskLoading, selectTask, refreshTasksAndSelection, fetchTags } = useAppDataContext();
+
+  const handleMobileBack = () => {
+    void selectTask(null);
+    onMobileBack?.();
+  };
 
   return (
     <div className="flex flex-col lg:grid lg:grid-cols-3 gap-6 h-full lg:overflow-hidden">
-      <div className="lg:col-span-1 space-y-6 lg:overflow-y-auto pr-2 custom-scrollbar shrink-0">
+      {/* List panel — hidden on mobile when a task is selected */}
+      <div className={cn(
+        "lg:col-span-1 space-y-6 lg:overflow-y-auto pr-2 custom-scrollbar shrink-0",
+        selectedTask ? "hidden lg:block" : "block"
+      )}>
         {left}
       </div>
 
-      <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col lg:h-full min-h-[500px] shrink-0">
+      {/* Detail panel — full-width on mobile when task selected */}
+      <div className={cn(
+        "lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col lg:h-full min-h-[500px] shrink-0",
+        selectedTask ? "flex" : "hidden lg:flex"
+      )}>
         {selectedTask ? (
-          <TaskDetail
-            task={selectedTask}
-            onUpdateTask={async () => {
-              await refreshTasksAndSelection(selectedTask.id);
-              await fetchTags();
-            }}
-          />
+          <>
+            {/* Mobile back button */}
+            <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white shrink-0">
+              <button
+                onClick={handleMobileBack}
+                className="p-1.5 -ml-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <h2 className="text-sm font-semibold text-slate-900 truncate flex-1">
+                {selectedTask.originalName}
+              </h2>
+            </div>
+            <TaskDetail
+              task={selectedTask}
+              onUpdateTask={async () => {
+                await refreshTasksAndSelection(selectedTask.id);
+                await fetchTags();
+              }}
+            />
+          </>
         ) : selectedTaskLoading ? (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center bg-slate-50/50">
             <Loader2 className="w-10 h-10 mb-4 animate-spin text-indigo-500" />
@@ -89,6 +124,7 @@ function UploadTabContent() {
           }}
         />
       }
+      // Upload page: just clear selection, don't navigate away
     />
   );
 }
@@ -108,6 +144,7 @@ function RecordTabContent() {
           }}
         />
       }
+      // Record page: just clear selection, don't navigate away
     />
   );
 }
@@ -120,6 +157,7 @@ function TasksTabContent() {
     <>
       <TasksRouteSync />
       <TaskPanelLayout
+        onMobileBack={() => navigate('/tasks', { replace: true })}
         left={
           <TasksPage
             onSelectTask={(taskId) => navigate(`/tasks/${taskId}`)}
@@ -196,7 +234,7 @@ function AppRoot() {
     fetchCapabilities, fetchSettings, fetchProviderHealth,
     refreshTasksAndSelection, refreshAll, clearAll,
   } = appData;
-  useTaskPolling(currentUser, tasks, selectedTaskId, refreshTasksAndSelection);
+  useTaskPolling(currentUser, tasks, selectedTaskId, fetchTasks, appData.fetchTaskDetail);
 
   const handleLogout = async () => {
     await authLogout();

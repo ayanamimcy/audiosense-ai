@@ -25,13 +25,16 @@ export function useTasksData() {
     nextTasks: Task[],
     preferredId?: string | null,
   ): string | null => {
+    // Explicitly requested a specific task (e.g. after upload)
     if (preferredId) {
-      return nextTasks.find((task) => task.id === preferredId)?.id || nextTasks[0]?.id || null;
+      return nextTasks.find((task) => task.id === preferredId)?.id || null;
     }
+    // Keep the current selection if it still exists; otherwise clear it.
+    // Never auto-select the first task — that would hijack mobile navigation.
     if (selectedTaskId) {
-      return nextTasks.find((task) => task.id === selectedTaskId)?.id || nextTasks[0]?.id || null;
+      return nextTasks.find((task) => task.id === selectedTaskId)?.id || null;
     }
-    return nextTasks[0]?.id || null;
+    return null;
   };
 
   const selectTask = async (taskId: string | null) => {
