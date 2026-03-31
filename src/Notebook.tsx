@@ -97,7 +97,13 @@ export default function NotebookView({
     : filteredTasks;
 
   return (
-    <div className="flex flex-col lg:flex-row gap-4 lg:gap-6 h-full lg:overflow-hidden overflow-y-auto custom-scrollbar">
+    <div
+      className={cn(
+        'flex flex-col lg:flex-row gap-4 lg:gap-6 h-full',
+        showingDetail ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar',
+        'lg:overflow-hidden',
+      )}
+    >
       {/* Notebook sidebar — hidden on mobile when detail is open */}
       <div className={cn(
         showingDetail ? "hidden lg:flex" : "flex",
@@ -124,7 +130,7 @@ export default function NotebookView({
         className={cn(
           'lg:flex-1 flex-none bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col shrink-0',
           showingDetail
-            ? 'h-auto lg:h-full overflow-hidden'
+            ? 'h-full min-h-0 overflow-hidden'
             : cn(
                 'h-auto p-4 sm:p-6',
                 calendarView === 'week' ? 'lg:overflow-hidden' : 'lg:overflow-y-auto custom-scrollbar',
@@ -146,7 +152,7 @@ export default function NotebookView({
                 {selectedTask?.originalName || 'Loading task'}
               </h2>
             </div>
-            <div className="flex-1 overflow-hidden flex flex-col">
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
               {selectedTask ? (
                 <TaskDetail
                   task={selectedTask}

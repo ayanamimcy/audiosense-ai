@@ -49,7 +49,7 @@ function TaskPanelLayout({
 
       {/* Detail panel — full-width on mobile when task selected */}
       <div className={cn(
-        "lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col lg:h-full min-h-[500px] shrink-0",
+        "lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full min-h-0 shrink-0",
         selectedTask ? "flex" : "hidden lg:flex"
       )}>
         {selectedTask ? (
@@ -66,13 +66,15 @@ function TaskPanelLayout({
                 {selectedTask.originalName}
               </h2>
             </div>
-            <TaskDetail
-              task={selectedTask}
-              onUpdateTask={async () => {
-                await refreshTasksAndSelection(selectedTask.id);
-                await fetchTags();
-              }}
-            />
+            <div className="flex-1 min-h-0 overflow-hidden">
+              <TaskDetail
+                task={selectedTask}
+                onUpdateTask={async () => {
+                  await refreshTasksAndSelection(selectedTask.id);
+                  await fetchTags();
+                }}
+              />
+            </div>
           </>
         ) : selectedTaskLoading ? (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center bg-slate-50/50">

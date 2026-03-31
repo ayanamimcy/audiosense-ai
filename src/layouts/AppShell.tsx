@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { useAppDataContext } from '../contexts/AppDataContext';
 import { SidebarButton } from './nav/SidebarButton';
 import { BottomNavButton } from './nav/BottomNavButton';
 import { DrawerButton } from './nav/DrawerButton';
@@ -61,8 +62,13 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const activeTab = useActiveTab();
+  const { selectedTask, selectedTaskLoading } = useAppDataContext();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const isMobileDetailChromeHidden =
+    pathname.startsWith('/tasks/') ||
+    ((pathname === '/' || pathname === '/notebook') && (Boolean(selectedTask) || selectedTaskLoading));
 
   const goTo = (tab: Tab) => {
     navigate(TAB_TO_PATH[tab]);
@@ -71,17 +77,19 @@ export function AppShell({
 
   return (
     <div className="h-[100dvh] bg-slate-50 text-slate-900 flex flex-col lg:flex-row overflow-hidden relative">
-      <header className="lg:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between shrink-0 z-20 shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="bg-indigo-600 p-2 rounded-lg shadow-sm">
-            <Mic className="w-5 h-5 text-white" />
+      {!isMobileDetailChromeHidden ? (
+        <header className="lg:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between shrink-0 z-20 shadow-sm">
+          <div className="flex items-center gap-3">
+            <div className="bg-indigo-600 p-2 rounded-lg shadow-sm">
+              <Mic className="w-5 h-5 text-white" />
+            </div>
+            <h1 className="text-xl font-bold tracking-tight text-slate-800">AudioSense AI</h1>
           </div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-800">AudioSense AI</h1>
-        </div>
-        <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm">
-          {currentUser.name.charAt(0).toUpperCase()}
-        </div>
-      </header>
+          <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm">
+            {currentUser.name.charAt(0).toUpperCase()}
+          </div>
+        </header>
+      ) : null}
 
       <aside className="hidden lg:flex w-64 bg-white border-r border-slate-200 flex-col h-full shadow-sm z-20 shrink-0">
         <div className="p-6 flex items-center gap-3 border-b border-slate-100">
@@ -149,23 +157,25 @@ export function AppShell({
         </div>
       </main>
 
-      <nav className="lg:hidden mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center justify-around px-2 py-2 z-30 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
-        <BottomNavButton active={activeTab === 'notebook'} onClick={() => goTo('notebook')} icon={<FolderKanban className="w-5 h-5" />} label="Workspace" />
-        <BottomNavButton active={activeTab === 'knowledge'} onClick={() => goTo('knowledge')} icon={<BrainCircuit className="w-5 h-5" />} label="Search" />
-        <div className="relative -top-5">
-          <button
-            onClick={() => goTo('record')}
-            className={cn(
-              'w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95',
-              activeTab === 'record' ? 'bg-indigo-700 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700',
-            )}
-          >
-            <Mic className="w-6 h-6" />
-          </button>
-        </div>
-        <BottomNavButton active={activeTab === 'upload'} onClick={() => goTo('upload')} icon={<Upload className="w-5 h-5" />} label="Upload" />
-        <BottomNavButton active={isMobileMenuOpen} onClick={() => setIsMobileMenuOpen(true)} icon={<Menu className="w-5 h-5" />} label="More" />
-      </nav>
+      {!isMobileDetailChromeHidden ? (
+        <nav className="lg:hidden mobile-bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex items-center justify-around px-2 py-2 z-30 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
+          <BottomNavButton active={activeTab === 'notebook'} onClick={() => goTo('notebook')} icon={<FolderKanban className="w-5 h-5" />} label="Workspace" />
+          <BottomNavButton active={activeTab === 'knowledge'} onClick={() => goTo('knowledge')} icon={<BrainCircuit className="w-5 h-5" />} label="Search" />
+          <div className="relative -top-5">
+            <button
+              onClick={() => goTo('record')}
+              className={cn(
+                'w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-transform active:scale-95',
+                activeTab === 'record' ? 'bg-indigo-700 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-700',
+              )}
+            >
+              <Mic className="w-6 h-6" />
+            </button>
+          </div>
+          <BottomNavButton active={activeTab === 'upload'} onClick={() => goTo('upload')} icon={<Upload className="w-5 h-5" />} label="Upload" />
+          <BottomNavButton active={isMobileMenuOpen} onClick={() => setIsMobileMenuOpen(true)} icon={<Menu className="w-5 h-5" />} label="More" />
+        </nav>
+      ) : null}
 
       {isMobileMenuOpen && (
         <div className="lg:hidden fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm transition-opacity" onClick={() => setIsMobileMenuOpen(false)}>

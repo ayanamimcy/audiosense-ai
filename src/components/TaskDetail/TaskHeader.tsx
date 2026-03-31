@@ -18,6 +18,7 @@ export function TaskHeader({
   onTimeUpdate,
   variant = 'default',
   mobilePresentation = 'full',
+  mobileAudioControls = 'native',
   onExpandMini,
   onDeleteTask,
 }: {
@@ -27,6 +28,7 @@ export function TaskHeader({
   onTimeUpdate: (currentTime: number) => void;
   variant?: TaskHeaderVariant;
   mobilePresentation?: MobilePresentation;
+  mobileAudioControls?: 'native' | 'bottom-bar';
   onExpandMini?: () => void;
   onDeleteTask?: () => void | Promise<void>;
 }) {
@@ -53,6 +55,7 @@ export function TaskHeader({
   const subtitleUrl = task.segments.length > 0 ? getTaskSubtitleUrl(task) : null;
   const trackLanguage = getTaskTrackLanguage(task);
   const isMini = variant === 'mobile-player' && mobilePresentation === 'mini';
+  const useBottomAudioBar = variant === 'mobile-player' && mobileAudioControls === 'bottom-bar' && !isVideo;
 
   const handleSave = async () => {
     const tagsArray = editTags
@@ -117,10 +120,11 @@ export function TaskHeader({
     return (
       <audio
         ref={mediaRef as React.RefObject<HTMLAudioElement>}
-        controls
+        controls={!useBottomAudioBar}
         src={mediaUrl}
         className={cn(
           'w-full shrink-0',
+          useBottomAudioBar ? 'sr-only pointer-events-none absolute opacity-0' : '',
           variant === 'mobile-player'
             ? isMini
               ? 'h-10'
@@ -140,7 +144,9 @@ export function TaskHeader({
       <div
         className={cn(
           'shrink-0',
-          isMini
+          useBottomAudioBar
+            ? 'h-0 overflow-hidden'
+            : isMini
             ? 'h-0'
             : isVideo
               ? 'h-[clamp(12rem,30dvh,16rem)] border-b border-slate-200 bg-slate-950'

@@ -1,8 +1,25 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Edit2, Loader2, MessageSquare, RefreshCw, Sparkles, Trash2, Waves } from 'lucide-react';
+import {
+  Copy,
+  Edit2,
+  List,
+  Loader2,
+  Menu,
+  MessageSquare,
+  Pause,
+  Play,
+  RefreshCw,
+  RotateCcw,
+  RotateCw,
+  Sparkles,
+  Trash2,
+  Waves,
+  X,
+} from 'lucide-react';
 import { cn, formatTime } from '../../lib/utils';
 import { consumeSseStream } from '../../hooks/useSseStream';
 import { apiFetch } from '../../api';
+import { isVideoTask } from '../../lib/media';
 import { TaskHeader } from './TaskHeader';
 import { PanelButton } from './PanelButton';
 import { SummaryPanel } from './SummaryPanel';
@@ -34,6 +51,29 @@ function getInitialIsDesktop() {
 
 type Panel = 'summary' | 'transcript' | 'chat';
 
+function MobileControlButton({
+  icon,
+  label,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 px-2 py-2 text-slate-500 transition-colors hover:text-slate-800"
+    >
+      <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
+        {icon}
+      </span>
+      <span className="text-[11px] font-medium">{label}</span>
+    </button>
+  );
+}
+
 export function TaskDetail({
   task,
   onUpdateTask,
@@ -53,10 +93,15 @@ export function TaskDetail({
   const [activeSegmentId, setActiveSegmentId] = useState<string | null>(null);
   const [isDesktop, setIsDesktop] = useState(getInitialIsDesktop);
   const [isMiniPlayer, setIsMiniPlayer] = useState(false);
+  const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
+  const [isMediaPlaying, setIsMediaPlaying] = useState(false);
+  const [mediaCurrentTime, setMediaCurrentTime] = useState(0);
+  const [mediaDuration, setMediaDuration] = useState(0);
   const mediaRef = useRef<HTMLMediaElement | null>(null);
   const segmentRefs = useRef(new Map<string, HTMLDivElement>());
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const isCompactLayout = !isDesktop;
+  const isVideo = isVideoTask(task);
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -83,16 +128,48 @@ export function TaskDetail({
     setActivePanel(task.summary ? 'summary' : 'transcript');
     setActiveSegmentId(null);
     setIsMiniPlayer(false);
+    setIsActionSheetOpen(false);
+    setIsMediaPlaying(false);
+    setMediaCurrentTime(0);
+    setMediaDuration(0);
     contentScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
   }, [task.id, task.summary]);
 
   useEffect(() => {
-    if (activePanel !== 'transcript' || !activeSegmentId || isCompactLayout) {
+    if (activePanel !== 'transcript' || !activeSegmentId) {
       return;
     }
 
     const element = segmentRefs.current.get(activeSegmentId);
-    element?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    const container = contentScrollRef.current;
+    if (!element) {
+      return;
+    }
+
+    if (!isCompactLayout || !container) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      return;
+    }
+
+    const containerRect = container.getBoundingClientRect();
+    const elementRect = element.getBoundingClientRect();
+    const comfortTop = containerRect.top + containerRect.height * 0.28;
+    const comfortBottom = containerRect.bottom - containerRect.height * 0.28;
+
+    if (elementRect.top >= comfortTop && elementRect.bottom <= comfortBottom) {
+      return;
+    }
+
+    const nextTop =
+      container.scrollTop +
+      (elementRect.top - containerRect.top) -
+      container.clientHeight / 2 +
+      element.clientHeight / 2;
+
+    container.scrollTo({
+      top: Math.max(nextTop, 0),
+      behavior: 'smooth',
+    });
   }, [activePanel, activeSegmentId, isCompactLayout]);
 
   useEffect(() => {
@@ -115,7 +192,50 @@ export function TaskDetail({
   }, [task.id]);
 
   useEffect(() => {
-    if (!isCompactLayout) {
+    const media = mediaRef.current;
+    if (!media) {
+      return undefined;
+    }
+
+    const syncMediaState = () => {
+      setMediaCurrentTime(media.currentTime || 0);
+      setMediaDuration(Number.isFinite(media.duration) ? media.duration : 0);
+      setIsMediaPlaying(!media.paused && !media.ended);
+    };
+
+    const handleTimeUpdate = () => setMediaCurrentTime(media.currentTime || 0);
+    const handleLoadedMetadata = () => {
+      setMediaDuration(Number.isFinite(media.duration) ? media.duration : 0);
+      setMediaCurrentTime(media.currentTime || 0);
+    };
+    const handlePlay = () => setIsMediaPlaying(true);
+    const handlePause = () => setIsMediaPlaying(false);
+    const handleEnded = () => {
+      setIsMediaPlaying(false);
+      setMediaCurrentTime(media.currentTime || 0);
+    };
+
+    syncMediaState();
+
+    media.addEventListener('timeupdate', handleTimeUpdate);
+    media.addEventListener('loadedmetadata', handleLoadedMetadata);
+    media.addEventListener('durationchange', handleLoadedMetadata);
+    media.addEventListener('play', handlePlay);
+    media.addEventListener('pause', handlePause);
+    media.addEventListener('ended', handleEnded);
+
+    return () => {
+      media.removeEventListener('timeupdate', handleTimeUpdate);
+      media.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      media.removeEventListener('durationchange', handleLoadedMetadata);
+      media.removeEventListener('play', handlePlay);
+      media.removeEventListener('pause', handlePause);
+      media.removeEventListener('ended', handleEnded);
+    };
+  }, [task.id, isCompactLayout, isMiniPlayer, isVideo]);
+
+  useEffect(() => {
+    if (!isCompactLayout || !isVideo || activePanel !== 'summary') {
       setIsMiniPlayer(false);
       return;
     }
@@ -126,7 +246,7 @@ export function TaskDetail({
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [activePanel, isCompactLayout]);
+  }, [activePanel, isCompactLayout, isVideo]);
 
   const handleGenerateSummary = async () => {
     setIsGeneratingSummary(true);
@@ -337,8 +457,59 @@ export function TaskDetail({
     }
   };
 
+  const handleTogglePlayback = async () => {
+    const media = mediaRef.current;
+    if (!media) {
+      return;
+    }
+
+    if (media.paused) {
+      try {
+        await media.play();
+      } catch (error) {
+        console.error('Failed to start playback:', error);
+      }
+      return;
+    }
+
+    media.pause();
+  };
+
+  const handleSeekBy = (deltaSeconds: number) => {
+    const media = mediaRef.current;
+    if (!media) {
+      return;
+    }
+
+    const duration = Number.isFinite(media.duration) ? media.duration : mediaCurrentTime + deltaSeconds;
+    const nextTime = Math.max(0, Math.min(media.currentTime + deltaSeconds, Math.max(duration, 0)));
+    media.currentTime = nextTime;
+    setMediaCurrentTime(nextTime);
+  };
+
+  const handleJumpToTranscript = () => {
+    setActivePanel('transcript');
+
+    window.requestAnimationFrame(() => {
+      if (activeSegmentId) {
+        const activeElement = segmentRefs.current.get(activeSegmentId);
+        activeElement?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+
+      contentScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  };
+
   const handlePanelScroll = (event: React.UIEvent<HTMLDivElement>) => {
-    if (!isCompactLayout) {
+    if (!isCompactLayout || !isVideo) {
+      return;
+    }
+
+    if (activePanel !== 'summary') {
+      if (isMiniPlayer) {
+        setIsMiniPlayer(false);
+      }
       return;
     }
 
@@ -484,6 +655,171 @@ export function TaskDetail({
     );
   };
 
+  const renderMobileDetailBar = () => {
+    if (!isCompactLayout) {
+      return null;
+    }
+
+    return (
+      <>
+        <div className="lg:hidden fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 px-3 pt-2 shadow-[0_-10px_30px_rgba(15,23,42,0.08)] backdrop-blur-sm pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+          <div className="mx-auto flex max-w-xl items-end justify-between gap-1">
+            <MobileControlButton
+              icon={<Menu className="w-4 h-4" />}
+              label="More"
+              onClick={() => setIsActionSheetOpen(true)}
+            />
+            <MobileControlButton
+              icon={<RotateCcw className="w-4 h-4" />}
+              label="-3 sec"
+              onClick={() => handleSeekBy(-3)}
+            />
+
+            <button
+              type="button"
+              onClick={() => void handleTogglePlayback()}
+              className="flex min-w-0 flex-col items-center gap-1 px-2 text-slate-800"
+            >
+              <span className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-800 text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)] transition-transform active:scale-95">
+                {isMediaPlaying ? <Pause className="w-6 h-6" /> : <Play className="w-6 h-6 ml-0.5" />}
+              </span>
+              <span className="text-[11px] font-semibold">
+                {formatTime(mediaCurrentTime)}
+                {mediaDuration > 0 ? ` / ${formatTime(mediaDuration)}` : ''}
+              </span>
+            </button>
+
+            <MobileControlButton
+              icon={<RotateCw className="w-4 h-4" />}
+              label="+3 sec"
+              onClick={() => handleSeekBy(3)}
+            />
+            <MobileControlButton
+              icon={<List className="w-4 h-4" />}
+              label="Transcript"
+              onClick={handleJumpToTranscript}
+            />
+          </div>
+        </div>
+
+        {isActionSheetOpen ? (
+          <div
+            className="lg:hidden fixed inset-0 z-50 bg-slate-900/45 backdrop-blur-sm"
+            onClick={() => setIsActionSheetOpen(false)}
+          >
+            <div
+              className="absolute inset-x-0 bottom-0 rounded-t-[2rem] bg-white shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
+                <div>
+                  <p className="text-base font-semibold text-slate-900">Detail actions</p>
+                  <p className="text-xs text-slate-500">Switch panels or run task actions.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsActionSheetOpen(false)}
+                  className="rounded-full bg-slate-100 p-2 text-slate-500"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivePanel('summary');
+                    setIsActionSheetOpen(false);
+                  }}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left"
+                >
+                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                  <p className="mt-2 text-sm font-semibold text-slate-900">Summary</p>
+                  <p className="mt-1 text-xs text-slate-500">Open the generated notes.</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActivePanel('chat');
+                    setIsActionSheetOpen(false);
+                  }}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left"
+                >
+                  <MessageSquare className="w-4 h-4 text-sky-600" />
+                  <p className="mt-2 text-sm font-semibold text-slate-900">Chat</p>
+                  <p className="mt-1 text-xs text-slate-500">Ask follow-up questions.</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleCopyTranscript();
+                    setIsActionSheetOpen(false);
+                  }}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left"
+                >
+                  <Copy className="w-4 h-4 text-emerald-600" />
+                  <p className="mt-2 text-sm font-semibold text-slate-900">Copy</p>
+                  <p className="mt-1 text-xs text-slate-500">Copy the full transcript.</p>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditModalOpen(true);
+                    setIsActionSheetOpen(false);
+                  }}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left"
+                >
+                  <Edit2 className="w-4 h-4 text-slate-700" />
+                  <p className="mt-2 text-sm font-semibold text-slate-900">Edit</p>
+                  <p className="mt-1 text-xs text-slate-500">Rename or adjust metadata.</p>
+                </button>
+
+                {(task.status === 'completed' || task.status === 'failed') ? (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await apiFetch(`/api/tasks/${task.id}/reprocess`, { method: 'POST' });
+                      await onUpdateTask();
+                      setIsActionSheetOpen(false);
+                    }}
+                    className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left"
+                  >
+                    <RefreshCw className="w-4 h-4 text-amber-600" />
+                    <p className="mt-2 text-sm font-semibold text-slate-900">Reprocess</p>
+                    <p className="mt-1 text-xs text-slate-500">Run transcription again.</p>
+                  </button>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-left">
+                    <Waves className="w-4 h-4 text-slate-400" />
+                    <p className="mt-2 text-sm font-semibold text-slate-700">Transcript</p>
+                    <p className="mt-1 text-xs text-slate-500">Current panel: {activePanel}</p>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    void handleDeleteTask();
+                    setIsActionSheetOpen(false);
+                  }}
+                  className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-left"
+                >
+                  <Trash2 className="w-4 h-4 text-red-600" />
+                  <p className="mt-2 text-sm font-semibold text-red-700">Delete</p>
+                  <p className="mt-1 text-xs text-red-500">Remove this task permanently.</p>
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </>
+    );
+  };
+
   return (
     <div className="flex flex-col h-full min-h-0 overflow-hidden">
       <TaskHeader
@@ -493,13 +829,16 @@ export function TaskDetail({
         onTimeUpdate={resolveActiveSegmentId}
         onDeleteTask={() => void handleDeleteTask()}
         variant={isCompactLayout ? 'mobile-player' : 'default'}
-        mobilePresentation={isCompactLayout && isMiniPlayer ? 'mini' : 'full'}
+        mobilePresentation={isCompactLayout && isVideo && isMiniPlayer ? 'mini' : 'full'}
+        mobileAudioControls="native"
         onExpandMini={() => setIsMiniPlayer(false)}
       />
 
       {renderPanelTabs()}
 
       <div className="flex-1 min-h-0 bg-white overflow-hidden">{renderPanelContent()}</div>
+
+      {renderMobileDetailBar()}
 
       {isEditModalOpen ? (
         <TaskEditModal
