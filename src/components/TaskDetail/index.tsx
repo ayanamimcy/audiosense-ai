@@ -20,6 +20,7 @@ import { cn, formatTime } from '../../lib/utils';
 import { consumeSseStream } from '../../hooks/useSseStream';
 import { apiFetch } from '../../api';
 import { isVideoTask } from '../../lib/media';
+import { hasTaskSummaryState, isTaskSummaryGenerating } from '../../lib/taskSummary';
 import { TaskHeader } from './TaskHeader';
 import { PanelButton } from './PanelButton';
 import { SummaryPanel } from './SummaryPanel';
@@ -125,7 +126,7 @@ export function TaskDetail({
   useEffect(() => {
     setSummaryInstructions('');
     setSummaryPromptSelection('default');
-    setActivePanel(task.summary ? 'summary' : 'transcript');
+    setActivePanel(hasTaskSummaryState(task) ? 'summary' : 'transcript');
     setActiveSegmentId(null);
     setIsMiniPlayer(false);
     setIsActionSheetOpen(false);
@@ -133,7 +134,7 @@ export function TaskDetail({
     setMediaCurrentTime(0);
     setMediaDuration(0);
     contentScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
-  }, [task.id, task.summary]);
+  }, [task.id]);
 
   useEffect(() => {
     if (activePanel !== 'transcript' || !activeSegmentId) {
@@ -248,6 +249,8 @@ export function TaskDetail({
     return () => window.cancelAnimationFrame(frame);
   }, [activePanel, isCompactLayout, isVideo]);
 
+  const isSummaryGenerating = isTaskSummaryGenerating(task);
+
   const handleGenerateSummary = async () => {
     setIsGeneratingSummary(true);
     try {
@@ -269,8 +272,8 @@ export function TaskDetail({
         throw new Error(payload?.error || 'Failed to generate summary.');
       }
 
+      // Backend returns immediately — switch to summary panel and let polling pick up the result
       setActivePanel('summary');
-      setSummaryInstructions('');
       await onUpdateTask();
     } catch (error: any) {
       console.error('Failed to generate summary:', error);
@@ -616,7 +619,7 @@ export function TaskDetail({
           onSummaryInstructionsChange={setSummaryInstructions}
           summaryPromptSelection={summaryPromptSelection}
           onSummaryPromptSelectionChange={setSummaryPromptSelection}
-          isGenerating={isGeneratingSummary}
+          isGenerating={isGeneratingSummary || isSummaryGenerating}
           onGenerate={() => void handleGenerateSummary()}
           compact={isCompactLayout}
           scrollContainerRef={contentScrollRef}

@@ -65,6 +65,7 @@ async function callChatCompletion(
   messages: LlmMessage[],
   temperature = 0.2,
   settings?: Partial<UserSettings>,
+  timeoutMs = 120000,
 ) {
   const apiKey = getApiKey(settings);
   if (!apiKey) {
@@ -83,7 +84,7 @@ async function callChatCompletion(
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      timeout: 120000,
+      timeout: timeoutMs,
     },
   );
 
@@ -293,6 +294,7 @@ export async function generateTaskSummary(
     ],
     0.3,
     settings,
+    1800000,
   );
 }
 

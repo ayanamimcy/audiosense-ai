@@ -236,7 +236,7 @@ function AppRoot() {
     fetchCapabilities, fetchSettings, fetchProviderHealth,
     refreshTasksAndSelection, refreshAll, clearAll,
   } = appData;
-  useTaskPolling(currentUser, tasks, selectedTaskId, fetchTasks, appData.fetchTaskDetail);
+  useTaskPolling(currentUser, tasks, selectedTaskId, selectedTask, fetchTasks, appData.fetchTaskDetail);
 
   const handleLogout = async () => {
     await authLogout();

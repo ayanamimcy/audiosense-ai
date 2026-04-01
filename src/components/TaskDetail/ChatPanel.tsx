@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2 } from 'lucide-react';
+import { Loader2, SendHorizontal } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { MarkdownContent } from '../MarkdownContent';
 import { useAppDataContext } from '../../contexts/AppDataContext';
@@ -25,12 +25,98 @@ export function ChatPanel({
   onScroll?: (event: React.UIEvent<HTMLDivElement>) => void;
 }) {
   const { capabilities } = useAppDataContext();
+  const compactTextareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const isChatEnabled = Boolean(capabilities?.llm.configured);
+  const canSendMessage = isChatEnabled && !isSendingMessage && messageInput.trim().length > 0;
+
+  React.useLayoutEffect(() => {
+    if (!compact) {
+      return;
+    }
+
+    const textarea = compactTextareaRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    const minHeight = 44;
+    const maxHeight = 92;
+
+    textarea.style.height = '0px';
+    const nextHeight = Math.min(Math.max(textarea.scrollHeight, minHeight), maxHeight);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, [compact, messageInput]);
+
+  const renderComposer = () => {
+    if (compact) {
+      return (
+        <div className="absolute inset-x-4 bottom-[calc(2.35rem+env(safe-area-inset-bottom))] z-50">
+          <div className="flex items-end gap-2 rounded-[1.5rem] border border-slate-200 bg-white/95 px-3 py-2 shadow-[0_10px_28px_rgba(15,23,42,0.12)] backdrop-blur-sm">
+            <textarea
+              ref={compactTextareaRef}
+              rows={1}
+              value={messageInput}
+              onChange={(event) => onMessageInputChange(event.target.value)}
+              placeholder={isChatEnabled ? 'Ask about this transcript...' : 'Configure LLM API first to enable chat.'}
+              disabled={!isChatEnabled || isSendingMessage}
+              className="min-h-[44px] flex-1 resize-none border-0 bg-transparent px-0 py-[10px] text-[16px] leading-6 text-slate-900 focus:outline-none disabled:text-slate-400"
+            />
+            <button
+              type="button"
+              onClick={onSendMessage}
+              disabled={!canSendMessage}
+              aria-label={isSendingMessage ? 'Sending message' : 'Send message'}
+              className={cn(
+                'mb-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-colors',
+                canSendMessage
+                  ? 'bg-indigo-600 text-white shadow-[0_8px_18px_rgba(79,70,229,0.22)] active:bg-indigo-700'
+                  : 'bg-slate-100 text-slate-400',
+              )}
+            >
+              {isSendingMessage ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-4 border-t border-slate-200 pt-4">
+        <div className="flex gap-3">
+          <textarea
+            value={messageInput}
+            onChange={(event) => onMessageInputChange(event.target.value)}
+            placeholder={isChatEnabled ? 'Ask about this transcript...' : 'Configure LLM API first to enable chat.'}
+            disabled={!isChatEnabled || isSendingMessage}
+            className="flex-1 min-h-24 px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50"
+          />
+          <button
+            onClick={onSendMessage}
+            disabled={!canSendMessage}
+            className="self-end px-4 py-3 rounded-2xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {isSendingMessage ? 'Sending...' : 'Send'}
+          </button>
+        </div>
+      </div>
+    );
+  };
+
   return (
-    <div className={cn('flex flex-col h-full min-h-0', compact ? 'px-4 py-4 pb-28' : 'p-6 pb-6')}>
+    <div
+      className={cn(
+        'flex flex-col h-full min-h-0',
+        compact ? 'relative px-4 pt-4 pb-[calc(3.35rem+env(safe-area-inset-bottom))]' : 'p-6 pb-6',
+      )}
+    >
       <div
         ref={scrollContainerRef}
         onScroll={onScroll}
-        className="flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1"
+        className={cn(
+          'flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1',
+          compact ? 'pb-[calc(6.85rem+env(safe-area-inset-bottom))]' : '',
+        )}
       >
         {messages.length === 0 ? (
           <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500">
@@ -88,25 +174,7 @@ export function ChatPanel({
           ))
         )}
       </div>
-
-      <div className="mt-4 border-t border-slate-200 pt-4">
-        <div className="flex gap-3">
-          <textarea
-            value={messageInput}
-            onChange={(event) => onMessageInputChange(event.target.value)}
-            placeholder={capabilities?.llm.configured ? 'Ask about this transcript...' : 'Configure LLM API first to enable chat.'}
-            disabled={!capabilities?.llm.configured || isSendingMessage}
-            className="flex-1 min-h-24 px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50"
-          />
-          <button
-            onClick={onSendMessage}
-            disabled={!capabilities?.llm.configured || isSendingMessage || !messageInput.trim()}
-            className="self-end px-4 py-3 rounded-2xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {isSendingMessage ? 'Sending...' : 'Send'}
-          </button>
-        </div>
-      </div>
+      {renderComposer()}
     </div>
   );
 }

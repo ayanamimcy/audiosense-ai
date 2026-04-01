@@ -1,6 +1,11 @@
 import React from 'react';
-import { HelpCircle } from 'lucide-react';
+import { HelpCircle, Loader2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import {
+  getTaskSummaryGenerationError,
+  isTaskSummaryGenerating,
+  SUMMARY_GENERATING_SENTINEL,
+} from '../../lib/taskSummary';
 import { MarkdownContent } from '../MarkdownContent';
 import { useAppDataContext } from '../../contexts/AppDataContext';
 import type { Task } from '../../types';
@@ -29,6 +34,11 @@ export function SummaryPanel({
   onScroll?: (event: React.UIEvent<HTMLDivElement>) => void;
 }) {
   const { capabilities, summaryPrompts } = useAppDataContext();
+  const summaryGenerationError = getTaskSummaryGenerationError(task);
+  const isSummaryGenerating = isTaskSummaryGenerating(task);
+  const hasGeneratedSummary = Boolean(
+    task.summary && task.summary !== SUMMARY_GENERATING_SENTINEL,
+  );
   const availableSummaryPrompts = summaryPrompts.filter((prompt) => {
     if (!prompt.notebookIds.length) {
       return true;
@@ -49,10 +59,7 @@ export function SummaryPanel({
       <div className="space-y-6">
         <div className={cn(compact ? 'space-y-5 border-b border-slate-200 pb-6' : 'rounded-2xl border border-slate-200 bg-slate-50 p-4')}>
           <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <h3 className="text-base font-semibold text-slate-900">Summary Workspace</h3>
-              <p className="text-sm text-slate-500 mt-1">用 LLM 基于当前转写生成总结、要点和行动项。</p>
-            </div>
+            <h3 className="text-base font-semibold text-slate-900 shrink-0">Summary Workspace</h3>
             <button
               onClick={onGenerate}
               disabled={isGenerating || !capabilities?.llm.configured || !task.transcript}
@@ -61,7 +68,7 @@ export function SummaryPanel({
                 compact ? 'w-full py-3' : 'px-4 py-2',
               )}
             >
-              {isGenerating ? 'Generating...' : task.summary ? 'Regenerate Summary' : 'Generate Summary'}
+              {isGenerating ? 'Generating...' : hasGeneratedSummary ? 'Regenerate Summary' : 'Generate Summary'}
             </button>
           </div>
           <div>
@@ -98,24 +105,40 @@ export function SummaryPanel({
           <textarea
             value={summaryInstructions}
             onChange={(event) => onSummaryInstructionsChange(event.target.value)}
-            placeholder={"可选：例如\u201C请重点总结会议决策、风险项和待办事项\u201D。留空时会使用上面的 Summary Prompt 选择。"}
+            placeholder={'Optional: e.g. "Focus on meeting decisions, risks, and action items." Leave empty to use the selected Summary Prompt above.'}
             className="w-full min-h-24 px-4 py-3 rounded-xl border border-slate-200 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
           <p className="text-xs text-slate-500">
             {summaryPromptSelection === 'none'
-              ? '当前不会使用配置页里的 Prompt，会直接使用系统默认总结方式。'
+              ? 'The configured prompt will not be used. The system default summarization will apply.'
               : summaryPromptSelection !== 'default'
-                ? '当前会使用你在上面选中的 Summary Prompt。'
+                ? 'The selected Summary Prompt above will be used.'
                 : defaultSummaryPrompt
-                  ? `当前会优先使用默认 Summary Prompt：${defaultSummaryPrompt.name}。`
-                  : '当前没有可用的默认 Summary Prompt，会直接使用系统默认总结方式。'}
+                  ? `Will use default Summary Prompt: ${defaultSummaryPrompt.name}.`
+                  : 'No default Summary Prompt configured. The system default summarization will apply.'}
           </p>
-          {!capabilities?.llm.configured && <p className="text-sm text-amber-600">当前还没有配置 LLM API，摘要和对话功能暂时不可用。</p>}
+          {!capabilities?.llm.configured && <p className="text-sm text-amber-600">LLM API is not configured. Summary and chat features are unavailable.</p>}
         </div>
 
-        {task.summary ? (
+        {summaryGenerationError ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p className="font-medium text-amber-900">Last summary attempt failed.</p>
+            <p className="mt-1">{summaryGenerationError}</p>
+          </div>
+        ) : null}
+
+        {isSummaryGenerating ? (
+          <div className={cn(
+            'flex flex-col items-center justify-center gap-3 text-slate-500',
+            compact ? 'border-t border-slate-200 pt-12 pb-4' : 'rounded-2xl border border-dashed border-slate-300 p-12',
+          )}>
+            <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+            <p className="text-sm font-medium">Generating summary, please wait...</p>
+            <p className="text-xs text-slate-400">It will appear automatically when ready. Feel free to switch panels.</p>
+          </div>
+        ) : hasGeneratedSummary ? (
           <MarkdownContent
-            content={task.summary}
+            content={task.summary || ''}
             proseClassName="prose prose-slate max-w-none prose-headings:font-semibold prose-a:text-indigo-600"
           />
         ) : (
@@ -123,7 +146,7 @@ export function SummaryPanel({
             'text-center text-slate-500',
             compact ? 'border-t border-slate-200 pt-8 pb-2' : 'rounded-2xl border border-dashed border-slate-300 p-8',
           )}>
-            还没有生成摘要。你可以直接生成，也可以先写一段自定义总结要求。
+            No summary generated yet. Click "Generate Summary" above, or add custom instructions first.
           </div>
         )}
       </div>

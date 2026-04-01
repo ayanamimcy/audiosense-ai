@@ -40,7 +40,7 @@ router.post('/tasks/:id/summary', asyncRoute(async (req, res) => {
       skipConfiguredPrompt: req.body.skipConfiguredPrompt === true,
       instructions: req.body.instructions,
     });
-    return res.json(result);
+    return res.status(202).json(result);
   } catch (error: unknown) {
     const mapped = mapServiceError(error, res);
     if (mapped) return mapped;

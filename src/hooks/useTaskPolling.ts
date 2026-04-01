@@ -1,24 +1,31 @@
 import { useEffect, useRef } from 'react';
+import { isTaskSummaryGenerating } from '../lib/taskSummary';
 import type { AuthUser, Task } from '../types';
 
 /**
- * Polls for task list updates when there are active (pending/processing) tasks.
- * Only refreshes the task list and the currently-selected task detail — never
- * forces a new selection, so it won't hijack the mobile view.
+ * Polls for task list updates when there are active (pending/processing) tasks
+ * or when the selected task has a summary being generated.
+ * Only refreshes data — never forces a new selection.
  */
 export function useTaskPolling(
   currentUser: AuthUser | null,
   tasks: Task[],
   selectedTaskId: string | null,
+  selectedTask: Task | null,
   fetchTasks: () => Promise<Task[]>,
   fetchTaskDetail: (taskId: string) => Promise<Task>,
 ) {
-  const hasActiveTasks = tasks.some((task) => task.status === 'pending' || task.status === 'processing');
+  const hasActiveTasks = tasks.some(
+    (task) => task.status === 'pending' || task.status === 'processing',
+  );
+  const hasPendingSummary = isTaskSummaryGenerating(selectedTask);
+  const shouldPoll = hasActiveTasks || hasPendingSummary;
+
   const selectedTaskIdRef = useRef(selectedTaskId);
   selectedTaskIdRef.current = selectedTaskId;
 
   useEffect(() => {
-    if (!currentUser || !hasActiveTasks) {
+    if (!currentUser || !shouldPoll) {
       return;
     }
 
@@ -37,5 +44,5 @@ export function useTaskPolling(
     }, 5000);
 
     return () => window.clearInterval(interval);
-  }, [currentUser, hasActiveTasks]);
+  }, [currentUser, shouldPoll]);
 }

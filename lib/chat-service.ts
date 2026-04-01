@@ -23,6 +23,7 @@ import {
 } from './summary-prompts.js';
 import { reindexTask } from './search-index.js';
 import {
+  parseJsonField,
   toTaskResponse,
   type TaskRow,
 } from './task-types.js';
@@ -149,6 +150,66 @@ export async function handleStreamChat(
   };
 }
 
+/** Sentinel value stored in the summary column while generation is in progress. */
+export const SUMMARY_GENERATING_SENTINEL = '__generating__';
+
+type SummaryGenerationStatus = 'generating' | 'failed';
+
+function getTaskMetadata(task: Pick<TaskRow, 'metadata'>) {
+  return parseJsonField<Record<string, unknown>>(task.metadata, {});
+}
+
+function buildSummaryGenerationMetadata(
+  task: Pick<TaskRow, 'metadata'>,
+  options: {
+    status?: SummaryGenerationStatus | null;
+    error?: string | null;
+    requestId?: string | null;
+  },
+) {
+  const metadata = {
+    ...getTaskMetadata(task),
+  };
+
+  if (options.status) {
+    metadata.summaryGenerationStatus = options.status;
+  } else {
+    delete metadata.summaryGenerationStatus;
+  }
+
+  if (options.error) {
+    metadata.summaryGenerationError = options.error;
+  } else {
+    delete metadata.summaryGenerationError;
+  }
+
+  if (options.requestId) {
+    metadata.summaryGenerationRequestId = options.requestId;
+  } else {
+    delete metadata.summaryGenerationRequestId;
+  }
+
+  return JSON.stringify(metadata);
+}
+
+function getSummaryGenerationRequestId(task: Pick<TaskRow, 'metadata'>) {
+  const requestId = getTaskMetadata(task).summaryGenerationRequestId;
+  return typeof requestId === 'string' && requestId.trim() ? requestId : null;
+}
+
+function normalizeSummaryGenerationError(error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return error.message.trim();
+  }
+
+  return 'Summary generation failed. Please try again.';
+}
+
+/**
+ * Validates inputs synchronously, marks the task as "generating", then runs
+ * the LLM call in the background. Returns immediately so the frontend is not
+ * blocked by a long-running request.
+ */
 export async function handleGenerateSummary(
   userId: string,
   taskId: string,
@@ -186,17 +247,74 @@ export async function handleGenerateSummary(
     resolvedPrompt = getDefaultSummaryPromptForNotebook(summaryPrompts, task.notebookId)?.prompt || null;
   }
 
-  const summary = await generateTaskSummary(
-    buildTaskContext(task),
-    options.instructions,
-    userSettings,
-    resolvedPrompt,
-  );
+  const previousSummary = task.summary ?? null;
+  const generationRequestId = uuidv4();
+
+  // Mark as generating so the frontend can show a spinner
   await updateTaskRowForUser(userId, task.id, {
-    summary,
+    summary: SUMMARY_GENERATING_SENTINEL,
+    metadata: buildSummaryGenerationMetadata(task, {
+      status: 'generating',
+      error: null,
+      requestId: generationRequestId,
+    }),
     updatedAt: Date.now(),
   });
-  const updated = (await findTaskRowById(task.id)) as TaskRow;
-  await reindexTask(updated);
-  return toTaskResponse(updated);
+
+  // Run LLM call in the background — do NOT await
+  void (async () => {
+    try {
+      const summary = await generateTaskSummary(
+        buildTaskContext(task),
+        options.instructions,
+        userSettings,
+        resolvedPrompt,
+      );
+      const latest = await findTaskRowById(task.id);
+      if (
+        !latest
+        || latest.summary !== SUMMARY_GENERATING_SENTINEL
+        || getSummaryGenerationRequestId(latest) !== generationRequestId
+      ) {
+        return;
+      }
+
+      await updateTaskRowForUser(userId, task.id, {
+        summary,
+        metadata: buildSummaryGenerationMetadata(latest, {
+          status: null,
+          error: null,
+          requestId: null,
+        }),
+        updatedAt: Date.now(),
+      });
+      const updated = (await findTaskRowById(task.id)) as TaskRow;
+      await reindexTask(updated);
+    } catch (error) {
+      console.error(`Background summary generation failed for task ${task.id}:`, error);
+      const latest = await findTaskRowById(task.id);
+      if (
+        !latest
+        || latest.summary !== SUMMARY_GENERATING_SENTINEL
+        || getSummaryGenerationRequestId(latest) !== generationRequestId
+      ) {
+        return;
+      }
+
+      // Restore the last good summary and persist the failure for the UI.
+      await updateTaskRowForUser(userId, task.id, {
+        summary: previousSummary,
+        metadata: buildSummaryGenerationMetadata(latest, {
+          status: 'failed',
+          error: normalizeSummaryGenerationError(error),
+          requestId: null,
+        }),
+        updatedAt: Date.now(),
+      }).catch(() => {});
+    }
+  })();
+
+  // Return immediately with the generating state
+  const current = (await findTaskRowById(task.id)) as TaskRow;
+  return toTaskResponse(current);
 }

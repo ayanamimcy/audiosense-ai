@@ -51,15 +51,15 @@ export function Calendar({
   const calendarWeekCount = Math.ceil(days.length / 7);
   const calendarTitle =
     calendarView === 'week'
-      ? `${format(weekStart, 'yyyy年MM月d日')} - ${format(weekEnd, isSameMonth(weekStart, weekEnd) ? 'd日' : 'MM月d日')}`
-      : format(currentPeriodDate, 'yyyy年MM月');
+      ? `${format(weekStart, 'MMM d, yyyy')} - ${format(weekEnd, isSameMonth(weekStart, weekEnd) ? 'd' : 'MMM d')}`
+      : format(currentPeriodDate, 'MMMM yyyy');
 
   return (
     <>
       <div className="flex items-start justify-between gap-4 mb-6 shrink-0 flex-wrap">
         <div>
           <h2 className="text-xl font-bold text-slate-900">{calendarTitle}</h2>
-          <p className="text-sm text-slate-500 mt-1">按 Notebook 和 Tag 浏览你的音频内容</p>
+          <p className="text-sm text-slate-500 mt-1">Browse your audio content by notebook and tag</p>
         </div>
         <div className="flex items-center gap-3 ml-auto">
           <div className="flex bg-slate-100 rounded-full border border-slate-200 p-1">
