@@ -34,6 +34,8 @@ const storage = multer.diskStorage({
   },
 });
 
+export { uploadMaxFileSize };
+
 export const upload = multer({
   storage,
   limits: { fileSize: uploadMaxFileSize },

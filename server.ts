@@ -17,6 +17,7 @@ import { chatRouter } from './routes/chat.js';
 import { notebooksRouter } from './routes/notebooks.js';
 import { searchRouter } from './routes/search.js';
 import { audioRouter } from './routes/audio.js';
+import { chunkedUploadRouter } from './routes/chunked-upload.js';
 
 declare global {
   namespace Express {
@@ -94,6 +95,7 @@ protectedApi.use(chatRouter);
 protectedApi.use(notebooksRouter);
 protectedApi.use(searchRouter);
 protectedApi.use(audioRouter);
+protectedApi.use(chunkedUploadRouter);
 app.use('/api', protectedApi);
 
 // --- Error handler ---

@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Loader2, Upload } from 'lucide-react';
-import { apiFetch } from '../api';
 import { cn, getLocalSetting, LANGUAGE_OPTIONS } from '../lib/utils';
+import { isLargeFile, chunkedUpload, directUploadWithProgress, type UploadProgress } from '../lib/chunked-upload';
 import { useAppDataContext } from '../contexts/AppDataContext';
 
 const MEDIA_FILE_ACCEPT = 'audio/*,video/*,.m4a,.mp3,.wav,.ogg,.webm,.aac,.mp4,.m4v,.mov,.flac';
@@ -26,41 +26,55 @@ export function UploadPage({
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<{ current: number; total: number; filename: string } | null>(null);
+  const [filePercent, setFilePercent] = useState<number | null>(null);
+  const [uploadPhase, setUploadPhase] = useState<UploadProgress['phase'] | null>(null);
   const [selectedNotebookId, setSelectedNotebookId] = useState('');
   const [tags, setTags] = useState('');
   const [provider, setProvider] = useState('');
   const [language, setLanguage] = useState(() => getLocalSetting('parseLanguage', 'auto'));
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const buildMetadata = () => {
+    const meta: Record<string, string> = {
+      language,
+      diarization: getLocalSetting('enableDiarization', 'true'),
+      sourceType: 'upload',
+    };
+    if (selectedNotebookId) meta.notebookId = selectedNotebookId;
+    if (tags.trim()) meta.tags = tags;
+    if (provider) meta.provider = provider;
+    return meta;
+  };
+
   const queueUpload = async (file: File) => {
-    const formData = new FormData();
-    formData.append('audio', file);
-    formData.append('language', language);
-    formData.append('diarization', getLocalSetting('enableDiarization', 'true'));
-    formData.append('sourceType', 'upload');
-    if (selectedNotebookId) {
-      formData.append('notebookId', selectedNotebookId);
-    }
-    if (tags.trim()) {
-      formData.append('tags', tags);
-    }
-    if (provider) {
-      formData.append('provider', provider);
-    }
+    setFilePercent(0);
+    setUploadPhase(null);
 
     try {
-      const res = await apiFetch('/api/upload', { method: 'POST', body: formData });
-      const payload = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(payload?.error || 'Upload failed.');
+      if (isLargeFile(file)) {
+        // Large file: chunked upload with MD5 + parallel chunks
+        return await chunkedUpload(file, buildMetadata(), (progress) => {
+          setUploadPhase(progress.phase);
+          setFilePercent(progress.percent);
+        });
       }
 
-      return payload && typeof payload === 'object' && 'taskId' in payload
-        ? String((payload as { taskId?: string }).taskId || '')
-        : undefined;
+      // Small file: direct upload with XHR progress
+      const formData = new FormData();
+      formData.append('audio', file);
+      for (const [key, value] of Object.entries(buildMetadata())) {
+        formData.append(key, value);
+      }
+      return await directUploadWithProgress(formData, (percent) => {
+        setUploadPhase('uploading');
+        setFilePercent(percent);
+      });
     } catch (error: unknown) {
       console.error('Upload error:', error);
       throw error instanceof Error ? error : new Error('Upload failed.');
+    } finally {
+      setFilePercent(null);
+      setUploadPhase(null);
     }
   };
 
@@ -139,11 +153,28 @@ export function UploadPage({
         <p className="text-sm font-medium text-slate-700 mb-1">
           {isUploading
             ? uploadProgress
-              ? `Queuing ${uploadProgress.current}/${uploadProgress.total}: ${uploadProgress.filename}`
-              : 'Queuing upload...'
+              ? `Uploading ${uploadProgress.current}/${uploadProgress.total}: ${uploadProgress.filename}`
+              : 'Preparing upload...'
             : 'Drag your media files here'}
         </p>
-        <p className="text-xs text-slate-500 mb-4">Supports batch upload for MP3, WAV, M4A, OGG, WEBM, AAC, MP4, MOV, M4V, and FLAC</p>
+        {isUploading && filePercent !== null ? (
+          <div className="w-full max-w-xs mt-2 mb-4">
+            <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
+              <span>
+                {uploadPhase === 'hashing' ? 'Calculating checksum...' : uploadPhase === 'merging' ? 'Merging chunks...' : 'Uploading...'}
+              </span>
+              <span>{filePercent}%</span>
+            </div>
+            <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-indigo-500 rounded-full transition-all duration-300"
+                style={{ width: `${filePercent}%` }}
+              />
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs text-slate-500 mb-4">Supports batch upload for MP3, WAV, M4A, OGG, WEBM, AAC, MP4, MOV, M4V, and FLAC</p>
+        )}
         <input
           type="file"
           multiple

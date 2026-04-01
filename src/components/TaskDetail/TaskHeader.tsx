@@ -96,6 +96,7 @@ export function TaskHeader({
         <video
           ref={mediaRef as React.RefObject<HTMLVideoElement>}
           controls
+          preload="metadata"
           src={mediaUrl}
           className={cn(
             'w-full bg-slate-950',
@@ -121,6 +122,7 @@ export function TaskHeader({
       <audio
         ref={mediaRef as React.RefObject<HTMLAudioElement>}
         controls={!useBottomAudioBar}
+        preload="metadata"
         src={mediaUrl}
         className={cn(
           'w-full shrink-0',
