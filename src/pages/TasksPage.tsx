@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
-import { Book, Loader2, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
+import { Book, ChevronDown, ChevronUp, Loader2, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
 import { apiFetch } from '../api';
 import { cn } from '../lib/utils';
 import { useAppDataContext } from '../contexts/AppDataContext';
@@ -14,7 +14,8 @@ export function TasksPage({
 }) {
   const { tasks, notebooks, tags, selectedTaskId } = useAppDataContext();
   const [searchQuery, setSearchQuery] = useState('');
-  const [tagFilter, setTagFilter] = useState('');
+  const [tagFilters, setTagFilters] = useState<string[]>([]);
+  const [isTagFiltersExpanded, setIsTagFiltersExpanded] = useState(false);
 
   // Batch mode state
   const [isBatchMode, setIsBatchMode] = useState(false);
@@ -41,9 +42,19 @@ export function TasksPage({
       task.originalName.toLowerCase().includes(query) ||
       task.tags.some((tag) => tag.toLowerCase().includes(query));
 
-    const matchesTag = !tagFilter || task.tags.includes(tagFilter);
+    const matchesTag = tagFilters.length === 0
+      ? true
+      : tagFilters.some((tag) => task.tags.includes(tag));
     return matchesSearch && matchesTag;
   });
+
+  const toggleTagFilter = (tag: string) => {
+    setTagFilters((current) => (
+      current.includes(tag)
+        ? current.filter((item) => item !== tag)
+        : [...current, tag]
+    ));
+  };
 
   // Batch helpers
   const toggleSelection = (id: string) => {
@@ -169,28 +180,66 @@ export function TasksPage({
         </div>
 
         {!isBatchMode && (
-          <div className="flex flex-wrap gap-2">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2">
             <button
-              onClick={() => setTagFilter('')}
-              className={cn(
-                'px-3 py-1 rounded-full text-xs font-medium border transition-colors',
-                !tagFilter ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-200',
-              )}
+              onClick={() => setIsTagFiltersExpanded((current) => !current)}
+              className="w-full flex items-center justify-between gap-3 text-left"
             >
-              All
+              <div className="flex items-center gap-2 min-w-0">
+                <Tag className="w-4 h-4 text-slate-500" />
+                <span className="text-sm font-medium text-slate-700">Tags</span>
+                {tagFilters.length > 0 ? (
+                  <span className="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 border border-indigo-200">
+                    {tagFilters.length} selected
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2 text-xs text-slate-400 shrink-0">
+                <span>{Math.min(tags.length, 8)}</span>
+                {isTagFiltersExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+              </div>
             </button>
-            {tags.slice(0, 8).map((tag) => (
-              <button
-                key={tag.name}
-                onClick={() => setTagFilter((current) => (current === tag.name ? '' : tag.name))}
-                className={cn(
-                  'px-3 py-1 rounded-full text-xs font-medium border transition-colors',
-                  tagFilter === tag.name ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-200',
-                )}
-              >
-                #{tag.name}
-              </button>
-            ))}
+
+            {tagFilters.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {tagFilters.map((tag) => (
+                  <button
+                    key={tag}
+                    onClick={() => toggleTagFilter(tag)}
+                    className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+                  >
+                    <span className="truncate">#{tag}</span>
+                    <X className="w-3 h-3" />
+                  </button>
+                ))}
+              </div>
+            ) : null}
+
+            {isTagFiltersExpanded ? (
+              <div className="flex flex-wrap gap-2 mt-3">
+                <button
+                  onClick={() => setTagFilters([])}
+                  className={cn(
+                    'px-3 py-1 rounded-full text-xs font-medium border transition-colors',
+                    tagFilters.length === 0 ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-200',
+                  )}
+                >
+                  All
+                </button>
+                {tags.slice(0, 8).map((tag) => (
+                  <button
+                    key={tag.name}
+                    onClick={() => toggleTagFilter(tag.name)}
+                    className={cn(
+                      'px-3 py-1 rounded-full text-xs font-medium border transition-colors',
+                      tagFilters.includes(tag.name) ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-200',
+                    )}
+                  >
+                    #{tag.name}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         )}
       </div>
@@ -200,7 +249,7 @@ export function TasksPage({
         isBatchMode && selectedIds.length > 0 ? "pb-28 lg:pb-20" : "",
       )}>
         {filteredTasks.length === 0 ? (
-          <div className="text-center py-8 text-slate-500 text-sm">{searchQuery || tagFilter ? 'No matching tasks found.' : 'No tasks yet.'}</div>
+          <div className="text-center py-8 text-slate-500 text-sm">{searchQuery || tagFilters.length > 0 ? 'No matching tasks found.' : 'No tasks yet.'}</div>
         ) : (
           filteredTasks.map((task) => {
             const notebook = notebooks.find((item) => item.id === task.notebookId);

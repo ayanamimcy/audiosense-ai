@@ -14,7 +14,6 @@ import {
   X,
 } from 'lucide-react';
 import { cn } from '../lib/utils';
-import { useAppDataContext } from '../contexts/AppDataContext';
 import { SidebarButton } from './nav/SidebarButton';
 import { BottomNavButton } from './nav/BottomNavButton';
 import { DrawerButton } from './nav/DrawerButton';
@@ -23,7 +22,7 @@ import type { AuthUser } from '../types';
 export type Tab = 'upload' | 'record' | 'tasks' | 'notebook' | 'knowledge' | 'prompts' | 'settings';
 
 const TAB_TO_PATH: Record<Tab, string> = {
-  notebook: '/',
+  notebook: '/notebook',
   knowledge: '/knowledge',
   upload: '/upload',
   record: '/record',
@@ -45,6 +44,7 @@ const PATH_TO_TAB: Record<string, Tab> = {
 
 function useActiveTab(): Tab {
   const { pathname } = useLocation();
+  if (pathname.startsWith('/notebook')) return 'notebook';
   // Match /tasks/:id as 'tasks' tab
   if (pathname.startsWith('/tasks')) return 'tasks';
   return PATH_TO_TAB[pathname] || 'notebook';
@@ -64,11 +64,10 @@ export function AppShell({
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const activeTab = useActiveTab();
-  const { selectedTask, selectedTaskLoading } = useAppDataContext();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const isMobileDetailChromeHidden =
     pathname.startsWith('/tasks/') ||
-    ((pathname === '/' || pathname === '/notebook') && (Boolean(selectedTask) || selectedTaskLoading));
+    pathname.startsWith('/notebook/');
 
   const goTo = (tab: Tab) => {
     navigate(TAB_TO_PATH[tab]);

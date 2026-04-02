@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, FileAudio, Loader2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { storeUser } from './api';
@@ -187,11 +187,9 @@ function AuthenticatedApp() {
     >
       <Routes>
         <Route path="/" element={
-          <NotebookView onSelectTask={(taskId) => navigate(`/tasks/${taskId}`)} />
+          <Navigate to="/notebook" replace />
         } />
-        <Route path="/notebook" element={
-          <NotebookView onSelectTask={(taskId) => navigate(`/tasks/${taskId}`)} />
-        } />
+        <Route path="/notebook/:id?" element={<NotebookView />} />
         <Route path="/knowledge" element={
           <KnowledgeBase onSelectTask={(taskId) => navigate(`/tasks/${taskId}`)} />
         } />

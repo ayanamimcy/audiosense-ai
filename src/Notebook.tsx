@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { format, isSameDay } from 'date-fns';
 import { ArrowLeft, Edit2, FileAudio, Loader2, Search } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { cn } from './lib/utils';
 import { apiJson } from './api';
 import { useAppDataContext } from './contexts/AppDataContext';
@@ -10,11 +11,9 @@ import { TaskEditModal } from './components/TaskEditModal';
 import { TaskDetail } from './components/TaskDetail';
 import type { Task } from './types';
 
-export default function NotebookView({
-  onSelectTask: _onSelectTask,
-}: {
-  onSelectTask: (taskId: string) => void;
-}) {
+export default function NotebookView() {
+  const navigate = useNavigate();
+  const { id } = useParams<{ id?: string }>();
   const {
     tasks, notebooks, tags,
     fetchNotebooks, fetchTasks, fetchTags,
@@ -27,13 +26,9 @@ export default function NotebookView({
   const [calendarView, setCalendarView] = useState<'week' | 'month'>('week');
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedNotebookId, setSelectedNotebookId] = useState<string | null>(null);
-  const [selectedTag, setSelectedTag] = useState('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-
-  // Local display mode: whether to show detail inline (vs calendar/grid).
-  // Data source is always the global selectedTask.
-  const [showInlineDetail, setShowInlineDetail] = useState(false);
 
   // Server-side search state
   const [serverResults, setServerResults] = useState<Task[] | null>(null);
@@ -68,17 +63,25 @@ export default function NotebookView({
     return () => { if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current); };
   }, [searchQuery, runServerSearch]);
 
+  useEffect(() => {
+    if (id) {
+      void selectTask(id);
+      return;
+    }
+    void selectTask(null);
+  }, [id]);
+
   const handleSelectTask = (taskId: string) => {
-    void selectTask(taskId);
-    setShowInlineDetail(true);
+    navigate(`/notebook/${taskId}`);
   };
 
   const handleBack = () => {
-    void selectTask(null);
-    setShowInlineDetail(false);
+    navigate('/notebook', { replace: true });
   };
 
-  const showingDetail = showInlineDetail && (selectedTask || selectedTaskLoading);
+  const showingDetail = Boolean(id);
+  const activeTask = selectedTask?.id === id ? selectedTask : null;
+  const selectedTagsLabel = selectedTags.map((tag) => `#${tag}`).join(', ');
 
   // When no search query: local filter on lightweight task list.
   // When search query present: use server results (which search transcript too).
@@ -87,10 +90,12 @@ export default function NotebookView({
   const filteredTasks = useMemo(() => {
     return baseTasks.filter((task) => {
       const notebookMatch = selectedNotebookId ? task.notebookId === selectedNotebookId : true;
-      const tagMatch = selectedTag ? task.tags.includes(selectedTag) : true;
+      const tagMatch = selectedTags.length > 0
+        ? selectedTags.some((tag) => task.tags.includes(tag))
+        : true;
       return notebookMatch && tagMatch;
     });
-  }, [selectedNotebookId, selectedTag, baseTasks]);
+  }, [selectedNotebookId, selectedTags, baseTasks]);
 
   const visibleTasks = selectedDate
     ? filteredTasks.filter((task) => isSameDay(new Date(task.eventDate || task.createdAt), selectedDate))
@@ -114,10 +119,17 @@ export default function NotebookView({
           notebooks={notebooks}
           tags={tags}
           selectedNotebookId={selectedNotebookId}
-          selectedTag={selectedTag}
+          selectedTags={selectedTags}
           onSelectAll={() => { setSelectedNotebookId(null); setSelectedDate(null); }}
           onSelectNotebook={(id) => { setSelectedNotebookId(id); setSelectedDate(null); }}
-          onSelectTag={setSelectedTag}
+          onClearTags={() => setSelectedTags([])}
+          onToggleTag={(tag) => {
+            setSelectedTags((current) => (
+              current.includes(tag)
+                ? current.filter((item) => item !== tag)
+                : [...current, tag]
+            ));
+          }}
           onSelectTask={handleSelectTask}
           onEditTask={setEditingTask}
           onUpdateNotebooks={fetchNotebooks}
@@ -149,22 +161,28 @@ export default function NotebookView({
                 <span className="text-sm font-medium">Back</span>
               </button>
               <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
-                {selectedTask?.originalName || 'Loading task'}
+                {activeTask?.originalName || (selectedTaskLoading ? 'Loading task' : 'Task unavailable')}
               </h2>
             </div>
             <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-              {selectedTask ? (
+              {activeTask ? (
                 <TaskDetail
-                  task={selectedTask}
+                  task={activeTask}
                   onUpdateTask={async () => {
-                    await refreshTasksAndSelection(selectedTask.id);
+                    await refreshTasksAndSelection(activeTask.id);
                     await fetchTags();
                   }}
                 />
-              ) : (
+              ) : selectedTaskLoading ? (
                 <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center">
                   <Loader2 className="w-10 h-10 mb-4 animate-spin text-indigo-500" />
                   <h3 className="text-lg font-medium text-slate-600">Loading task</h3>
+                </div>
+              ) : (
+                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center">
+                  <FileAudio className="w-12 h-12 mb-4 opacity-20 text-indigo-500" />
+                  <h3 className="text-lg font-medium text-slate-600">Task unavailable</h3>
+                  <p className="text-sm mt-1">This task could not be loaded. It may have been removed or become inaccessible.</p>
                 </div>
               )}
             </div>
@@ -213,7 +231,7 @@ export default function NotebookView({
                     {selectedDate ? `Tasks on ${format(selectedDate, 'MMMM d, yyyy')}` : 'All Filtered Tasks'}
                   </h3>
                   <p className="text-sm text-slate-500 mt-1">
-                    {selectedNotebookId ? 'Filtered by notebook.' : 'Showing all notebooks.'} {selectedTag ? `Tag: #${selectedTag}` : ''} {selectedDate ? '' : 'Select a date on the calendar to narrow it down.'}
+                    {selectedNotebookId ? 'Filtered by notebook.' : 'Showing all notebooks.'} {selectedTags.length > 0 ? `Tags: ${selectedTagsLabel}` : ''} {selectedDate ? '' : 'Select a date on the calendar to narrow it down.'}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">

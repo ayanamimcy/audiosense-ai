@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Edit2, FileAudio, Folder, Plus, Tag, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronUp, Edit2, FileAudio, Folder, Plus, Tag, Trash2, X } from 'lucide-react';
 import { apiFetch } from '../api';
 import { cn } from '../lib/utils';
 import type { Notebook, TagStat, Task } from '../types';
@@ -9,10 +9,11 @@ export function NotebookSidebar({
   notebooks,
   tags,
   selectedNotebookId,
-  selectedTag,
+  selectedTags,
   onSelectAll,
   onSelectNotebook,
-  onSelectTag,
+  onClearTags,
+  onToggleTag,
   onSelectTask,
   onEditTask,
   onUpdateNotebooks,
@@ -22,16 +23,18 @@ export function NotebookSidebar({
   notebooks: Notebook[];
   tags: TagStat[];
   selectedNotebookId: string | null;
-  selectedTag: string;
+  selectedTags: string[];
   onSelectAll: () => void;
   onSelectNotebook: (id: string) => void;
-  onSelectTag: (tag: string) => void;
+  onClearTags: () => void;
+  onToggleTag: (tag: string) => void;
   onSelectTask: (taskId: string) => void;
   onEditTask: (task: Task) => void;
   onUpdateNotebooks: () => void | Promise<void>;
   onUpdateTasks: () => void | Promise<void>;
 }) {
   const [isCreating, setIsCreating] = useState(false);
+  const [isTagsExpanded, setIsTagsExpanded] = useState(false);
   const [newName, setNewName] = useState('');
 
   const handleCreate = async () => {
@@ -151,33 +154,65 @@ export function NotebookSidebar({
         </div>
 
         <div className="pt-4 border-t border-slate-100">
-          <div className="flex items-center gap-2 mb-2 text-sm font-medium text-slate-700">
-            <Tag className="w-4 h-4" />
-            Tags
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={() => onSelectTag('')}
-              className={cn(
-                'px-3 py-1 rounded-full text-xs font-medium border',
-                !selectedTag ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-200',
-              )}
-            >
-              All
-            </button>
-            {tags.map((tag) => (
+          <button
+            onClick={() => setIsTagsExpanded((current) => !current)}
+            className="w-full flex items-center justify-between gap-3 text-left"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <Tag className="w-4 h-4 text-slate-500" />
+              <span className="text-sm font-medium text-slate-700">Tags</span>
+              {selectedTags.length > 0 ? (
+                <span className="truncate rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 border border-indigo-200">
+                  {selectedTags.length} selected
+                </span>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-slate-400 shrink-0">
+              <span>{tags.length}</span>
+              {isTagsExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </div>
+          </button>
+
+          {selectedTags.length > 0 ? (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {selectedTags.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => onToggleTag(tag)}
+                  className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 transition-colors"
+                >
+                  <span className="truncate">#{tag}</span>
+                  <X className="w-3 h-3" />
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {isTagsExpanded ? (
+            <div className="flex flex-wrap gap-2 mt-3">
               <button
-                key={tag.name}
-                onClick={() => onSelectTag(tag.name === selectedTag ? '' : tag.name)}
+                onClick={onClearTags}
                 className={cn(
                   'px-3 py-1 rounded-full text-xs font-medium border',
-                  selectedTag === tag.name ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-200',
+                  selectedTags.length === 0 ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-200',
                 )}
               >
-                #{tag.name}
+                All
               </button>
-            ))}
-          </div>
+              {tags.map((tag) => (
+                <button
+                  key={tag.name}
+                  onClick={() => onToggleTag(tag.name)}
+                  className={cn(
+                    'px-3 py-1 rounded-full text-xs font-medium border',
+                    selectedTags.includes(tag.name) ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-600 border-slate-200',
+                  )}
+                >
+                  #{tag.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
