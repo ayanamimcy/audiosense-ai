@@ -3,6 +3,10 @@ import {
   findTaskRowById,
   updateTaskRowById,
 } from '../database/repositories/tasks-repository.js';
+import {
+  markTaskTagSuggestionsGenerating,
+  persistTaskTagSuggestions,
+} from './task-tag-suggestions.js';
 import { parseAudioWithFallback } from './audio-engine/engine.js';
 import { formatTranscriptMarkdown } from './audio-engine/markdown.js';
 import { generateTaskSummary, isLlmConfigured } from './llm.js';
@@ -106,4 +110,9 @@ export async function processQueuedJob(job: TaskJobRow) {
 
   const updatedTask = (await findTaskRowById(task.id)) as TaskRow;
   await reindexTask(updatedTask);
+
+  if (task.userId && userSettings?.autoSuggestTags && isLlmConfigured(userSettings)) {
+    const requestId = await markTaskTagSuggestionsGenerating(updatedTask);
+    await persistTaskTagSuggestions(task.id, userSettings, requestId);
+  }
 }

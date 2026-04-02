@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, ChevronDown, Copy } from 'lucide-react';
+import { Check, Copy } from 'lucide-react';
 import { cn, formatTime } from '../../lib/utils';
 import { MarkdownContent } from '../MarkdownContent';
 import type { Task } from '../../types';
@@ -25,12 +25,6 @@ export function TranscriptPanel({
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
   onScroll?: (event: React.UIEvent<HTMLDivElement>) => void;
 }) {
-  const [isSpeakerBreakdownVisible, setIsSpeakerBreakdownVisible] = React.useState(false);
-
-  React.useEffect(() => {
-    setIsSpeakerBreakdownVisible(false);
-  }, [task.id]);
-
   return (
     <div
       ref={scrollContainerRef}
@@ -55,44 +49,6 @@ export function TranscriptPanel({
             {transcriptCopied ? 'Copied' : 'Copy Transcript'}
           </button>
         </div>
-
-        {task.speakers.length > 0 && !compact && (
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-            <button
-              type="button"
-              onClick={() => setIsSpeakerBreakdownVisible((current) => !current)}
-              className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
-              aria-expanded={isSpeakerBreakdownVisible}
-            >
-              <div>
-                <p className="text-sm font-semibold text-slate-900">Speaker breakdown</p>
-                <p className="text-xs text-slate-500">
-                  {isSpeakerBreakdownVisible ? 'Hide per-speaker segment and duration stats.' : 'Show per-speaker segment and duration stats.'}
-                </p>
-              </div>
-              <ChevronDown
-                className={cn(
-                  'w-4 h-4 text-slate-500 transition-transform',
-                  isSpeakerBreakdownVisible ? 'rotate-180' : '',
-                )}
-              />
-            </button>
-
-            {isSpeakerBreakdownVisible ? (
-              <div className="border-t border-slate-200 p-4">
-                <div className="grid gap-3 md:grid-cols-2">
-                  {task.speakers.map((speaker) => (
-                    <div key={speaker.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                      <p className="text-sm font-semibold text-slate-900">{speaker.label}</p>
-                      <p className="text-sm text-slate-500 mt-1">{speaker.segmentCount} segments</p>
-                      <p className="text-sm text-slate-500">{speaker.durationSeconds.toFixed(1)} seconds</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
-        )}
 
         {task.segments.length > 0 ? (
           <div className="space-y-3">

@@ -1,8 +1,12 @@
 import express from 'express';
 import {
+  applyTaskTagSuggestionsForUser,
   buildTaskSubtitlesForUser,
+  dismissTaskTagSuggestionsForUser,
   UserTaskNotFoundError,
+  UserTaskTagSuggestionError,
   createUploadTaskForUser,
+  generateTaskTagSuggestionsForUser,
   deleteTaskForUserAndCleanup,
   getTaskDetailForUser,
   listTaskMessagesForUser,
@@ -85,6 +89,51 @@ router.patch('/tasks/:id', asyncRoute(async (req, res) => {
   } catch (error) {
     if (error instanceof UserTaskNotFoundError) {
       return res.status(404).json({ error: error.message });
+    }
+    throw error;
+  }
+}));
+
+router.post('/tasks/:id/tag-suggestions/generate', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  try {
+    return res.json(await generateTaskTagSuggestionsForUser(user.id, req.params.id));
+  } catch (error) {
+    if (error instanceof UserTaskNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    if (error instanceof UserTaskTagSuggestionError) {
+      return res.status(400).json({ error: error.message });
+    }
+    throw error;
+  }
+}));
+
+router.post('/tasks/:id/tag-suggestions/apply', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  try {
+    return res.json(await applyTaskTagSuggestionsForUser(user.id, req.params.id, req.body || {}));
+  } catch (error) {
+    if (error instanceof UserTaskNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    if (error instanceof UserTaskTagSuggestionError) {
+      return res.status(400).json({ error: error.message });
+    }
+    throw error;
+  }
+}));
+
+router.post('/tasks/:id/tag-suggestions/dismiss', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  try {
+    return res.json(await dismissTaskTagSuggestionsForUser(user.id, req.params.id));
+  } catch (error) {
+    if (error instanceof UserTaskNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    if (error instanceof UserTaskTagSuggestionError) {
+      return res.status(400).json({ error: error.message });
     }
     throw error;
   }

@@ -144,6 +144,7 @@ export interface UserSettings {
   defaultProvider: string;
   fallbackProviders: string[];
   autoGenerateSummary: boolean;
+  autoSuggestTags: boolean;
   circuitBreakerThreshold: number;
   circuitBreakerCooldownMs: number;
   retrievalMode: 'hybrid' | 'fts' | 'vector';

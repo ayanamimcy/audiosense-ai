@@ -24,6 +24,16 @@ interface KnowledgeSource {
   tags?: string[];
 }
 
+interface TagSuggestionContext {
+  title: string;
+  transcript: string;
+  summary?: string | null;
+  language?: string | null;
+  notebook?: string | null;
+  existingTags?: string[];
+  historicalTags?: string[];
+}
+
 export const FALLBACK_SUMMARY_PROMPT =
   'Please summarize this audio. Include a concise overview, main topics, action items, and notable speaker takeaways.';
 
@@ -269,6 +279,52 @@ function buildContextBlock(context: LlmTaskContext) {
   ].join('\n');
 }
 
+function clipText(value: string | null | undefined, maxLength: number) {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) {
+    return '';
+  }
+
+  if (trimmed.length <= maxLength) {
+    return trimmed;
+  }
+
+  return `${trimmed.slice(0, maxLength).trimEnd()}...`;
+}
+
+function parseStringArrayCompletion(content: string) {
+  const trimmed = content.trim();
+  const candidates = [
+    trimmed,
+    trimmed.match(/\[[\s\S]*\]/)?.[0] || '',
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item || '').trim()).filter(Boolean);
+      }
+      if (
+        parsed
+        && typeof parsed === 'object'
+        && Array.isArray((parsed as { tags?: unknown[] }).tags)
+      ) {
+        return (parsed as { tags: unknown[] }).tags
+          .map((item) => String(item || '').trim())
+          .filter(Boolean);
+      }
+    } catch {
+      // Fall through to text parsing below.
+    }
+  }
+
+  return trimmed
+    .split(/\r?\n|,/)
+    .map((item) => item.replace(/^[-*•\s]+/, '').trim())
+    .filter(Boolean);
+}
+
 export async function generateTaskSummary(
   context: LlmTaskContext,
   instructions?: string,
@@ -296,6 +352,51 @@ export async function generateTaskSummary(
     settings,
     1800000,
   );
+}
+
+export async function generateTaskTagSuggestions(
+  context: TagSuggestionContext,
+  settings?: Partial<UserSettings>,
+) {
+  const completion = await callChatCompletion(
+    [
+      {
+        role: 'system',
+        content: [
+          'You generate short, high-precision tags for audio tasks in a knowledge management app.',
+          'Return JSON only.',
+          'Return a JSON array of strings with 0 to 5 tags.',
+          'Prefer reusing the provided historical tag vocabulary when it fits.',
+          'Only introduce genuinely new tags when necessary, and keep new tags to at most 2.',
+          'Each tag must be concise, specific, and useful for filtering.',
+          'Do not return sentences, explanations, generic labels, timestamps, or filenames.',
+        ].join(' '),
+      },
+      {
+        role: 'user',
+        content: [
+          `Title: ${context.title}`,
+          `Language: ${context.language || 'unknown'}`,
+          `Notebook: ${context.notebook || 'unassigned'}`,
+          `Existing tags: ${(context.existingTags || []).join(', ') || '(none)'}`,
+          `Historical tag candidates: ${(context.historicalTags || []).join(', ') || '(none)'}`,
+          '',
+          'Summary:',
+          clipText(context.summary, 2000) || '(none)',
+          '',
+          'Transcript excerpt:',
+          clipText(context.transcript, 5000) || '(empty)',
+          '',
+          'Return JSON only. Example: ["customer feedback", "pricing", "follow-up"]',
+        ].join('\n'),
+      },
+    ],
+    0.1,
+    settings,
+    120000,
+  );
+
+  return parseStringArrayCompletion(completion);
 }
 
 export async function chatWithTranscript(

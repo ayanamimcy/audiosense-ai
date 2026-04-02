@@ -6,6 +6,7 @@ import { apiFetch } from '../../api';
 import { useAppDataContext } from '../../contexts/AppDataContext';
 import { getTaskMediaUrl, getTaskSubtitleUrl, getTaskTrackLanguage, isVideoTask } from '../../lib/media';
 import { StatCard } from './StatCard';
+import { TaskTagSuggestionPanel } from './TaskTagSuggestionPanel';
 import type { Task } from '../../types';
 
 type TaskHeaderVariant = 'default' | 'mobile-player';
@@ -39,6 +40,7 @@ export function TaskHeader({
   const [editNotebookId, setEditNotebookId] = useState(task.notebookId || '');
   const [editDate, setEditDate] = useState(format(new Date(task.eventDate || task.createdAt), 'yyyy-MM-dd'));
   const [isMetadataVisible, setIsMetadataVisible] = useState(false);
+  const [isMobileMetadataExpanded, setIsMobileMetadataExpanded] = useState(false);
 
   React.useEffect(() => {
     setEditName(task.originalName);
@@ -47,6 +49,7 @@ export function TaskHeader({
     setEditDate(format(new Date(task.eventDate || task.createdAt), 'yyyy-MM-dd'));
     setIsEditing(false);
     setIsMetadataVisible(false);
+    setIsMobileMetadataExpanded(false);
   }, [task.id]);
 
   const notebook = notebooks.find((item) => item.id === task.notebookId);
@@ -56,6 +59,9 @@ export function TaskHeader({
   const trackLanguage = getTaskTrackLanguage(task);
   const isMini = variant === 'mobile-player' && mobilePresentation === 'mini';
   const useBottomAudioBar = variant === 'mobile-player' && mobileAudioControls === 'bottom-bar' && !isVideo;
+  const hasExtraMobileMetadata = Boolean(
+    task.language || task.provider || task.durationSeconds || notebook || task.tags.length > 0,
+  );
 
   const handleSave = async () => {
     const tagsArray = editTags
@@ -142,47 +148,123 @@ export function TaskHeader({
   };
 
   if (variant === 'mobile-player') {
+    if (useBottomAudioBar) {
+      return <div className="h-0 overflow-hidden shrink-0" />;
+    }
+
+    if (isMini) {
+      return (
+        <div className="h-0 shrink-0">
+          <div
+            className={cn(
+              'fixed right-3 z-40 overflow-hidden rounded-2xl border border-slate-200 shadow-2xl',
+              isVideo
+                ? 'bottom-[calc(var(--mobile-bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] w-[min(42vw,11rem)] bg-slate-950'
+                : 'bottom-[calc(var(--mobile-bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] w-[min(72vw,15rem)] bg-white p-2',
+            )}
+          >
+            {onExpandMini ? (
+              <button
+                type="button"
+                onClick={onExpandMini}
+                className={cn(
+                  'absolute left-2 top-2 z-10 rounded-full p-1.5 shadow-sm',
+                  isVideo ? 'bg-slate-900/70 text-white' : 'bg-slate-100 text-slate-700',
+                )}
+                aria-label="Expand player"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+            ) : null}
+            {renderMedia()}
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div
-        className={cn(
-          'shrink-0',
-          useBottomAudioBar
-            ? 'h-0 overflow-hidden'
-            : isMini
-            ? 'h-0'
-            : isVideo
-              ? 'h-[clamp(12rem,30dvh,16rem)] border-b border-slate-200 bg-slate-950'
-              : 'border-b border-slate-200 bg-white px-3 py-2',
-        )}
-      >
-        <div
-          className={cn(
-            isMini
-              ? cn(
-                  'fixed right-3 z-40 overflow-hidden rounded-2xl border border-slate-200 shadow-2xl',
-                  isVideo
-                    ? 'bottom-[calc(var(--mobile-bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] w-[min(42vw,11rem)] bg-slate-950'
-                    : 'bottom-[calc(var(--mobile-bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] w-[min(72vw,15rem)] bg-white p-2',
-                )
-              : isVideo
-                ? 'h-full w-full'
-                : '',
-          )}
-        >
-          {isMini && onExpandMini ? (
-            <button
-              type="button"
-              onClick={onExpandMini}
-              className={cn(
-                'absolute left-2 top-2 z-10 rounded-full p-1.5 shadow-sm',
-                isVideo ? 'bg-slate-900/70 text-white' : 'bg-slate-100 text-slate-700',
-              )}
-              aria-label="Expand player"
-            >
-              <Maximize2 className="w-3.5 h-3.5" />
-            </button>
-          ) : null}
+      <div className="shrink-0 border-b border-slate-200 bg-white">
+        <div className={cn(isVideo ? 'h-[clamp(12rem,30dvh,16rem)] bg-slate-950' : 'px-3 py-2')}>
           {renderMedia()}
+        </div>
+
+        <div className="space-y-2.5 px-3 py-3">
+          <div className="flex items-start gap-2">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+              <span
+                className={cn(
+                  'rounded-full border px-3 py-1 text-sm font-medium capitalize whitespace-nowrap',
+                  task.status === 'completed'
+                    ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                    : task.status === 'processing'
+                      ? 'border-amber-200 bg-amber-50 text-amber-700'
+                      : task.status === 'failed'
+                        ? 'border-red-200 bg-red-50 text-red-700'
+                        : 'border-slate-200 bg-slate-100 text-slate-700',
+                )}
+              >
+                {task.status}
+              </span>
+              <span className="whitespace-nowrap text-[15px] font-medium text-slate-500">
+                {format(new Date(task.eventDate || task.createdAt), 'MMM d, yyyy')}
+              </span>
+              {isMobileMetadataExpanded && task.language ? (
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[13px] font-medium text-slate-600">
+                  {task.language}
+                </span>
+              ) : null}
+              {isMobileMetadataExpanded && task.provider ? (
+                <span className="rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-[13px] font-medium text-indigo-600">
+                  {task.provider}
+                </span>
+              ) : null}
+              {isMobileMetadataExpanded && task.durationSeconds ? (
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[13px] font-medium text-slate-600">
+                  {task.durationSeconds.toFixed(1)}s
+                </span>
+              ) : null}
+              {isMobileMetadataExpanded && notebook ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-indigo-100 bg-indigo-50 px-2.5 py-1 text-[13px] font-medium text-indigo-600">
+                  <Book className="w-3 h-3" />
+                  {notebook.name}
+                </span>
+              ) : null}
+              {isMobileMetadataExpanded
+                ? task.tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[13px] font-medium text-slate-600"
+                    >
+                      #{tag}
+                    </span>
+                  ))
+                : null}
+            </div>
+
+            {hasExtraMobileMetadata ? (
+              <button
+                type="button"
+                onClick={() => setIsMobileMetadataExpanded((current) => !current)}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm transition-colors hover:bg-slate-50"
+                aria-label={isMobileMetadataExpanded ? 'Collapse metadata' : 'Expand metadata'}
+                aria-expanded={isMobileMetadataExpanded}
+              >
+                <ChevronDown
+                  className={cn(
+                    'h-4 w-4 transition-transform',
+                    isMobileMetadataExpanded ? 'rotate-180' : '',
+                  )}
+                />
+              </button>
+            ) : null}
+          </div>
+
+          <TaskTagSuggestionPanel
+            task={task}
+            onUpdateTask={onUpdateTask}
+            compact
+            mode="inline"
+          />
         </div>
       </div>
     );
@@ -301,6 +383,11 @@ export function TaskHeader({
                     ))}
                   </div>
                 )}
+                <TaskTagSuggestionPanel
+                  task={task}
+                  onUpdateTask={onUpdateTask}
+                  mode="desktop-popover"
+                />
               </div>
             </div>
           )}

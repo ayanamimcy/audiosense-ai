@@ -39,6 +39,7 @@ export interface UserSettings {
   defaultProvider: string;
   fallbackProviders: string[];
   autoGenerateSummary: boolean;
+  autoSuggestTags: boolean;
   circuitBreakerThreshold: number;
   circuitBreakerCooldownMs: number;
   retrievalMode: RetrievalMode;
@@ -91,6 +92,7 @@ export function getDefaultSettings(): UserSettings {
     defaultProvider: (process.env.TRANSCRIPTION_PROVIDER || 'local-python').toLowerCase(),
     fallbackProviders: [],
     autoGenerateSummary: process.env.AUTO_GENERATE_SUMMARY === 'true',
+    autoSuggestTags: process.env.AUTO_SUGGEST_TAGS !== 'false',
     circuitBreakerThreshold: 3,
     circuitBreakerCooldownMs: 5 * 60 * 1000,
     retrievalMode: 'hybrid',
@@ -190,6 +192,7 @@ export function sanitizeUserSettings(
     defaultProvider,
     fallbackProviders,
     autoGenerateSummary: readBool(merged.autoGenerateSummary, base.autoGenerateSummary),
+    autoSuggestTags: readBool(merged.autoSuggestTags, base.autoSuggestTags),
     circuitBreakerThreshold: clampNumber(
       merged.circuitBreakerThreshold,
       base.circuitBreakerThreshold,

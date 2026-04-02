@@ -264,6 +264,24 @@ export function SettingsPage({
             </div>
           </label>
 
+          <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
+            <input
+              type="checkbox"
+              checked={draft.autoSuggestTags}
+              onChange={(event) =>
+                updateDraft((current) => ({
+                  ...current,
+                  autoSuggestTags: event.target.checked,
+                }))
+              }
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+            />
+            <div>
+              <p className="text-sm font-medium text-slate-800">Auto suggest tags after transcription</p>
+              <p className="text-sm text-slate-500 mt-1">If LLM is configured, completed tasks will get suggested tags that you can review before applying.</p>
+            </div>
+          </label>
+
           <div className="grid md:grid-cols-2 gap-4">
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Circuit breaker threshold</span>

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { isTaskSummaryGenerating } from '../lib/taskSummary';
+import { isTaskTagSuggestionGenerating } from '../lib/taskTagSuggestions';
 import type { AuthUser, Task } from '../types';
 
 /**
@@ -19,7 +20,8 @@ export function useTaskPolling(
     (task) => task.status === 'pending' || task.status === 'processing',
   );
   const hasPendingSummary = isTaskSummaryGenerating(selectedTask);
-  const shouldPoll = hasActiveTasks || hasPendingSummary;
+  const hasPendingTagSuggestions = isTaskTagSuggestionGenerating(selectedTask);
+  const shouldPoll = hasActiveTasks || hasPendingSummary || hasPendingTagSuggestions;
 
   const selectedTaskIdRef = useRef(selectedTaskId);
   selectedTaskIdRef.current = selectedTaskId;

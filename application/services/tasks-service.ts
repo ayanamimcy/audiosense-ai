@@ -13,8 +13,16 @@ import {
   updateTaskRowById,
   updateTaskRowForUser,
 } from '../../database/repositories/tasks-repository.js';
+import { isLlmConfigured } from '../../lib/llm.js';
 import { clearTaskIndex, reindexTask } from '../../lib/search-index.js';
+import { getUserSettings } from '../../lib/settings.js';
 import { buildWebVttFromSegments } from '../../lib/subtitles.js';
+import {
+  buildTagSuggestionMetadata,
+  markTaskTagSuggestionsGenerating,
+  persistTaskTagSuggestions,
+  removeAppliedTagsFromSuggestions,
+} from '../../lib/task-tag-suggestions.js';
 import { findTaskForUser } from '../../lib/task-helpers.js';
 import { repairPossiblyMojibakeText } from '../../lib/text-encoding.js';
 import { enqueueTaskJob } from '../../lib/task-queue.js';
@@ -24,6 +32,12 @@ import { createUploadTask, type UploadTaskInput } from '../../lib/upload-service
 export class UserTaskNotFoundError extends Error {
   constructor() {
     super('Task not found.');
+  }
+}
+
+export class UserTaskTagSuggestionError extends Error {
+  constructor(message: string) {
+    super(message);
   }
 }
 
@@ -48,6 +62,14 @@ export async function reprocessTaskForUser(
     status: 'pending',
     summary: null,
     result: null,
+    metadata: buildTagSuggestionMetadata(task, {
+      status: null,
+      error: null,
+      requestId: null,
+      items: null,
+      generatedAt: null,
+      dismissedAt: null,
+    }),
     updatedAt: Date.now(),
   });
   await enqueueTaskJob({ taskId: task.id, userId, provider });
@@ -90,7 +112,12 @@ export async function updateTaskForUser(
     updates.originalName = repairPossiblyMojibakeText(String(input.originalName || '').trim());
   }
   if (input.tags !== undefined) {
-    updates.tags = JSON.stringify(normalizeTags(input.tags));
+    const nextTags = normalizeTags(input.tags);
+    updates.tags = JSON.stringify(nextTags);
+    const nextMetadata = removeAppliedTagsFromSuggestions(task, nextTags);
+    if (nextMetadata !== task.metadata) {
+      updates.metadata = nextMetadata;
+    }
   }
   if (input.notebookId !== undefined) {
     updates.notebookId = input.notebookId ? String(input.notebookId) : null;
@@ -110,6 +137,106 @@ export async function updateTaskForUser(
 
   if (updatedTask.status === 'completed' && updatedTask.transcript) {
     await reindexTask(updatedTask);
+  }
+
+  return toTaskResponse(updatedTask);
+}
+
+export async function generateTaskTagSuggestionsForUser(userId: string, taskId: string) {
+  const task = await findTaskForUser(userId, taskId);
+  if (!task) {
+    throw new UserTaskNotFoundError();
+  }
+  if (task.status !== 'completed' || !task.transcript) {
+    throw new UserTaskTagSuggestionError(
+      'Tag suggestions are only available for completed tasks with a transcript.',
+    );
+  }
+
+  const userSettings = await getUserSettings(userId);
+  if (!isLlmConfigured(userSettings)) {
+    throw new UserTaskTagSuggestionError('LLM is not configured.');
+  }
+
+  const requestId = await markTaskTagSuggestionsGenerating(task);
+  void persistTaskTagSuggestions(task.id, userSettings, requestId);
+
+  const current = await findTaskForUser(userId, task.id);
+  if (!current) {
+    throw new UserTaskNotFoundError();
+  }
+
+  return toTaskResponse(current);
+}
+
+export async function applyTaskTagSuggestionsForUser(
+  userId: string,
+  taskId: string,
+  input: {
+    tags?: unknown;
+  },
+) {
+  const task = await findTaskForUser(userId, taskId);
+  if (!task) {
+    throw new UserTaskNotFoundError();
+  }
+
+  const requestedTags = normalizeTags(input.tags);
+  if (requestedTags.length === 0) {
+    return toTaskResponse(task);
+  }
+
+  const nextTags = normalizeTags([
+    ...parseJsonField<string[]>(task.tags, []),
+    ...requestedTags,
+  ]);
+
+  await updateTaskRowForUser(userId, task.id, {
+    tags: JSON.stringify(nextTags),
+    metadata: buildTagSuggestionMetadata(task, {
+      status: null,
+      error: null,
+      requestId: null,
+      items: null,
+      generatedAt: null,
+      dismissedAt: null,
+    }),
+    updatedAt: Date.now(),
+  });
+
+  const updatedTask = await findTaskForUser(userId, task.id);
+  if (!updatedTask) {
+    throw new UserTaskNotFoundError();
+  }
+
+  if (updatedTask.status === 'completed' && updatedTask.transcript) {
+    await reindexTask(updatedTask);
+  }
+
+  return toTaskResponse(updatedTask);
+}
+
+export async function dismissTaskTagSuggestionsForUser(userId: string, taskId: string) {
+  const task = await findTaskForUser(userId, taskId);
+  if (!task) {
+    throw new UserTaskNotFoundError();
+  }
+
+  await updateTaskRowForUser(userId, task.id, {
+    metadata: buildTagSuggestionMetadata(task, {
+      status: null,
+      error: null,
+      requestId: null,
+      items: null,
+      generatedAt: null,
+      dismissedAt: Date.now(),
+    }),
+    updatedAt: Date.now(),
+  });
+
+  const updatedTask = await findTaskForUser(userId, task.id);
+  if (!updatedTask) {
+    throw new UserTaskNotFoundError();
   }
 
   return toTaskResponse(updatedTask);
