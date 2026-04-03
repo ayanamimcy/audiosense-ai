@@ -293,12 +293,17 @@ export function TasksPage({
                     {task.provider && <span className="text-xs text-slate-500">&bull; {task.provider}</span>}
                   </div>
                   {task.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mt-2">
-                      {task.tags.slice(0, 3).map((tag) => (
-                        <span key={tag} className="text-[10px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                    <div className="flex flex-nowrap items-center gap-1 mt-2 overflow-hidden">
+                      {task.tags.slice(0, 2).map((tag) => (
+                        <span key={tag} className="text-[10px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full whitespace-nowrap min-w-0 overflow-hidden text-ellipsis">
                           #{tag}
                         </span>
                       ))}
+                      {task.tags.length > 2 && (
+                        <span className="shrink-0 text-[10px] font-medium text-slate-400 px-1.5 py-0.5">
+                          +{task.tags.length - 2}
+                        </span>
+                      )}
                     </div>
                   )}
                 </div>

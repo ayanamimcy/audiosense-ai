@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, SendHorizontal } from 'lucide-react';
+import { Check, Copy, Loader2, SendHorizontal } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { MarkdownContent } from '../MarkdownContent';
 import { useAppDataContext } from '../../contexts/AppDataContext';
@@ -28,8 +28,32 @@ export function ChatPanel({
 }) {
   const { capabilities } = useAppDataContext();
   const compactTextareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const internalScrollRef = React.useRef<HTMLDivElement | null>(null);
+  const messagesEndRef = React.useRef<HTMLDivElement | null>(null);
   const isChatEnabled = Boolean(capabilities?.llm.configured);
   const canSendMessage = isChatEnabled && !isSendingMessage && messageInput.trim().length > 0;
+  const resolvedScrollRef = scrollContainerRef || internalScrollRef;
+  const isNearBottomRef = React.useRef(true);
+  const [copiedId, setCopiedId] = React.useState<string | null>(null);
+
+  const handleScrollCapture = React.useCallback(() => {
+    const el = resolvedScrollRef.current;
+    if (!el) return;
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  }, [resolvedScrollRef]);
+
+  React.useEffect(() => {
+    if (isNearBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
+
+  const handleCopyMessage = (message: TaskMessage) => {
+    void navigator.clipboard.writeText(message.content).then(() => {
+      setCopiedId(message.id);
+      setTimeout(() => setCopiedId(null), 1500);
+    });
+  };
 
   React.useLayoutEffect(() => {
     if (!compact) {
@@ -122,8 +146,8 @@ export function ChatPanel({
       )}
     >
       <div
-        ref={scrollContainerRef}
-        onScroll={onScroll}
+        ref={resolvedScrollRef}
+        onScroll={(e) => { handleScrollCapture(); onScroll?.(e); }}
         className={cn(
           'flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1',
           compact
@@ -160,7 +184,7 @@ export function ChatPanel({
               >
                 {message.role === 'user' ? 'You' : 'Assistant'}
               </p>
-              {message.pending ? (
+              {message.pending && !message.content ? (
                 <div className="flex items-center gap-2 text-sm text-slate-500">
                   <Loader2 className="w-4 h-4 animate-spin" />
                   Thinking...
@@ -185,9 +209,23 @@ export function ChatPanel({
                   }
                 />
               )}
+              {message.role === 'assistant' && message.content && !message.pending && !message.error && (
+                <button
+                  type="button"
+                  onClick={() => handleCopyMessage(message)}
+                  className="mt-2 flex items-center gap-1 text-xs text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  {copiedId === message.id ? (
+                    <><Check className="w-3 h-3" /> Copied</>
+                  ) : (
+                    <><Copy className="w-3 h-3" /> Copy</>
+                  )}
+                </button>
+              )}
             </div>
           ))
         )}
+        <div ref={messagesEndRef} />
       </div>
       {renderComposer()}
     </div>

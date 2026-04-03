@@ -41,6 +41,7 @@ export function TaskHeader({
   const [editDate, setEditDate] = useState(format(new Date(task.eventDate || task.createdAt), 'yyyy-MM-dd'));
   const [isMetadataVisible, setIsMetadataVisible] = useState(false);
   const [isMobileMetadataExpanded, setIsMobileMetadataExpanded] = useState(false);
+  const [isTagsExpanded, setIsTagsExpanded] = useState(false);
 
   React.useEffect(() => {
     setEditName(task.originalName);
@@ -48,6 +49,7 @@ export function TaskHeader({
     setEditNotebookId(task.notebookId || '');
     setEditDate(format(new Date(task.eventDate || task.createdAt), 'yyyy-MM-dd'));
     setIsEditing(false);
+    setIsTagsExpanded(false);
     setIsMetadataVisible(false);
     setIsMobileMetadataExpanded(false);
   }, [task.id]);
@@ -374,13 +376,28 @@ export function TaskHeader({
                   </span>
                 )}
                 {task.tags.length > 0 && (
-                  <div className="flex items-center gap-1 flex-wrap">
-                    <Tag className="w-3 h-3 text-slate-400" />
-                    {task.tags.map((tag) => (
-                      <span key={tag} className="text-xs text-slate-600 bg-slate-200/50 px-2 py-0.5 rounded-md border border-slate-200">
+                  <div className={cn(
+                    'flex items-center gap-1',
+                    isTagsExpanded ? 'flex-wrap' : 'flex-nowrap overflow-hidden',
+                  )}>
+                    <Tag className="w-3 h-3 text-slate-400 shrink-0" />
+                    {(isTagsExpanded ? task.tags : task.tags.slice(0, 3)).map((tag) => (
+                      <span key={tag} className={cn(
+                        'text-xs text-slate-600 bg-slate-200/50 px-2 py-0.5 rounded-md border border-slate-200 whitespace-nowrap',
+                        !isTagsExpanded && 'min-w-0 overflow-hidden text-ellipsis',
+                      )}>
                         #{tag}
                       </span>
                     ))}
+                    {task.tags.length > 3 && (
+                      <button
+                        type="button"
+                        onClick={() => setIsTagsExpanded((v) => !v)}
+                        className="shrink-0 text-xs text-slate-500 hover:text-slate-700 px-1.5 py-0.5 rounded-md border border-slate-200 bg-white transition-colors whitespace-nowrap"
+                      >
+                        {isTagsExpanded ? 'Show less' : `+${task.tags.length - 3}`}
+                      </button>
+                    )}
                   </div>
                 )}
                 <TaskTagSuggestionPanel
@@ -396,22 +413,17 @@ export function TaskHeader({
         {renderMedia()}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="rounded-xl border border-slate-200 bg-white">
         <button
           type="button"
           onClick={() => setIsMetadataVisible((current) => !current)}
-          className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
+          className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
           aria-expanded={isMetadataVisible}
         >
-          <div>
-            <p className="text-sm font-semibold text-slate-900">Task details</p>
-            <p className="text-xs text-slate-500">
-              {isMetadataVisible ? 'Hide speakers, segments, and model info.' : 'Show speakers, segments, and model info.'}
-            </p>
-          </div>
+          <span className="text-xs font-medium text-slate-600">Task details</span>
           <ChevronDown
             className={cn(
-              'w-4 h-4 text-slate-500 transition-transform',
+              'w-3.5 h-3.5 text-slate-400 transition-transform',
               isMetadataVisible ? 'rotate-180' : '',
             )}
           />

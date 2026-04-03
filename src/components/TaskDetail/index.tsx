@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Copy,
   Edit2,
@@ -102,6 +102,44 @@ export function TaskDetail({
   const mediaRef = useRef<HTMLMediaElement | null>(null);
   const segmentRefs = useRef(new Map<string, HTMLDivElement>());
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
+  const chatFabRef = useRef<HTMLButtonElement | null>(null);
+  const chatFabDrag = useRef({ startX: 0, startY: 0, startRight: 16, startBottom: 0, moved: false });
+  const [chatFabPos, setChatFabPos] = useState<{ right: number; bottom: number } | null>(null);
+  const clampChatFabPos = useCallback((right: number, bottom: number) => ({
+    right: Math.max(8, Math.min(window.innerWidth - 56, right)),
+    bottom: Math.max(8, Math.min(window.innerHeight - 56, bottom)),
+  }), []);
+
+  const handleFabTouchStart = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    const el = chatFabRef.current;
+    if (!touch || !el) return;
+    const rect = el.getBoundingClientRect();
+    chatFabDrag.current = {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      startRight: window.innerWidth - rect.right,
+      startBottom: window.innerHeight - rect.bottom,
+      moved: false,
+    };
+  }, []);
+
+  const handleFabTouchMove = useCallback((e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    const drag = chatFabDrag.current;
+    const dx = touch.clientX - drag.startX;
+    const dy = touch.clientY - drag.startY;
+    if (!drag.moved && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+    drag.moved = true;
+    setChatFabPos(clampChatFabPos(drag.startRight - dx, drag.startBottom - dy));
+  }, [clampChatFabPos]);
+
+  const handleFabTouchEnd = useCallback(() => {
+    if (!chatFabDrag.current.moved) {
+      setIsChatOverlayOpen(true);
+    }
+  }, []);
   const isCompactLayout = !isDesktop;
   const isVideo = isVideoTask(task);
 
@@ -123,6 +161,21 @@ export function TaskDetail({
     mediaQuery.addListener(handleChange);
     return () => mediaQuery.removeListener(handleChange);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const handleResize = () => {
+      setChatFabPos((current) => (
+        current ? clampChatFabPos(current.right, current.bottom) : current
+      ));
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [clampChatFabPos]);
 
   useEffect(() => {
     setSummaryInstructions('');
@@ -872,9 +925,19 @@ export function TaskDetail({
 
       {isCompactLayout && !isChatOverlayOpen && task.status === 'completed' && (
         <button
+          ref={chatFabRef}
           type="button"
-          onClick={() => setIsChatOverlayOpen(true)}
-          className="fixed z-40 right-4 bottom-[calc(var(--mobile-bottom-nav-height)+env(safe-area-inset-bottom)+1.5rem)] flex h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-white shadow-[0_8px_24px_rgba(79,70,229,0.35)] active:scale-95 transition-transform"
+          onTouchStart={handleFabTouchStart}
+          onTouchMove={handleFabTouchMove}
+          onTouchEnd={handleFabTouchEnd}
+          onClick={() => {
+            if (!chatFabDrag.current.moved) setIsChatOverlayOpen(true);
+          }}
+          style={chatFabPos ? { right: chatFabPos.right, bottom: chatFabPos.bottom } : undefined}
+          className={cn(
+            'fixed z-40 flex h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-white shadow-[0_8px_24px_rgba(79,70,229,0.35)] touch-none',
+            !chatFabPos && 'right-4 bottom-[calc(var(--mobile-bottom-nav-height)+env(safe-area-inset-bottom)+1.5rem)]',
+          )}
           aria-label="Open chat"
         >
           <MessageSquare className="w-5 h-5" />
