@@ -95,6 +95,7 @@ export function TaskDetail({
   const [isDesktop, setIsDesktop] = useState(getInitialIsDesktop);
   const [isMiniPlayer, setIsMiniPlayer] = useState(false);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
+  const [isChatOverlayOpen, setIsChatOverlayOpen] = useState(false);
   const [isMediaPlaying, setIsMediaPlaying] = useState(false);
   const [mediaCurrentTime, setMediaCurrentTime] = useState(0);
   const [mediaDuration, setMediaDuration] = useState(0);
@@ -130,11 +131,23 @@ export function TaskDetail({
     setActiveSegmentId(null);
     setIsMiniPlayer(false);
     setIsActionSheetOpen(false);
+    setIsChatOverlayOpen(false);
     setIsMediaPlaying(false);
     setMediaCurrentTime(0);
     setMediaDuration(0);
     contentScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
   }, [task.id]);
+
+  useEffect(() => {
+    if (!isCompactLayout) {
+      setIsChatOverlayOpen(false);
+      return;
+    }
+
+    if (activePanel === 'chat') {
+      setActivePanel(hasTaskSummaryState(task) ? 'summary' : 'transcript');
+    }
+  }, [activePanel, isCompactLayout, task]);
 
   useEffect(() => {
     if (activePanel !== 'transcript' || !activeSegmentId) {
@@ -308,7 +321,9 @@ export function TaskDetail({
 
     setMessages((prev) => [...prev, optimisticUserMessage, optimisticAssistantMessage]);
     setMessageInput('');
-    setActivePanel('chat');
+    if (!isCompactLayout) {
+      setActivePanel('chat');
+    }
     setIsSendingMessage(true);
     try {
       const res = await apiFetch(`/api/tasks/${task.id}/chat/stream`, {
@@ -540,13 +555,15 @@ export function TaskDetail({
       >
         Transcript
       </PanelButton>
-      <PanelButton
-        active={activePanel === 'chat'}
-        onClick={() => setActivePanel('chat')}
-        icon={<MessageSquare className="w-4 h-4" />}
-      >
-        Chat
-      </PanelButton>
+      {!isCompactLayout && (
+        <PanelButton
+          active={activePanel === 'chat'}
+          onClick={() => setActivePanel('chat')}
+          icon={<MessageSquare className="w-4 h-4" />}
+        >
+          Chat
+        </PanelButton>
+      )}
       {isCompactLayout ? (
         <div className="ml-auto flex items-center gap-2 shrink-0">
           <button
@@ -745,7 +762,7 @@ export function TaskDetail({
                 <button
                   type="button"
                   onClick={() => {
-                    setActivePanel('chat');
+                    setIsChatOverlayOpen(true);
                     setIsActionSheetOpen(false);
                   }}
                   className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left"
@@ -852,6 +869,47 @@ export function TaskDetail({
           }}
         />
       ) : null}
+
+      {isCompactLayout && !isChatOverlayOpen && task.status === 'completed' && (
+        <button
+          type="button"
+          onClick={() => setIsChatOverlayOpen(true)}
+          className="fixed z-40 right-4 bottom-[calc(var(--mobile-bottom-nav-height)+env(safe-area-inset-bottom)+1.5rem)] flex h-12 w-12 items-center justify-center rounded-full bg-indigo-600 text-white shadow-[0_8px_24px_rgba(79,70,229,0.35)] active:scale-95 transition-transform"
+          aria-label="Open chat"
+        >
+          <MessageSquare className="w-5 h-5" />
+        </button>
+      )}
+
+      {isCompactLayout && isChatOverlayOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-white">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-600" />
+              <span className="text-base font-semibold text-slate-900">AI Chat</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsChatOverlayOpen(false)}
+              className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-slate-500"
+              aria-label="Close chat"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div className="flex-1 min-h-0">
+            <ChatPanel
+              messages={messages}
+              messageInput={messageInput}
+              onMessageInputChange={setMessageInput}
+              isSendingMessage={isSendingMessage}
+              onSendMessage={() => void handleSendMessage()}
+              compact
+              overlay
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

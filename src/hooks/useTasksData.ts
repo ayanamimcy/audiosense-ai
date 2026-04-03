@@ -8,6 +8,9 @@ export function useTasksData() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [selectedTaskLoading, setSelectedTaskLoading] = useState(false);
   const selectTaskRequestRef = useRef(0);
+  const selectedTaskIdRef = useRef<string | null>(null);
+
+  selectedTaskIdRef.current = selectedTaskId;
 
   const fetchTaskDetail = async (taskId: string) => {
     const data = await apiJson<Task>(`/api/tasks/${taskId}`);
@@ -31,8 +34,8 @@ export function useTasksData() {
     }
     // Keep the current selection if it still exists; otherwise clear it.
     // Never auto-select the first task — that would hijack mobile navigation.
-    if (selectedTaskId) {
-      return nextTasks.find((task) => task.id === selectedTaskId)?.id || null;
+    if (selectedTaskIdRef.current) {
+      return nextTasks.find((task) => task.id === selectedTaskIdRef.current)?.id || null;
     }
     return null;
   };
@@ -68,6 +71,13 @@ export function useTasksData() {
   };
 
   const applySelection = async (nextTasks: Task[], preferredId?: string | null) => {
+    // During initial app bootstrap we may refresh the task list before route-driven
+    // selection has been restored. In that case, avoid issuing selectTask(null),
+    // which would erase the route's in-flight selection.
+    if (preferredId == null && selectedTaskIdRef.current == null) {
+      return;
+    }
+
     const nextId = resolveSelectedTaskId(nextTasks, preferredId);
     await selectTask(nextId);
   };

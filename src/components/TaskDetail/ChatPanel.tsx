@@ -12,6 +12,7 @@ export function ChatPanel({
   isSendingMessage,
   onSendMessage,
   compact = false,
+  overlay = false,
   scrollContainerRef,
   onScroll,
 }: {
@@ -21,6 +22,7 @@ export function ChatPanel({
   isSendingMessage: boolean;
   onSendMessage: () => void;
   compact?: boolean;
+  overlay?: boolean;
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
   onScroll?: (event: React.UIEvent<HTMLDivElement>) => void;
 }) {
@@ -51,7 +53,12 @@ export function ChatPanel({
   const renderComposer = () => {
     if (compact) {
       return (
-        <div className="absolute inset-x-4 bottom-[calc(2.35rem+env(safe-area-inset-bottom))] z-50">
+        <div className={cn(
+          'absolute inset-x-4 z-50',
+          overlay
+            ? 'bottom-[calc(0.75rem+env(safe-area-inset-bottom))]'
+            : 'bottom-[calc(2.35rem+env(safe-area-inset-bottom))]',
+        )}>
           <div className="flex items-end gap-2 rounded-[1.5rem] border border-slate-200 bg-white/95 px-3 py-2 shadow-[0_10px_28px_rgba(15,23,42,0.12)] backdrop-blur-sm">
             <textarea
               ref={compactTextareaRef}
@@ -107,7 +114,11 @@ export function ChatPanel({
     <div
       className={cn(
         'flex flex-col h-full min-h-0',
-        compact ? 'relative px-4 pt-4 pb-[calc(3.35rem+env(safe-area-inset-bottom))]' : 'p-6 pb-6',
+        compact
+          ? overlay
+            ? 'relative px-4 pt-4 pb-[calc(0.5rem+env(safe-area-inset-bottom))]'
+            : 'relative px-4 pt-4 pb-[calc(3.35rem+env(safe-area-inset-bottom))]'
+          : 'p-6 pb-6',
       )}
     >
       <div
@@ -115,7 +126,11 @@ export function ChatPanel({
         onScroll={onScroll}
         className={cn(
           'flex-1 space-y-3 overflow-y-auto custom-scrollbar pr-1',
-          compact ? 'pb-[calc(6.85rem+env(safe-area-inset-bottom))]' : '',
+          compact
+            ? overlay
+              ? 'pb-[calc(5rem+env(safe-area-inset-bottom))]'
+              : 'pb-[calc(6.85rem+env(safe-area-inset-bottom))]'
+            : '',
         )}
       >
         {messages.length === 0 ? (
