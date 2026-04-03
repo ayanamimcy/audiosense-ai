@@ -3,23 +3,37 @@ import {
   findTaskRowById,
   updateTaskRowById,
 } from '../database/repositories/tasks-repository.js';
-import {
-  markTaskTagSuggestionsGenerating,
-  persistTaskTagSuggestions,
-} from './task-tag-suggestions.js';
 import { parseAudioWithFallback } from './audio-engine/engine.js';
 import { formatTranscriptMarkdown } from './audio-engine/markdown.js';
-import { generateTaskSummary, isLlmConfigured } from './llm.js';
-import { getDefaultSummaryPromptForNotebook, listSummaryPrompts } from './summary-prompts.js';
 import { reindexTask } from './search-index.js';
-import { getUserSettings } from './settings.js';
+import { getUserSettings, type UserSettings } from './settings.js';
 import { repairPossiblyMojibakeText } from './text-encoding.js';
 import { parseJsonField, type TaskJobRow, type TaskRow } from './task-types.js';
+import { runTaskPostProcessing } from './task-post-processing.js';
 
 const configuredUploadDir = process.env.UPLOAD_DIR?.trim();
 const uploadDir = path.resolve(configuredUploadDir || path.join(process.cwd(), 'uploads'));
 
-export async function processQueuedJob(job: TaskJobRow) {
+// ---------------------------------------------------------------------------
+// Processing context — collects everything the pipeline stages need
+// ---------------------------------------------------------------------------
+
+interface TaskProcessingContext {
+  task: TaskRow;
+  userId: string | null;
+  userSettings: Partial<UserSettings> | null;
+  provider: string;
+  job: TaskJobRow;
+  metadata: Record<string, unknown>;
+  displayName: string;
+  startedAt: number;
+}
+
+// ---------------------------------------------------------------------------
+// Phase functions
+// ---------------------------------------------------------------------------
+
+async function loadProcessingContext(job: TaskJobRow): Promise<TaskProcessingContext> {
   const task = (await findTaskRowById(job.taskId)) as TaskRow | undefined;
   if (!task) {
     throw new Error(`Task ${job.taskId} not found.`);
@@ -27,30 +41,48 @@ export async function processQueuedJob(job: TaskJobRow) {
 
   const metadata = parseJsonField<Record<string, unknown>>(task.metadata, {});
   const displayName = repairPossiblyMojibakeText(task.originalName);
-  const userSettings = task.userId ? await getUserSettings(task.userId) : null;
-  const now = Date.now();
+  const userId = task.userId ?? null;
+  const userSettings = userId ? await getUserSettings(userId) : null;
+  const provider = job.provider || task.provider || '';
+
+  return {
+    task,
+    userId,
+    userSettings,
+    provider,
+    job,
+    metadata,
+    displayName,
+    startedAt: Date.now(),
+  };
+}
+
+async function markTaskProcessing(ctx: TaskProcessingContext) {
+  await updateTaskRowById(ctx.task.id, {
+    status: 'processing',
+    startedAt: ctx.startedAt,
+    updatedAt: ctx.startedAt,
+    provider: ctx.provider || ctx.task.provider,
+  });
+}
+
+async function runPrimaryTranscription(ctx: TaskProcessingContext) {
+  const { metadata } = ctx;
   const expectedSpeakers =
     typeof metadata.expectedSpeakers === 'number'
       ? metadata.expectedSpeakers
-      : typeof metadata.expectedSpeakers === 'string' && metadata.expectedSpeakers.trim()
+      : typeof metadata.expectedSpeakers === 'string' && (metadata.expectedSpeakers as string).trim()
         ? Number(metadata.expectedSpeakers)
         : undefined;
 
-  await updateTaskRowById(task.id, {
-    status: 'processing',
-    startedAt: now,
-    updatedAt: now,
-    provider: job.provider || task.provider,
-  });
-
-  const { providerName, result, attemptedProviders, skippedProviders } = await parseAudioWithFallback(
-    task.userId,
-    job.provider || task.provider,
+  return parseAudioWithFallback(
+    ctx.userId ?? undefined,
+    ctx.provider,
     {
-      filePath: path.join(uploadDir, task.filename),
-      fileName: displayName,
+      filePath: path.join(uploadDir, ctx.task.filename),
+      fileName: ctx.displayName,
       mimeType: typeof metadata.originalMimeType === 'string' ? metadata.originalMimeType : undefined,
-      language: task.language || 'auto',
+      language: ctx.task.language || 'auto',
       diarization: metadata.diarization !== false,
       wordTimestamps: metadata.wordTimestamps === true || metadata.diarization !== false,
       task: metadata.translationEnabled === true ? 'translate' : 'transcribe',
@@ -62,41 +94,29 @@ export async function processQueuedJob(job: TaskJobRow) {
           : undefined,
     },
   );
+}
 
-  const transcript = result.text;
-  const shouldAutoSummarize = userSettings?.autoGenerateSummary || process.env.AUTO_GENERATE_SUMMARY === 'true';
-  const summaryPrompts = task.userId ? await listSummaryPrompts(task.userId) : [];
-  const defaultPrompt = getDefaultSummaryPromptForNotebook(summaryPrompts, task.notebookId)?.prompt || null;
-  const summary =
-    shouldAutoSummarize && isLlmConfigured(userSettings || undefined)
-      ? await generateTaskSummary(
-        {
-            title: displayName,
-            transcript,
-            language: result.language || task.language,
-            speakers: result.speakers,
-          },
-          undefined,
-          userSettings || undefined,
-          defaultPrompt,
-        )
-      : null;
+async function persistTranscriptionResult(
+  ctx: TaskProcessingContext,
+  transcriptionResult: Awaited<ReturnType<typeof parseAudioWithFallback>>,
+) {
+  const { providerName, result, attemptedProviders, skippedProviders } = transcriptionResult;
   const completedAt = Date.now();
 
-  await updateTaskRowById(task.id, {
+  await updateTaskRowById(ctx.task.id, {
     status: 'completed',
     result: formatTranscriptMarkdown(result),
-    transcript,
-    summary,
+    transcript: result.text,
+    summary: null,
     segments: JSON.stringify(result.segments),
     speakers: JSON.stringify(result.speakers),
-    language: result.language || task.language,
+    language: result.language || ctx.task.language,
     provider: providerName,
     durationSeconds: result.durationSeconds || null,
     completedAt,
     updatedAt: completedAt,
     metadata: JSON.stringify({
-      ...metadata,
+      ...ctx.metadata,
       completedAt,
       finalProvider: providerName,
       attemptedProviders,
@@ -108,11 +128,35 @@ export async function processQueuedJob(job: TaskJobRow) {
     }),
   });
 
-  const updatedTask = (await findTaskRowById(task.id)) as TaskRow;
-  await reindexTask(updatedTask);
+  return completedAt;
+}
 
-  if (task.userId && userSettings?.autoSuggestTags && isLlmConfigured(userSettings)) {
-    const requestId = await markTaskTagSuggestionsGenerating(updatedTask);
-    await persistTaskTagSuggestions(task.id, userSettings, requestId);
-  }
+async function finalizePrimaryTask(ctx: TaskProcessingContext) {
+  const updatedTask = (await findTaskRowById(ctx.task.id)) as TaskRow;
+  await reindexTask(updatedTask);
+  return updatedTask;
+}
+
+// ---------------------------------------------------------------------------
+// Public entry point
+// ---------------------------------------------------------------------------
+
+export async function processQueuedJob(job: TaskJobRow) {
+  // 1. Load context
+  const ctx = await loadProcessingContext(job);
+
+  // 2. Mark processing
+  await markTaskProcessing(ctx);
+
+  // 3. Run transcription
+  const transcriptionResult = await runPrimaryTranscription(ctx);
+
+  // 4. Persist result & mark completed
+  const completedAt = await persistTranscriptionResult(ctx, transcriptionResult);
+
+  // 5. Finalize (reindex)
+  const completedTask = await finalizePrimaryTask(ctx);
+
+  // 6. Post-processing (summary, tag suggestions) — errors here never fail the task
+  await runTaskPostProcessing(completedTask, ctx.userSettings, { completedAt });
 }

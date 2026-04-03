@@ -1,3 +1,4 @@
+import axios from 'axios';
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import {
@@ -210,6 +211,34 @@ router.delete('/summary-prompts/:id', asyncRoute(async (req, res) => {
 router.post('/provider-health/:provider/reset', asyncRoute(async (req, res) => {
   await resetProviderCircuit(String(req.params.provider));
   return res.json({ success: true });
+}));
+
+router.get('/llm/models', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  const userSettings = await getUserSettings(user.id);
+  const info = getLlmInfo(userSettings);
+
+  if (!info.configured || !info.baseUrl) {
+    return res.json({ data: [] });
+  }
+
+  try {
+    const response = await axios.get(`${info.baseUrl}/models`, {
+      headers: {
+        Authorization: `Bearer ${userSettings.llm.apiKey}`,
+      },
+      timeout: 10_000,
+    });
+
+    const models = Array.isArray(response.data?.data)
+      ? response.data.data.map((m: { id?: string }) => ({ id: String(m.id || '') })).filter((m: { id: string }) => m.id)
+      : [];
+
+    return res.json({ data: models });
+  } catch (error) {
+    console.error('Failed to fetch LLM models:', error instanceof Error ? error.message : error);
+    return res.json({ data: [] });
+  }
 }));
 
 export const settingsRouter = router;

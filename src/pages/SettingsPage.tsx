@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { LogOut } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { LogOut, RefreshCw } from 'lucide-react';
 import { apiJson } from '../api';
 import { cn, getLocalSetting, LANGUAGE_OPTIONS } from '../lib/utils';
 import { useAppDataContext } from '../contexts/AppDataContext';
@@ -27,6 +27,21 @@ export function SettingsPage({
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [llmModels, setLlmModels] = useState<string[]>([]);
+  const [isLoadingModels, setIsLoadingModels] = useState(false);
+
+  const fetchLlmModels = useCallback(async () => {
+    setIsLoadingModels(true);
+    try {
+      const result = await apiJson<{ data: { id: string }[] }>('/api/llm/models');
+      const ids = (result.data || []).map((m) => m.id).filter(Boolean).sort();
+      setLlmModels(ids);
+    } catch {
+      setLlmModels([]);
+    } finally {
+      setIsLoadingModels(false);
+    }
+  }, []);
 
   useEffect(() => {
     setLanguage(getLocalSetting('parseLanguage', 'auto'));
@@ -345,137 +360,141 @@ export function SettingsPage({
             </div>
           </label>
 
-          <div className="grid md:grid-cols-2 gap-4">
-            <label className="block md:col-span-2">
-              <span className="text-sm font-medium text-slate-700">API base URL</span>
-              <input
-                type="url"
-                value={draft.openaiWhisper.baseUrl}
-                onChange={(event) =>
-                  updateDraft((current) => ({
-                    ...current,
-                    openaiWhisper: {
-                      ...current.openaiWhisper,
-                      baseUrl: event.target.value,
-                    },
-                  }))
-                }
-                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="https://api.openai.com/v1"
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Model</span>
-              <input
-                type="text"
-                value={draft.openaiWhisper.model}
-                onChange={(event) =>
-                  updateDraft((current) => ({
-                    ...current,
-                    openaiWhisper: {
-                      ...current.openaiWhisper,
-                      model: event.target.value,
-                    },
-                  }))
-                }
-                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="whisper-1"
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">API key</span>
-              <input
-                type="password"
-                value={draft.openaiWhisper.apiKey}
-                onChange={(event) =>
-                  updateDraft((current) => ({
-                    ...current,
-                    openaiWhisper: {
-                      ...current.openaiWhisper,
-                      apiKey: event.target.value,
-                    },
-                  }))
-                }
-                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="sk-..."
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Transcription path</span>
-              <input
-                type="text"
-                value={draft.openaiWhisper.transcriptionPath}
-                onChange={(event) =>
-                  updateDraft((current) => ({
-                    ...current,
-                    openaiWhisper: {
-                      ...current.openaiWhisper,
-                      transcriptionPath: event.target.value,
-                    },
-                  }))
-                }
-                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Translation path</span>
-              <input
-                type="text"
-                value={draft.openaiWhisper.translationPath}
-                onChange={(event) =>
-                  updateDraft((current) => ({
-                    ...current,
-                    openaiWhisper: {
-                      ...current.openaiWhisper,
-                      translationPath: event.target.value,
-                    },
-                  }))
-                }
-                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              />
-            </label>
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Response format</span>
-              <select
-                value={draft.openaiWhisper.responseFormat}
-                onChange={(event) =>
-                  updateDraft((current) => ({
-                    ...current,
-                    openaiWhisper: {
-                      ...current.openaiWhisper,
-                      responseFormat: event.target.value,
-                    },
-                  }))
-                }
-                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="verbose_json">verbose_json</option>
-                <option value="json">json</option>
-                <option value="text">text</option>
-              </select>
-            </label>
-          </div>
+          {draft.openaiWhisper.enabled && (
+            <>
+              <div className="grid md:grid-cols-2 gap-4">
+                <label className="block md:col-span-2">
+                  <span className="text-sm font-medium text-slate-700">API base URL</span>
+                  <input
+                    type="url"
+                    value={draft.openaiWhisper.baseUrl}
+                    onChange={(event) =>
+                      updateDraft((current) => ({
+                        ...current,
+                        openaiWhisper: {
+                          ...current.openaiWhisper,
+                          baseUrl: event.target.value,
+                        },
+                      }))
+                    }
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="https://api.openai.com/v1"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">Model</span>
+                  <input
+                    type="text"
+                    value={draft.openaiWhisper.model}
+                    onChange={(event) =>
+                      updateDraft((current) => ({
+                        ...current,
+                        openaiWhisper: {
+                          ...current.openaiWhisper,
+                          model: event.target.value,
+                        },
+                      }))
+                    }
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="whisper-1"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">API key</span>
+                  <input
+                    type="password"
+                    value={draft.openaiWhisper.apiKey}
+                    onChange={(event) =>
+                      updateDraft((current) => ({
+                        ...current,
+                        openaiWhisper: {
+                          ...current.openaiWhisper,
+                          apiKey: event.target.value,
+                        },
+                      }))
+                    }
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="sk-..."
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">Transcription path</span>
+                  <input
+                    type="text"
+                    value={draft.openaiWhisper.transcriptionPath}
+                    onChange={(event) =>
+                      updateDraft((current) => ({
+                        ...current,
+                        openaiWhisper: {
+                          ...current.openaiWhisper,
+                          transcriptionPath: event.target.value,
+                        },
+                      }))
+                    }
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">Translation path</span>
+                  <input
+                    type="text"
+                    value={draft.openaiWhisper.translationPath}
+                    onChange={(event) =>
+                      updateDraft((current) => ({
+                        ...current,
+                        openaiWhisper: {
+                          ...current.openaiWhisper,
+                          translationPath: event.target.value,
+                        },
+                      }))
+                    }
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-sm font-medium text-slate-700">Response format</span>
+                  <select
+                    value={draft.openaiWhisper.responseFormat}
+                    onChange={(event) =>
+                      updateDraft((current) => ({
+                        ...current,
+                        openaiWhisper: {
+                          ...current.openaiWhisper,
+                          responseFormat: event.target.value,
+                        },
+                      }))
+                    }
+                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="verbose_json">verbose_json</option>
+                    <option value="json">json</option>
+                    <option value="text">text</option>
+                  </select>
+                </label>
+              </div>
 
-          <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
-            <input
-              type="checkbox"
-              checked={draft.openaiWhisper.disableTimestampGranularities}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  openaiWhisper: {
-                    ...current.openaiWhisper,
-                    disableTimestampGranularities: event.target.checked,
-                  },
-                }))
-              }
-              className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <div>
-              <p className="text-sm font-medium text-slate-800">Disable timestamp granularities</p>
-              <p className="text-sm text-slate-500 mt-1">Turn this on if your endpoint does not support `timestamp_granularities[]`.</p>
-            </div>
-          </label>
+              <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
+                <input
+                  type="checkbox"
+                  checked={draft.openaiWhisper.disableTimestampGranularities}
+                  onChange={(event) =>
+                    updateDraft((current) => ({
+                      ...current,
+                      openaiWhisper: {
+                        ...current.openaiWhisper,
+                        disableTimestampGranularities: event.target.checked,
+                      },
+                    }))
+                  }
+                  className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <div>
+                  <p className="text-sm font-medium text-slate-800">Disable timestamp granularities</p>
+                  <p className="text-sm text-slate-500 mt-1">Turn this on if your endpoint does not support `timestamp_granularities[]`.</p>
+                </div>
+              </label>
+            </>
+          )}
         </div>
 
         <div className="rounded-2xl border border-slate-200 p-5 space-y-5">
@@ -505,7 +524,8 @@ export function SettingsPage({
             </div>
           </label>
 
-          <div className="grid md:grid-cols-2 gap-4">
+          {draft.localRuntime.enabled && (
+            <div className="grid md:grid-cols-2 gap-4">
             <label className="block md:col-span-2">
               <span className="text-sm font-medium text-slate-700">Runtime base URL</span>
               <input
@@ -632,7 +652,8 @@ export function SettingsPage({
                 placeholder="Required for gated diarization models"
               />
             </label>
-          </div>
+            </div>
+          )}
         </div>
 
         <div className="rounded-2xl border border-slate-200 p-5 space-y-5">
@@ -660,24 +681,58 @@ export function SettingsPage({
                 placeholder="https://api.openai.com/v1"
               />
             </label>
-            <label className="block">
+            <div className="block">
               <span className="text-sm font-medium text-slate-700">Model</span>
-              <input
-                type="text"
-                value={draft.llm.model}
-                onChange={(event) =>
-                  updateDraft((current) => ({
-                    ...current,
-                    llm: {
-                      ...current.llm,
-                      model: event.target.value,
-                    },
-                  }))
-                }
-                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="gpt-4o-mini"
-              />
-            </label>
+              <div className="flex items-center gap-2 mt-1">
+                {llmModels.length > 0 ? (
+                  <select
+                    value={draft.llm.model}
+                    onChange={(event) =>
+                      updateDraft((current) => ({
+                        ...current,
+                        llm: {
+                          ...current.llm,
+                          model: event.target.value,
+                        },
+                      }))
+                    }
+                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  >
+                    {!llmModels.includes(draft.llm.model) && draft.llm.model && (
+                      <option value={draft.llm.model}>{draft.llm.model}</option>
+                    )}
+                    {llmModels.map((id) => (
+                      <option key={id} value={id}>{id}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="text"
+                    value={draft.llm.model}
+                    onChange={(event) =>
+                      updateDraft((current) => ({
+                        ...current,
+                        llm: {
+                          ...current.llm,
+                          model: event.target.value,
+                        },
+                      }))
+                    }
+                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="gpt-4o-mini"
+                  />
+                )}
+                <button
+                  type="button"
+                  onClick={() => void fetchLlmModels()}
+                  disabled={isLoadingModels}
+                  className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
+                  title="Fetch available models"
+                >
+                  <RefreshCw className={cn('w-4 h-4', isLoadingModels && 'animate-spin')} />
+                </button>
+              </div>
+            </div>
             <label className="block">
               <span className="text-sm font-medium text-slate-700">API key</span>
               <input

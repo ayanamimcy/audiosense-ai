@@ -438,7 +438,7 @@ export function TaskTagSuggestionPanel({
           }}
           disabled={isSubmitting === 'apply' || isSubmitting === 'dismiss'}
           className={cn(
-            'inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+            'inline-flex max-w-full items-center gap-1 rounded-md border px-2 py-0.5 text-xs font-medium transition-colors',
             triggerBusy
               ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
               : suggestedTags.length > 0
@@ -449,9 +449,9 @@ export function TaskTagSuggestionPanel({
           )}
         >
           {triggerBusy ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <Loader2 className="w-3 h-3 animate-spin" />
           ) : (
-            <Sparkles className="w-3.5 h-3.5" />
+            <Sparkles className="w-3 h-3" />
           )}
           <span className="truncate">{triggerLabel}</span>
         </button>
@@ -476,7 +476,7 @@ export function TaskTagSuggestionPanel({
           }}
           disabled={isSubmitting === 'apply' || isSubmitting === 'dismiss'}
           className={cn(
-            'inline-flex items-center gap-2 rounded-full border px-4 py-2.5 text-sm font-semibold shadow-sm transition-colors',
+            'inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[13px] font-medium transition-colors',
             triggerBusy
               ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
               : suggestedTags.length > 0
@@ -487,9 +487,9 @@ export function TaskTagSuggestionPanel({
           )}
         >
           {triggerBusy ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            <Loader2 className="w-3 h-3 animate-spin" />
           ) : (
-            <Sparkles className="w-3.5 h-3.5" />
+            <Sparkles className="w-3 h-3" />
           )}
           <span>{triggerLabel}</span>
         </button>

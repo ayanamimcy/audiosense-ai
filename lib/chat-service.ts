@@ -159,7 +159,7 @@ function getTaskMetadata(task: Pick<TaskRow, 'metadata'>) {
   return parseJsonField<Record<string, unknown>>(task.metadata, {});
 }
 
-function buildSummaryGenerationMetadata(
+export function buildSummaryGenerationMetadata(
   task: Pick<TaskRow, 'metadata'>,
   options: {
     status?: SummaryGenerationStatus | null;
@@ -192,12 +192,12 @@ function buildSummaryGenerationMetadata(
   return JSON.stringify(metadata);
 }
 
-function getSummaryGenerationRequestId(task: Pick<TaskRow, 'metadata'>) {
+export function getSummaryGenerationRequestId(task: Pick<TaskRow, 'metadata'>) {
   const requestId = getTaskMetadata(task).summaryGenerationRequestId;
   return typeof requestId === 'string' && requestId.trim() ? requestId : null;
 }
 
-function normalizeSummaryGenerationError(error: unknown) {
+export function normalizeSummaryGenerationError(error: unknown) {
   if (error instanceof Error && error.message.trim()) {
     return error.message.trim();
   }

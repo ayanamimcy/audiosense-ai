@@ -23,6 +23,7 @@ import {
   persistTaskTagSuggestions,
   removeAppliedTagsFromSuggestions,
 } from '../../lib/task-tag-suggestions.js';
+import { resetTaskDerivedState } from '../../lib/task-derived-state.js';
 import { findTaskForUser } from '../../lib/task-helpers.js';
 import { repairPossiblyMojibakeText } from '../../lib/text-encoding.js';
 import { enqueueTaskJob } from '../../lib/task-queue.js';
@@ -62,14 +63,7 @@ export async function reprocessTaskForUser(
     status: 'pending',
     summary: null,
     result: null,
-    metadata: buildTagSuggestionMetadata(task, {
-      status: null,
-      error: null,
-      requestId: null,
-      items: null,
-      generatedAt: null,
-      dismissedAt: null,
-    }),
+    metadata: resetTaskDerivedState(task),
     updatedAt: Date.now(),
   });
   await enqueueTaskJob({ taskId: task.id, userId, provider });
