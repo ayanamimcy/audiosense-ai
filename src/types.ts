@@ -89,6 +89,15 @@ export interface TagStat {
   count: number;
 }
 
+export interface ApiTokenInfo {
+  id: string;
+  name: string;
+  scopes: string[];
+  expiresAt: number | null;
+  createdAt: number;
+  lastUsedAt: number | null;
+}
+
 export interface ProviderInfo {
   id: string;
   label: string;
