@@ -681,7 +681,7 @@ export function SettingsPage({
                 placeholder="https://api.openai.com/v1"
               />
             </label>
-            <div className="block">
+            <div className="block md:col-span-2">
               <span className="text-sm font-medium text-slate-700">Model</span>
               <div className="flex items-center gap-2 mt-1">
                 {llmModels.length > 0 ? (
@@ -696,7 +696,7 @@ export function SettingsPage({
                         },
                       }))
                     }
-                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    className="min-w-0 flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   >
                     {!llmModels.includes(draft.llm.model) && draft.llm.model && (
                       <option value={draft.llm.model}>{draft.llm.model}</option>

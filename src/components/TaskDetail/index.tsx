@@ -96,6 +96,7 @@ export function TaskDetail({
   const [isMiniPlayer, setIsMiniPlayer] = useState(false);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isChatOverlayOpen, setIsChatOverlayOpen] = useState(false);
+  const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
   const [isMediaPlaying, setIsMediaPlaying] = useState(false);
   const [mediaCurrentTime, setMediaCurrentTime] = useState(0);
   const [mediaDuration, setMediaDuration] = useState(0);
@@ -185,6 +186,7 @@ export function TaskDetail({
     setIsMiniPlayer(false);
     setIsActionSheetOpen(false);
     setIsChatOverlayOpen(false);
+    setIsChatSidebarOpen(false);
     setIsMediaPlaying(false);
     setMediaCurrentTime(0);
     setMediaDuration(0);
@@ -196,11 +198,18 @@ export function TaskDetail({
       setIsChatOverlayOpen(false);
       return;
     }
+    setIsChatSidebarOpen(false);
 
     if (activePanel === 'chat') {
       setActivePanel(hasTaskSummaryState(task) ? 'summary' : 'transcript');
     }
   }, [activePanel, isCompactLayout, task]);
+
+  useEffect(() => {
+    if (task.status !== 'completed') {
+      setIsChatSidebarOpen(false);
+    }
+  }, [task.status]);
 
   useEffect(() => {
     if (activePanel !== 'transcript' || !activeSegmentId) {
@@ -349,8 +358,8 @@ export function TaskDetail({
     }
   };
 
-  const handleSendMessage = async () => {
-    const message = messageInput.trim();
+  const handleSendMessage = async (directMessage?: string) => {
+    const message = (directMessage || messageInput).trim();
     if (!message) {
       return;
     }
@@ -375,7 +384,7 @@ export function TaskDetail({
     setMessages((prev) => [...prev, optimisticUserMessage, optimisticAssistantMessage]);
     setMessageInput('');
     if (!isCompactLayout) {
-      setActivePanel('chat');
+      setIsChatSidebarOpen(true);
     }
     setIsSendingMessage(true);
     try {
@@ -608,15 +617,6 @@ export function TaskDetail({
       >
         Transcript
       </PanelButton>
-      {!isCompactLayout && (
-        <PanelButton
-          active={activePanel === 'chat'}
-          onClick={() => setActivePanel('chat')}
-          icon={<MessageSquare className="w-4 h-4" />}
-        >
-          Chat
-        </PanelButton>
-      )}
       {isCompactLayout ? (
         <div className="ml-auto flex items-center gap-2 shrink-0">
           <button
@@ -648,6 +648,22 @@ export function TaskDetail({
         >
           <RefreshCw className="w-3.5 h-3.5" />
           Reprocess
+        </button>
+      )}
+      {!isCompactLayout && task.status === 'completed' && (
+        <button
+          type="button"
+          onClick={() => setIsChatSidebarOpen((v) => !v)}
+          className={cn(
+            'px-3 py-1.5 text-xs font-medium rounded-lg flex items-center gap-1 shrink-0 transition-colors',
+            isChatSidebarOpen
+              ? 'bg-indigo-100 text-indigo-700 hover:bg-indigo-200'
+              : 'bg-slate-100 text-slate-600 hover:text-slate-800',
+            isCompactLayout ? '' : task.status !== 'completed' && task.status !== 'failed' ? 'ml-auto' : '',
+          )}
+        >
+          <MessageSquare className="w-3.5 h-3.5" />
+          Chat
         </button>
       )}
     </div>
@@ -714,18 +730,7 @@ export function TaskDetail({
       );
     }
 
-    return (
-      <ChatPanel
-        messages={messages}
-        messageInput={messageInput}
-        onMessageInputChange={setMessageInput}
-        isSendingMessage={isSendingMessage}
-        onSendMessage={() => void handleSendMessage()}
-        compact={isCompactLayout}
-        scrollContainerRef={contentScrollRef}
-        onScroll={handlePanelScroll}
-      />
-    );
+    return null;
   };
 
   const renderMobileDetailBar = () => {
@@ -894,24 +899,55 @@ export function TaskDetail({
   };
 
   return (
-    <div className="flex flex-col h-full min-h-0 overflow-hidden">
-      <TaskHeader
-        task={task}
-        mediaRef={mediaRef}
-        onUpdateTask={onUpdateTask}
-        onTimeUpdate={resolveActiveSegmentId}
-        onDeleteTask={() => void handleDeleteTask()}
-        variant={isCompactLayout ? 'mobile-player' : 'default'}
-        mobilePresentation={isCompactLayout && isVideo && isMiniPlayer ? 'mini' : 'full'}
-        mobileAudioControls="native"
-        onExpandMini={() => setIsMiniPlayer(false)}
-      />
+    <div className="flex h-full min-h-0 overflow-hidden">
+      <div className="flex flex-1 min-w-0 flex-col overflow-hidden">
+        <TaskHeader
+          task={task}
+          mediaRef={mediaRef}
+          onUpdateTask={onUpdateTask}
+          onTimeUpdate={resolveActiveSegmentId}
+          onDeleteTask={() => void handleDeleteTask()}
+          variant={isCompactLayout ? 'mobile-player' : 'default'}
+          mobilePresentation={isCompactLayout && isVideo && isMiniPlayer ? 'mini' : 'full'}
+          mobileAudioControls="native"
+          onExpandMini={() => setIsMiniPlayer(false)}
+        />
 
-      {renderPanelTabs()}
+        {renderPanelTabs()}
 
-      <div className="flex-1 min-h-0 bg-white overflow-hidden">{renderPanelContent()}</div>
+        <div className="flex-1 min-h-0 bg-white overflow-hidden">{renderPanelContent()}</div>
 
-      {renderMobileDetailBar()}
+        {renderMobileDetailBar()}
+      </div>
+
+      {!isCompactLayout && isChatSidebarOpen && (
+        <div className="flex w-[380px] shrink-0 flex-col border-l border-slate-200 bg-white">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+            <div className="flex items-center gap-2">
+              <MessageSquare className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="text-sm font-semibold text-slate-900">Chat</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsChatSidebarOpen(false)}
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              aria-label="Close chat sidebar"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex-1 min-h-0">
+            <ChatPanel
+              task={task}
+              messages={messages}
+              messageInput={messageInput}
+              onMessageInputChange={setMessageInput}
+              isSendingMessage={isSendingMessage}
+              onSendMessage={(msg) => void handleSendMessage(msg)}
+            />
+          </div>
+        </div>
+      )}
 
       {isEditModalOpen ? (
         <TaskEditModal
@@ -962,11 +998,12 @@ export function TaskDetail({
           </div>
           <div className="flex-1 min-h-0">
             <ChatPanel
+              task={task}
               messages={messages}
               messageInput={messageInput}
               onMessageInputChange={setMessageInput}
               isSendingMessage={isSendingMessage}
-              onSendMessage={() => void handleSendMessage()}
+              onSendMessage={(msg) => void handleSendMessage(msg)}
               compact
               overlay
             />

@@ -1,11 +1,41 @@
 import React from 'react';
-import { Check, Copy, Loader2, SendHorizontal } from 'lucide-react';
+import { Check, Copy, Loader2, MessageSquare, SendHorizontal } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { MarkdownContent } from '../MarkdownContent';
 import { useAppDataContext } from '../../contexts/AppDataContext';
-import type { TaskMessage } from '../../types';
+import type { Task, TaskMessage } from '../../types';
+
+function buildSuggestedQuestions(task?: Task | null): string[] {
+  if (!task || !task.transcript) return [];
+
+  const questions: string[] = [];
+  const hasSummary = Boolean(task.summary && task.summary !== '__generating__');
+  const hasSpeakers = task.speakers.length > 1;
+
+  if (hasSummary) {
+    questions.push('What are the key decisions made in this recording?');
+    questions.push('List all action items mentioned.');
+    if (hasSpeakers) {
+      questions.push('What were the main points of disagreement?');
+    }
+  } else {
+    questions.push('Summarize the key points of this recording.');
+    questions.push('What topics were discussed?');
+  }
+
+  if (hasSpeakers && questions.length < 3) {
+    questions.push(`What did each speaker focus on?`);
+  }
+
+  if (!hasSummary && questions.length < 3) {
+    questions.push('Are there any important details I should pay attention to?');
+  }
+
+  return questions.slice(0, 3);
+}
 
 export function ChatPanel({
+  task,
   messages,
   messageInput,
   onMessageInputChange,
@@ -16,11 +46,12 @@ export function ChatPanel({
   scrollContainerRef,
   onScroll,
 }: {
+  task?: Task | null;
   messages: TaskMessage[];
   messageInput: string;
   onMessageInputChange: (value: string) => void;
   isSendingMessage: boolean;
-  onSendMessage: () => void;
+  onSendMessage: (message?: string) => void;
   compact?: boolean;
   overlay?: boolean;
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
@@ -31,10 +62,18 @@ export function ChatPanel({
   const internalScrollRef = React.useRef<HTMLDivElement | null>(null);
   const messagesEndRef = React.useRef<HTMLDivElement | null>(null);
   const isChatEnabled = Boolean(capabilities?.llm.configured);
+  const suggestedQuestions = React.useMemo(() => buildSuggestedQuestions(task), [task]);
   const canSendMessage = isChatEnabled && !isSendingMessage && messageInput.trim().length > 0;
   const resolvedScrollRef = scrollContainerRef || internalScrollRef;
   const isNearBottomRef = React.useRef(true);
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.shiftKey && e.key === 'Enter' && canSendMessage) {
+      e.preventDefault();
+      onSendMessage();
+    }
+  };
 
   const handleScrollCapture = React.useCallback(() => {
     const el = resolvedScrollRef.current;
@@ -89,13 +128,14 @@ export function ChatPanel({
               rows={1}
               value={messageInput}
               onChange={(event) => onMessageInputChange(event.target.value)}
+              onKeyDown={handleKeyDown}
               placeholder={isChatEnabled ? 'Ask about this transcript...' : 'Configure LLM API first to enable chat.'}
               disabled={!isChatEnabled || isSendingMessage}
               className="min-h-[44px] flex-1 resize-none border-0 bg-transparent px-0 py-[10px] text-[16px] leading-6 text-slate-900 focus:outline-none disabled:text-slate-400"
             />
             <button
               type="button"
-              onClick={onSendMessage}
+              onClick={() => onSendMessage()}
               disabled={!canSendMessage}
               aria-label={isSendingMessage ? 'Sending message' : 'Send message'}
               className={cn(
@@ -118,12 +158,13 @@ export function ChatPanel({
           <textarea
             value={messageInput}
             onChange={(event) => onMessageInputChange(event.target.value)}
+            onKeyDown={handleKeyDown}
             placeholder={isChatEnabled ? 'Ask about this transcript...' : 'Configure LLM API first to enable chat.'}
             disabled={!isChatEnabled || isSendingMessage}
             className="flex-1 min-h-24 px-4 py-3 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50"
           />
           <button
-            onClick={onSendMessage}
+            onClick={() => onSendMessage()}
             disabled={!canSendMessage}
             className="self-end px-4 py-3 rounded-2xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
@@ -158,8 +199,28 @@ export function ChatPanel({
         )}
       >
         {messages.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-slate-500">
-            还没有对话。你可以直接问"这段录音的结论是什么？"或"列出所有 action items"。
+          <div className="flex flex-col items-center justify-center h-full gap-6 px-4">
+            <div className="text-center">
+              <MessageSquare className="w-8 h-8 text-indigo-300 mx-auto mb-3" />
+              <p className="text-sm font-medium text-slate-700">Ask anything about this recording</p>
+              <p className="text-xs text-slate-400 mt-1">AI will answer based on the transcript content.</p>
+            </div>
+            {isChatEnabled && suggestedQuestions.length > 0 && (
+              <div className="w-full max-w-sm space-y-2">
+                <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Suggestions</p>
+                {suggestedQuestions.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    disabled={isSendingMessage}
+                    onClick={() => onSendMessage(q)}
+                    className="w-full text-left rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-sm text-slate-700 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-700 transition-colors disabled:opacity-50"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           messages.map((message) => (
