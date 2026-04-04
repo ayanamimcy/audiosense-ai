@@ -16,6 +16,8 @@ type SearchChunk = {
   updatedAt: number;
 };
 
+const EMBEDDING_TAG_LIMIT = 5;
+
 function toSqliteFtsQuery(query: string) {
   const tokens = query.match(/[\p{L}\p{N}]+/gu) || [];
   if (tokens.length === 0) {
@@ -71,7 +73,9 @@ export async function reindexTask(task: TaskRow) {
   }
 
   const chunks = chunkTranscript(task.transcript);
-  const tags = parseJsonField<string[]>(task.tags, []).join(' ');
+  const tags = parseJsonField<string[]>(task.tags, []);
+  const embeddingTags = tags.slice(0, EMBEDDING_TAG_LIMIT).join(' ');
+  const ftsTags = tags.join(' ');
   const summary = task.summary || '';
   const title = repairPossiblyMojibakeText(task.originalName);
   const now = Date.now();
@@ -84,7 +88,7 @@ export async function reindexTask(task: TaskRow) {
     if (isEmbeddingsConfigured()) {
       try {
         const result = await createEmbedding(
-          [title, summary, tags, content].filter(Boolean).join('\n\n'),
+          [title, embeddingTags, content].filter(Boolean).join('\n\n'),
         );
         embedding = result.vector;
         embeddingModel = result.model;
@@ -110,7 +114,7 @@ export async function reindexTask(task: TaskRow) {
     if (isSqliteDb()) {
       await db.raw(
         'INSERT INTO task_chunk_fts (taskChunkId, taskId, userId, title, summary, tags, content) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [row.id, task.id, userId, title, summary, tags, content],
+        [row.id, task.id, userId, title, summary, ftsTags, content],
       );
     }
   }

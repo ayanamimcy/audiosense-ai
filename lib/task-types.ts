@@ -82,13 +82,38 @@ export function normalizeTags(value: unknown) {
 }
 
 export function toTaskResponse(task: TaskRow) {
+  const segments = parseJsonField<TranscriptSegment[]>(task.segments, []);
+  const speakers = parseJsonField<SpeakerSummary[]>(task.speakers, []);
+  const metadata = parseJsonField<Record<string, unknown>>(task.metadata, {});
+
   return {
-    ...task,
+    id: task.id,
+    filename: task.filename,
     originalName: repairPossiblyMojibakeText(task.originalName),
+    status: task.status,
+    result: task.result,
+    transcript: task.transcript,
+    summary: task.summary,
+    createdAt: task.createdAt,
+    notebookId: task.notebookId,
+    eventDate: task.eventDate,
     tags: parseJsonField<string[]>(task.tags, []),
-    segments: parseJsonField<TranscriptSegment[]>(task.segments, []),
-    speakers: parseJsonField<SpeakerSummary[]>(task.speakers, []),
-    metadata: parseJsonField<Record<string, unknown>>(task.metadata, {}),
+    language: task.language,
+    provider: task.provider,
+    durationSeconds: task.durationSeconds,
+    segments: segments.map(({ id, start, end, text, speaker }) => ({ id, start, end, text, speaker })),
+    speakerCount: speakers.length,
+    metadata: {
+      originalMimeType: metadata.originalMimeType,
+      summaryGenerationStatus: metadata.summaryGenerationStatus,
+      summaryGenerationError: metadata.summaryGenerationError,
+      tagSuggestionStatus: metadata.tagSuggestionStatus,
+      tagSuggestionError: metadata.tagSuggestionError,
+      tagSuggestionItems: metadata.tagSuggestionItems,
+      tagSuggestionGeneratedAt: metadata.tagSuggestionGeneratedAt,
+      tagSuggestionDismissedAt: metadata.tagSuggestionDismissedAt,
+      searchSnippet: metadata.searchSnippet,
+    },
   };
 }
 
@@ -111,7 +136,7 @@ export function toTaskListResponse(task: TaskRow) {
     completedAt: task.completedAt,
     updatedAt: task.updatedAt,
     segments: [],
-    speakers: [],
+    speakerCount: 0,
     metadata: {},
   };
 }

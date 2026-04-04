@@ -10,7 +10,7 @@ function buildSuggestedQuestions(task?: Task | null): string[] {
 
   const questions: string[] = [];
   const hasSummary = Boolean(task.summary && task.summary !== '__generating__');
-  const hasSpeakers = task.speakers.length > 1;
+  const hasSpeakers = (task.speakerCount ?? 0) > 1;
 
   if (hasSummary) {
     questions.push('What are the key decisions made in this recording?');

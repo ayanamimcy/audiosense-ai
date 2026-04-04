@@ -57,11 +57,8 @@ export interface Task {
   sourceType?: string | null;
   durationSeconds?: number | null;
   segments: TranscriptSegment[];
-  speakers: SpeakerSummary[];
+  speakerCount: number;
   metadata?: Record<string, unknown>;
-  startedAt?: number | null;
-  completedAt?: number | null;
-  updatedAt?: number | null;
   score?: number;
 }
 

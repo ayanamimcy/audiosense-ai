@@ -432,7 +432,7 @@ export function TaskHeader({
         {isMetadataVisible ? (
           <div className="border-t border-slate-200 p-4">
             <div className="grid gap-3 md:grid-cols-3">
-              <StatCard icon={<Users className="w-4 h-4 text-indigo-600" />} label="Speakers" value={String(task.speakers.length || 0)} />
+              <StatCard icon={<Users className="w-4 h-4 text-indigo-600" />} label="Speakers" value={String(task.speakerCount || 0)} />
               <StatCard icon={<Waves className="w-4 h-4 text-emerald-600" />} label="Segments" value={String(task.segments.length || 0)} />
               <StatCard icon={<Sparkles className="w-4 h-4 text-amber-600" />} label="LLM" value={capabilities?.llm.configured ? capabilities.llm.model : 'Not configured'} />
             </div>
