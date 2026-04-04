@@ -157,6 +157,6 @@ export async function processQueuedJob(job: TaskJobRow) {
   // 5. Finalize (reindex)
   const completedTask = await finalizePrimaryTask(ctx);
 
-  // 6. Post-processing (summary, tag suggestions) — errors here never fail the task
-  await runTaskPostProcessing(completedTask, ctx.userSettings, { completedAt });
+  // 6. Post-processing (summary, tag suggestions) — fire-and-forget, does not block worker
+  void runTaskPostProcessing(completedTask, ctx.userSettings, { completedAt });
 }
