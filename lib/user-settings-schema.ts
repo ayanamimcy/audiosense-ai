@@ -261,8 +261,8 @@ export function resolveOpenAIWhisperSettings(settings?: Partial<UserSettings>) {
   return sanitizeUserSettings(settings || {}, getDefaultSettings()).openaiWhisper;
 }
 
-export function resolveLocalRuntimeSettings(settings?: Partial<UserSettings>) {
-  return sanitizeUserSettings(settings || {}, getDefaultSettings()).localRuntime;
+export function resolveLocalRuntimeSettings(_settings?: Partial<UserSettings>) {
+  return getDefaultSettings().localRuntime;
 }
 
 export function resolveLlmSettings(settings?: Partial<UserSettings>) {
