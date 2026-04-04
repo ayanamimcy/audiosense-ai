@@ -18,6 +18,7 @@ export function SummaryPanel({
   onSummaryPromptSelectionChange,
   isGenerating,
   onGenerate,
+  onCancelSummary,
   compact = false,
   scrollContainerRef,
   onScroll,
@@ -29,6 +30,7 @@ export function SummaryPanel({
   onSummaryPromptSelectionChange: (value: string) => void;
   isGenerating: boolean;
   onGenerate: () => void;
+  onCancelSummary: () => void;
   compact?: boolean;
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
   onScroll?: (event: React.UIEvent<HTMLDivElement>) => void;
@@ -135,6 +137,13 @@ export function SummaryPanel({
             <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
             <p className="text-sm font-medium">Generating summary, please wait...</p>
             <p className="text-xs text-slate-400">It will appear automatically when ready. Feel free to switch panels.</p>
+            <button
+              type="button"
+              onClick={onCancelSummary}
+              className="mt-2 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+            >
+              Dismiss
+            </button>
           </div>
         ) : hasGeneratedSummary ? (
           <MarkdownContent

@@ -707,6 +707,10 @@ export function TaskDetail({
           onSummaryPromptSelectionChange={setSummaryPromptSelection}
           isGenerating={isGeneratingSummary || isSummaryGenerating}
           onGenerate={() => void handleGenerateSummary()}
+          onCancelSummary={async () => {
+            await apiFetch(`/api/tasks/${task.id}/summary/cancel`, { method: 'POST' });
+            await onUpdateTask();
+          }}
           compact={isCompactLayout}
           scrollContainerRef={contentScrollRef}
           onScroll={handlePanelScroll}

@@ -262,9 +262,18 @@ export function TaskTagSuggestionPanel({
 
         {triggerBusy ? (
           <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
-            <div className="flex items-center gap-2 text-sm text-slate-600">
-              <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
-              <span>Suggesting tags...</span>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm text-slate-600">
+                <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
+                <span>Suggesting tags...</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => void handleDismiss()}
+                className="text-xs text-slate-500 hover:text-slate-700 transition-colors"
+              >
+                Dismiss
+              </button>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               <div className="w-20">

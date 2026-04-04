@@ -1,5 +1,6 @@
 import express from 'express';
 import {
+  handleCancelSummary,
   handleChatMessage,
   handleGenerateSummary,
   handleStreamChat,
@@ -46,6 +47,20 @@ router.post('/tasks/:id/summary', asyncRoute(async (req, res) => {
     if (mapped) return mapped;
     return res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to generate summary.',
+    });
+  }
+}));
+
+router.post('/tasks/:id/summary/cancel', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  try {
+    const result = await handleCancelSummary(user.id, req.params.id);
+    return res.json(result);
+  } catch (error: unknown) {
+    const mapped = mapServiceError(error, res);
+    if (mapped) return mapped;
+    return res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to cancel summary.',
     });
   }
 }));

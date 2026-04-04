@@ -15,6 +15,7 @@
         { "id": "medium", "label": "Medium", "description": "Higher accuracy with more VRAM and latency." },
         { "id": "large-v2", "label": "Large v2", "description": "Large multilingual checkpoint." },
         { "id": "large-v3", "label": "Large v3", "description": "Best quality in the Whisper family." },
+        { "id": "large-v3-turbo", "label": "Large v3 Turbo", "description": "5x faster than large-v3 with near-equal accuracy." },
         { "id": "distil-large-v3", "label": "Distil Large v3", "description": "Faster distilled large model." }
       ]
     },
@@ -33,6 +34,7 @@
         { "id": "medium", "label": "Medium", "description": "Higher accuracy with more VRAM and latency." },
         { "id": "large-v2", "label": "Large v2", "description": "Large multilingual checkpoint." },
         { "id": "large-v3", "label": "Large v3", "description": "Best quality in the Whisper family." },
+        { "id": "large-v3-turbo", "label": "Large v3 Turbo", "description": "5x faster than large-v3 with near-equal accuracy." },
         { "id": "distil-large-v3", "label": "Distil Large v3", "description": "Faster distilled large model." }
       ]
     }

@@ -250,14 +250,23 @@ export async function handleGenerateSummary(
   const previousSummary = task.summary ?? null;
   const generationRequestId = uuidv4();
 
+  // Persist previousSummary in metadata so cancel can restore it
+  const metadataWithPrevious = {
+    ...parseJsonField<Record<string, unknown>>(task.metadata, {}),
+    summaryPreviousValue: previousSummary,
+  };
+
   // Mark as generating so the frontend can show a spinner
   await updateTaskRowForUser(userId, task.id, {
     summary: SUMMARY_GENERATING_SENTINEL,
-    metadata: buildSummaryGenerationMetadata(task, {
-      status: 'generating',
-      error: null,
-      requestId: generationRequestId,
-    }),
+    metadata: buildSummaryGenerationMetadata(
+      { metadata: JSON.stringify(metadataWithPrevious) },
+      {
+        status: 'generating',
+        error: null,
+        requestId: generationRequestId,
+      },
+    ),
     updatedAt: Date.now(),
   });
 
@@ -279,13 +288,14 @@ export async function handleGenerateSummary(
         return;
       }
 
+      const successMetadata = parseJsonField<Record<string, unknown>>(latest.metadata, {});
+      delete successMetadata.summaryPreviousValue;
       await updateTaskRowForUser(userId, task.id, {
         summary,
-        metadata: buildSummaryGenerationMetadata(latest, {
-          status: null,
-          error: null,
-          requestId: null,
-        }),
+        metadata: buildSummaryGenerationMetadata(
+          { metadata: JSON.stringify(successMetadata) },
+          { status: null, error: null, requestId: null },
+        ),
         updatedAt: Date.now(),
       });
       const updated = (await findTaskRowById(task.id)) as TaskRow;
@@ -302,13 +312,14 @@ export async function handleGenerateSummary(
       }
 
       // Restore the last good summary and persist the failure for the UI.
+      const failMetadata = parseJsonField<Record<string, unknown>>(latest.metadata, {});
+      delete failMetadata.summaryPreviousValue;
       await updateTaskRowForUser(userId, task.id, {
         summary: previousSummary,
-        metadata: buildSummaryGenerationMetadata(latest, {
-          status: 'failed',
-          error: normalizeSummaryGenerationError(error),
-          requestId: null,
-        }),
+        metadata: buildSummaryGenerationMetadata(
+          { metadata: JSON.stringify(failMetadata) },
+          { status: 'failed', error: normalizeSummaryGenerationError(error), requestId: null },
+        ),
         updatedAt: Date.now(),
       }).catch(() => {});
     }
@@ -317,4 +328,36 @@ export async function handleGenerateSummary(
   // Return immediately with the generating state
   const current = (await findTaskRowById(task.id)) as TaskRow;
   return toTaskResponse(current);
+}
+
+export async function handleCancelSummary(userId: string, taskId: string) {
+  const task = await findTaskForUser(userId, taskId);
+  if (!task) {
+    throw new TaskNotFoundError();
+  }
+
+  // Only cancel if actually generating
+  if (task.summary !== SUMMARY_GENERATING_SENTINEL) {
+    return toTaskResponse(task);
+  }
+
+  // Restore previous summary from metadata
+  const metadata = parseJsonField<Record<string, unknown>>(task.metadata, {});
+  const previousSummary = typeof metadata.summaryPreviousValue === 'string'
+    ? metadata.summaryPreviousValue
+    : null;
+  delete metadata.summaryPreviousValue;
+
+  await updateTaskRowForUser(userId, task.id, {
+    summary: previousSummary,
+    metadata: buildSummaryGenerationMetadata(
+      { metadata: JSON.stringify(metadata) },
+      { status: null, error: null, requestId: null },
+    ),
+    updatedAt: Date.now(),
+  });
+
+  const updated = (await findTaskRowById(task.id)) as TaskRow;
+  await reindexTask(updated);
+  return toTaskResponse(updated);
 }
