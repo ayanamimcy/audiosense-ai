@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ArrowUp,
   Copy,
   Edit2,
   List,
@@ -98,6 +99,7 @@ export function TaskDetail({
   const [isChatOverlayOpen, setIsChatOverlayOpen] = useState(false);
   const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
   const [isMediaPlaying, setIsMediaPlaying] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const [mediaCurrentTime, setMediaCurrentTime] = useState(0);
   const [mediaDuration, setMediaDuration] = useState(0);
   const mediaRef = useRef<HTMLMediaElement | null>(null);
@@ -308,10 +310,10 @@ export function TaskDetail({
       media.removeEventListener('pause', handlePause);
       media.removeEventListener('ended', handleEnded);
     };
-  }, [task.id, isCompactLayout, isMiniPlayer, isVideo]);
+  }, [task.id, isCompactLayout, isVideo]);
 
   useEffect(() => {
-    if (!isCompactLayout || !isVideo || activePanel !== 'summary') {
+    if (!isCompactLayout) {
       setIsMiniPlayer(false);
       return;
     }
@@ -322,7 +324,7 @@ export function TaskDetail({
     });
 
     return () => window.cancelAnimationFrame(frame);
-  }, [activePanel, isCompactLayout, isVideo]);
+  }, [activePanel, isCompactLayout]);
 
   const isSummaryGenerating = isTaskSummaryGenerating(task);
 
@@ -582,18 +584,11 @@ export function TaskDetail({
   };
 
   const handlePanelScroll = (event: React.UIEvent<HTMLDivElement>) => {
-    if (!isCompactLayout || !isVideo) {
-      return;
+    const scrollTop = event.currentTarget.scrollTop;
+    if (isCompactLayout) {
+      setIsMiniPlayer(scrollTop > 72);
+      setShowScrollTop(scrollTop > 300);
     }
-
-    if (activePanel !== 'summary') {
-      if (isMiniPlayer) {
-        setIsMiniPlayer(false);
-      }
-      return;
-    }
-
-    setIsMiniPlayer(event.currentTarget.scrollTop > 72);
   };
 
   const renderPanelTabs = () => (
@@ -675,6 +670,20 @@ export function TaskDetail({
         <div className="flex h-full flex-col items-center justify-center text-slate-500 space-y-4 p-6">
           <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
           <p>Analyzing audio... This may take a few moments.</p>
+        </div>
+      );
+    }
+
+    if (task.status === 'blocked') {
+      return (
+        <div className="flex h-full flex-col items-center justify-center text-slate-500 space-y-4 p-6">
+          <Loader2 className="w-8 h-8 animate-spin text-violet-600" />
+          <div className="max-w-md space-y-2 text-center">
+            <p className="font-medium text-slate-700">Waiting for the parsing service to recover.</p>
+            <p className="text-sm text-slate-500 whitespace-pre-wrap">
+              {task.result || 'The worker will automatically retry this task when the provider is healthy again.'}
+            </p>
+          </div>
         </div>
       );
     }
@@ -912,9 +921,9 @@ export function TaskDetail({
           onTimeUpdate={resolveActiveSegmentId}
           onDeleteTask={() => void handleDeleteTask()}
           variant={isCompactLayout ? 'mobile-player' : 'default'}
-          mobilePresentation={isCompactLayout && isVideo && isMiniPlayer ? 'mini' : 'full'}
+          mobilePresentation="full"
           mobileAudioControls="native"
-          onExpandMini={() => setIsMiniPlayer(false)}
+          hidden={isCompactLayout && isMiniPlayer}
         />
 
         {renderPanelTabs()}
@@ -922,6 +931,17 @@ export function TaskDetail({
         <div className="flex-1 min-h-0 bg-white overflow-hidden">{renderPanelContent()}</div>
 
         {renderMobileDetailBar()}
+
+        {isCompactLayout && showScrollTop && (
+          <button
+            type="button"
+            onClick={() => contentScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="fixed z-30 left-4 bottom-[calc(var(--mobile-bottom-nav-height)+env(safe-area-inset-bottom)+1.5rem)] flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-500 shadow-lg active:scale-95 transition-transform"
+            aria-label="Back to top"
+          >
+            <ArrowUp className="w-4 h-4" />
+          </button>
+        )}
       </div>
 
       {!isCompactLayout && isChatSidebarOpen && (

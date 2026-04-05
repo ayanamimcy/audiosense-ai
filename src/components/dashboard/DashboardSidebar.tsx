@@ -30,7 +30,7 @@ export function DashboardSidebar({
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState('');
 
-  const pendingTask = tasks.find((t) => t.status === 'pending' || t.status === 'processing');
+  const pendingTask = tasks.find((t) => t.status === 'pending' || t.status === 'processing' || t.status === 'blocked');
 
   const notebookStats = notebooks
     .map((nb) => {

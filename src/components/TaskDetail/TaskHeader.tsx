@@ -22,6 +22,7 @@ export function TaskHeader({
   mobileAudioControls = 'native',
   onExpandMini,
   onDeleteTask,
+  hidden = false,
 }: {
   task: Task;
   mediaRef: React.RefObject<HTMLMediaElement | null>;
@@ -32,6 +33,7 @@ export function TaskHeader({
   mobileAudioControls?: 'native' | 'bottom-bar';
   onExpandMini?: () => void;
   onDeleteTask?: () => void | Promise<void>;
+  hidden?: boolean;
 }) {
   const { notebooks, capabilities } = useAppDataContext();
   const [isEditing, setIsEditing] = useState(false);
@@ -155,38 +157,8 @@ export function TaskHeader({
       return <div className="h-0 overflow-hidden shrink-0" />;
     }
 
-    if (isMini) {
-      return (
-        <div className="h-0 shrink-0">
-          <div
-            className={cn(
-              'fixed right-3 z-40 overflow-hidden rounded-2xl border border-slate-200 shadow-2xl',
-              isVideo
-                ? 'bottom-[calc(var(--mobile-bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] w-[min(42vw,11rem)] bg-slate-950'
-                : 'bottom-[calc(var(--mobile-bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] w-[min(72vw,15rem)] bg-white p-2',
-            )}
-          >
-            {onExpandMini ? (
-              <button
-                type="button"
-                onClick={onExpandMini}
-                className={cn(
-                  'absolute left-2 top-2 z-10 rounded-full p-1.5 shadow-sm',
-                  isVideo ? 'bg-slate-900/70 text-white' : 'bg-slate-100 text-slate-700',
-                )}
-                aria-label="Expand player"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-              </button>
-            ) : null}
-            {renderMedia()}
-          </div>
-        </div>
-      );
-    }
-
     return (
-      <div className="shrink-0 border-b border-slate-200 bg-white">
+      <div className={cn('shrink-0 border-b border-slate-200 bg-white', hidden && 'h-0 overflow-hidden border-none')}>
         <div className={cn(isVideo ? 'h-[clamp(12rem,30dvh,16rem)] bg-slate-950' : 'px-3 py-2')}>
           {renderMedia()}
         </div>
@@ -201,6 +173,8 @@ export function TaskHeader({
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                     : task.status === 'processing'
                       ? 'border-amber-200 bg-amber-50 text-amber-700'
+                      : task.status === 'blocked'
+                        ? 'border-violet-200 bg-violet-50 text-violet-700'
                       : task.status === 'failed'
                         ? 'border-red-200 bg-red-50 text-red-700'
                         : 'border-slate-200 bg-slate-100 text-slate-700',
@@ -359,6 +333,8 @@ export function TaskHeader({
                       ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                       : task.status === 'processing'
                         ? 'bg-amber-50 text-amber-700 border-amber-200'
+                        : task.status === 'blocked'
+                          ? 'bg-violet-50 text-violet-700 border-violet-200'
                         : task.status === 'failed'
                           ? 'bg-red-50 text-red-700 border-red-200'
                           : 'bg-slate-100 text-slate-700 border-slate-200',

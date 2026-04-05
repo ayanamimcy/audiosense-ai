@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 import logging
+import os
 import threading
 from typing import Any
 
@@ -16,6 +17,11 @@ from .parallel_diarize import transcribe_and_diarize, transcribe_then_diarize
 logger = logging.getLogger(__name__)
 
 
+_DEFAULT_IDLE_TIMEOUT_SECONDS = int(
+    os.environ.get("LOCAL_AUDIO_ENGINE_IDLE_UNLOAD_SECONDS", "300")
+)
+
+
 class ModelManager:
     def __init__(self, config: RuntimeConfig) -> None:
         self._config = config
@@ -24,6 +30,31 @@ class ModelManager:
         self._diarization_engine: DiarizationEngine | None = None
         self._lock = threading.RLock()
         self._transcription_lock = threading.RLock()
+        self._idle_timer: threading.Timer | None = None
+        self._idle_timeout = _DEFAULT_IDLE_TIMEOUT_SECONDS
+
+    def _reset_idle_timer(self) -> None:
+        if self._idle_timeout <= 0:
+            return
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+        self._idle_timer = threading.Timer(self._idle_timeout, self._idle_unload)
+        self._idle_timer.daemon = True
+        self._idle_timer.start()
+
+    def _cancel_idle_timer(self) -> None:
+        if self._idle_timer is not None:
+            self._idle_timer.cancel()
+            self._idle_timer = None
+
+    def _idle_unload(self) -> None:
+        with self._transcription_lock:
+            logger.info("Idle timeout reached (%ds) — unloading models to free memory", self._idle_timeout)
+            self.unload_backend()
+            with self._lock:
+                if self._diarization_engine is not None:
+                    self._diarization_engine.unload()
+                    self._diarization_engine = None
 
     def _resolve_backend_spec(
         self,
@@ -42,6 +73,7 @@ class ModelManager:
 
     def _ensure_backend(self, *, backend: str | None = None, model_name: str | None = None) -> BaseBackend:
         spec = self._resolve_backend_spec(backend=backend, model_name=model_name)
+        self._cancel_idle_timer()
 
         with self._lock:
             if self._backend is not None and self._backend_spec == spec:
@@ -64,6 +96,7 @@ class ModelManager:
 
     def preload(self) -> None:
         self._ensure_backend()
+        self._reset_idle_timer()
 
     def unload_backend(self) -> None:
         with self._lock:
@@ -121,6 +154,7 @@ class ModelManager:
         backend_instance: BaseBackend | None = None,
     ) -> dict[str, Any]:
         with self._transcription_lock:
+          try:
             runtime_backend = backend_instance or self._ensure_backend(backend=backend, model_name=model_name)
 
             if self._config.normalize_audio:
@@ -171,6 +205,7 @@ class ModelManager:
                 result["duration"] = get_audio_duration_seconds(audio_data, sample_rate)
                 result["backend"] = runtime_backend.backend_name
                 result["model_name"] = runtime_backend.model_name
+                self._reset_idle_timer()
                 return result
 
             strategy = (diarization_strategy or self._config.diarization_strategy or "auto").strip().lower()
@@ -234,6 +269,8 @@ class ModelManager:
             if warnings:
                 result["warnings"] = warnings
             return result
+          finally:
+            self._reset_idle_timer()
 
     def transcribe_file(
         self,

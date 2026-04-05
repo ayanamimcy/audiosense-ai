@@ -1,8 +1,8 @@
 import type { SpeakerSummary, TranscriptSegment } from './transcription.js';
 import { repairPossiblyMojibakeText } from './text-encoding.js';
 
-export type TaskStatus = 'pending' | 'processing' | 'completed' | 'failed';
-export type JobStatus = 'queued' | 'processing' | 'completed' | 'failed';
+export type TaskStatus = 'pending' | 'processing' | 'blocked' | 'completed' | 'failed';
+export type JobStatus = 'queued' | 'processing' | 'blocked' | 'completed' | 'failed';
 
 export interface TaskRow {
   id: string;
@@ -50,6 +50,18 @@ export interface TaskJobRow {
   lockedAt?: number | null;
   workerId?: string | null;
   createdAt: number;
+  updatedAt: number;
+}
+
+export interface QueueStateRow {
+  queueName: string;
+  paused: boolean;
+  reason?: string | null;
+  blockedJobId?: string | null;
+  blockedTaskId?: string | null;
+  provider?: string | null;
+  lastError?: string | null;
+  resumeCheckAfter?: number | null;
   updatedAt: number;
 }
 

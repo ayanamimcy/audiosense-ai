@@ -5,5 +5,6 @@ export abstract class BaseTranscriptionProvider implements TranscriptionProvider
   abstract readonly capabilities: TranscriptionProvider['capabilities'];
 
   abstract transcribe(input: TranscriptionJobInput): Promise<ProviderTranscriptionPayload>;
-}
 
+  healthCheck?(): Promise<{ ok: boolean; detail?: string }>;
+}

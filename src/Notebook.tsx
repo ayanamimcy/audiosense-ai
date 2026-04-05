@@ -108,9 +108,11 @@ export default function NotebookView() {
     } else if (statsFilter === 'inbox') {
       result = result.filter((t) => !t.notebookId);
     } else if (statsFilter === 'pending') {
-      result = result.filter((t) => t.status === 'pending' || t.status === 'processing');
+      result = result.filter((t) => t.status === 'pending' || t.status === 'processing' || t.status === 'blocked');
     } else if (statsFilter === 'completed') {
       result = result.filter((t) => t.status === 'completed');
+    } else if (statsFilter === 'failed') {
+      result = result.filter((t) => t.status === 'failed');
     }
 
     if (tagFilter) {
@@ -456,7 +458,7 @@ export default function NotebookView() {
             {/* Inbox list */}
             <InboxList
               tasks={filteredTasks}
-              title={notebookFilter ? notebooks.find((n) => n.id === notebookFilter)?.name || 'Notebook' : statsFilter === 'inbox' ? 'Inbox' : statsFilter === 'pending' ? 'Pending' : statsFilter === 'completed' ? 'Completed' : 'All Recordings'}
+              title={notebookFilter ? notebooks.find((n) => n.id === notebookFilter)?.name || 'Notebook' : statsFilter === 'inbox' ? 'Inbox' : statsFilter === 'pending' ? 'Pending' : statsFilter === 'completed' ? 'Completed' : statsFilter === 'failed' ? 'Failed' : 'All Recordings'}
               onSelectTask={handleSelectTask}
               selectedTaskId={selectedTaskId}
               isBatchMode={isBatchMode}
