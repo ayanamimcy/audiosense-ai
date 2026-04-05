@@ -107,6 +107,7 @@ export function InboxList({
                       task.status === 'completed' ? 'bg-emerald-500'
                         : task.status === 'processing' ? 'bg-amber-500'
                         : task.status === 'pending' ? 'bg-indigo-400'
+                        : task.status === 'blocked' ? 'bg-violet-500'
                         : task.status === 'failed' ? 'bg-red-500'
                         : 'bg-slate-300',
                     )} />

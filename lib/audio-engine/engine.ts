@@ -1,5 +1,6 @@
 import { inspectAudioFile } from './media.js';
 import { buildTranscriptionResult } from './normalize.js';
+import { asProcessingError, createServiceError, createTaskError, type ProcessingError } from './errors.js';
 import { createTranscriptionProvider } from './providers/index.js';
 import {
   buildProviderChain,
@@ -24,12 +25,13 @@ export async function parseAudioWithFallback(
     mimeType: input.mimeType,
     fileName: input.fileName,
   });
+  let lastTaskError: ProcessingError | null = null;
 
   for (const providerName of chain) {
     if (await isProviderCircuitOpen(providerName)) {
-      skippedProviders.push(providerName);
-      errors.push(`${providerName}: circuit open`);
-      continue;
+      const circuitError = createServiceError(`Provider ${providerName} circuit open.`, providerName);
+      await recordProviderFailure(providerName, userId, circuitError);
+      throw circuitError;
     }
 
     attemptedProviders.push(providerName);
@@ -59,12 +61,21 @@ export async function parseAudioWithFallback(
         result,
       };
     } catch (error) {
-      const normalized =
-        error instanceof Error ? error : new Error(`Provider ${providerName} failed: ${String(error)}`);
-      await recordProviderFailure(providerName, userId, normalized);
+      const normalized = asProcessingError(error, providerName);
+      if (normalized.category === 'service') {
+        await recordProviderFailure(providerName, userId, normalized);
+        throw normalized;
+      }
+
+      lastTaskError = normalized;
       errors.push(`${providerName}: ${normalized.message}`);
+      skippedProviders.push(providerName);
     }
   }
 
-  throw new Error(`All providers failed. ${errors.join(' | ')}`);
+  if (lastTaskError) {
+    throw createTaskError(`All providers failed. ${errors.join(' | ')}`, lastTaskError.provider, lastTaskError);
+  }
+
+  throw createServiceError(`All providers failed. ${errors.join(' | ')}`);
 }

@@ -3,6 +3,7 @@ import FormData from 'form-data';
 import fs from 'fs';
 import path from 'path';
 import { ensureLocalAudioRuntime, getLocalAudioRuntimeBaseUrl } from '../local-runtime.js';
+import { createServiceError, createTaskError } from '../errors.js';
 import { BaseTranscriptionProvider } from './base.js';
 import type { ProviderTranscriptionPayload, TranscriptionJobInput } from '../types.js';
 import type { LocalRuntimeSettings } from '../../user-settings-schema.js';
@@ -31,8 +32,35 @@ export class LocalPythonProvider extends BaseTranscriptionProvider {
     asyncPolling: false,
   } as const;
 
+  async healthCheck() {
+    try {
+      await ensureLocalAudioRuntime(this.config.baseUrl);
+      const response = await axios.get(`${getLocalAudioRuntimeBaseUrl(this.config.baseUrl)}/health`, {
+        timeout: 1_500,
+      });
+      const ok = response.data?.ok !== false;
+      return {
+        ok,
+        detail: ok ? undefined : 'Local audio runtime health check returned not ok.',
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        detail: error instanceof Error ? error.message : 'Local audio runtime is unavailable.',
+      };
+    }
+  }
+
   async transcribe(input: TranscriptionJobInput): Promise<ProviderTranscriptionPayload> {
-    await ensureLocalAudioRuntime(this.config.baseUrl);
+    try {
+      await ensureLocalAudioRuntime(this.config.baseUrl);
+    } catch (error) {
+      throw createServiceError(
+        error instanceof Error ? error.message : 'Local audio runtime is unavailable.',
+        this.name,
+        error,
+      );
+    }
 
     const formData = new FormData();
     formData.append(
@@ -71,14 +99,23 @@ export class LocalPythonProvider extends BaseTranscriptionProvider {
       );
     } catch (error) {
       if (axios.isAxiosError(error)) {
+        const status = Number(error.response?.status || 0);
         const detail =
           typeof error.response?.data?.detail === 'string'
             ? error.response?.data?.detail
             : error.message;
-        throw new Error(`Local audio runtime request failed: ${detail}`);
+        const message = `Local audio runtime request failed: ${detail}`;
+        if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
+          throw createTaskError(message, this.name, error);
+        }
+        throw createServiceError(message, this.name, error);
       }
 
-      throw error;
+      throw createServiceError(
+        error instanceof Error ? error.message : 'Local audio runtime request failed.',
+        this.name,
+        error,
+      );
     }
 
     const payload =

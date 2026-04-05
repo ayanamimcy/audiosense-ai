@@ -4,7 +4,7 @@ import { isTaskTagSuggestionGenerating } from '../lib/taskTagSuggestions';
 import type { AuthUser, Task } from '../types';
 
 /**
- * Polls for task list updates when there are active (pending/processing) tasks
+ * Polls for task list updates when there are active (pending/processing/blocked) tasks
  * or when the selected task has a summary being generated.
  * Only refreshes data — never forces a new selection.
  */
@@ -17,7 +17,7 @@ export function useTaskPolling(
   fetchTaskDetail: (taskId: string) => Promise<Task>,
 ) {
   const hasActiveTasks = tasks.some(
-    (task) => task.status === 'pending' || task.status === 'processing',
+    (task) => task.status === 'pending' || task.status === 'processing' || task.status === 'blocked',
   );
   const hasPendingSummary = isTaskSummaryGenerating(selectedTask);
   const hasPendingTagSuggestions = isTaskTagSuggestionGenerating(selectedTask);

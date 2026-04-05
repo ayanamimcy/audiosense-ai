@@ -145,7 +145,20 @@ export function Calendar({
                 <div className="flex flex-col gap-1">
                   {calendarTasks.slice(0, 3).map((task) => (
                     <div key={task.id} onClick={(e) => { e.stopPropagation(); onSelectTask(task.id); }} className="flex items-center gap-1.5 p-0.5 rounded hover:bg-slate-100 transition-colors">
-                      <div className={cn('w-1.5 h-1.5 rounded-full shrink-0', task.status === 'completed' ? 'bg-emerald-500' : task.status === 'processing' ? 'bg-amber-500' : task.status === 'failed' ? 'bg-red-500' : 'bg-slate-400')} />
+                      <div
+                        className={cn(
+                          'w-1.5 h-1.5 rounded-full shrink-0',
+                          task.status === 'completed'
+                            ? 'bg-emerald-500'
+                            : task.status === 'processing'
+                              ? 'bg-amber-500'
+                              : task.status === 'blocked'
+                                ? 'bg-violet-500'
+                                : task.status === 'failed'
+                                  ? 'bg-red-500'
+                                  : 'bg-slate-400',
+                        )}
+                      />
                       <span className="text-[11px] text-slate-600 truncate font-medium">{task.originalName}</span>
                     </div>
                   ))}

@@ -60,6 +60,43 @@ export function createTranscriptionProvider(
   return entry.create(settings);
 }
 
+export async function checkTranscriptionProviderHealth(
+  providerName?: string,
+  settings?: Partial<UserSettings>,
+): Promise<{ ok: boolean; detail?: string; checkedRemotely: boolean }> {
+  const normalizedProviderName = getProviderName(providerName);
+  const entry = PROVIDERS[normalizedProviderName];
+  if (!entry) {
+    return {
+      ok: false,
+      detail: `Unsupported transcription provider: ${normalizedProviderName}`,
+      checkedRemotely: false,
+    };
+  }
+
+  if (!entry.configured(settings)) {
+    return {
+      ok: false,
+      detail: `Provider ${normalizedProviderName} is not configured.`,
+      checkedRemotely: false,
+    };
+  }
+
+  const provider = entry.create(settings);
+  if (provider.healthCheck) {
+    const result = await provider.healthCheck();
+    return {
+      ...result,
+      checkedRemotely: true,
+    };
+  }
+
+  return {
+    ok: true,
+    checkedRemotely: false,
+  };
+}
+
 export function getAvailableTranscriptionProviders(
   settings?: Partial<UserSettings>,
 ): TranscriptionProviderInfo[] {

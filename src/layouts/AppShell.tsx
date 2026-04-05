@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
+  ArrowUp,
   BrainCircuit,
   ChevronsLeft,
   ChevronsRight,
@@ -65,8 +66,22 @@ export function AppShell({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [showScrollTop, setShowScrollTop] = useState(false);
   const isMobileDetailChromeHidden =
     pathname.startsWith('/notebook/');
+
+  const handleMainScroll = useCallback(() => {
+    const el = mainScrollRef.current;
+    if (!el) return;
+    setShowScrollTop(el.scrollTop > 300);
+  }, [mainScrollRef]);
+
+  useEffect(() => {
+    const el = mainScrollRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', handleMainScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleMainScroll);
+  }, [mainScrollRef, handleMainScroll]);
 
   const goTo = (tab: Tab) => {
     navigate(TAB_TO_PATH[tab]);
@@ -186,6 +201,17 @@ export function AppShell({
           </div>
         </div>
       </main>
+
+      {showScrollTop && !isMobileDetailChromeHidden && (
+        <button
+          type="button"
+          onClick={() => mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+          className="lg:hidden fixed z-30 left-4 bottom-[calc(var(--mobile-bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] flex h-9 w-9 items-center justify-center rounded-full bg-white border border-slate-200 text-slate-500 shadow-lg active:scale-95 transition-transform"
+          aria-label="Back to top"
+        >
+          <ArrowUp className="w-4 h-4" />
+        </button>
+      )}
 
       {!isMobileDetailChromeHidden ? (
         <>

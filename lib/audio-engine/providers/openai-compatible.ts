@@ -1,6 +1,7 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
+import { createServiceError, createTaskError } from '../errors.js';
 import { BaseTranscriptionProvider } from './base.js';
 import type { ProviderTranscriptionPayload, TranscriptionJobInput } from '../types.js';
 import type { OpenAIWhisperSettings } from '../../user-settings-schema.js';
@@ -34,7 +35,7 @@ export class OpenAICompatibleProvider extends BaseTranscriptionProvider {
     const model = this.config.model || 'whisper-1';
 
     if (!apiKey) {
-      throw new Error('OPENAI_TRANSCRIPTION_API_KEY or OPENAI_API_KEY is required.');
+      throw createServiceError('OPENAI_TRANSCRIPTION_API_KEY or OPENAI_API_KEY is required.', this.name);
     }
 
     const formData = new FormData();
@@ -51,13 +52,35 @@ export class OpenAICompatibleProvider extends BaseTranscriptionProvider {
       formData.append('timestamp_granularities[]', 'word');
     }
 
-    const response = await axios.post(`${baseUrl}${endpoint}`, formData, {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        ...formData.getHeaders(),
-      },
-      timeout: 600000,
-    });
+    let response;
+    try {
+      response = await axios.post(`${baseUrl}${endpoint}`, formData, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          ...formData.getHeaders(),
+        },
+        timeout: 600000,
+      });
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const status = Number(error.response?.status || 0);
+        const detail =
+          typeof error.response?.data?.error?.message === 'string'
+            ? error.response?.data?.error?.message
+            : error.message;
+        const message = `OpenAI-compatible transcription failed: ${detail}`;
+        if (status >= 400 && status < 500 && ![408, 409, 423, 425, 429].includes(status)) {
+          throw createTaskError(message, this.name, error);
+        }
+        throw createServiceError(message, this.name, error);
+      }
+
+      throw createServiceError(
+        error instanceof Error ? error.message : 'OpenAI-compatible transcription failed.',
+        this.name,
+        error,
+      );
+    }
 
     return {
       payload:

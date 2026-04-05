@@ -1,8 +1,12 @@
-import { runWorkerCycle } from '../../lib/task-queue.js';
+import { getTranscriptionQueueState, runRecoveryCycle, runWorkerCycle } from '../../lib/task-queue.js';
 
 export async function runWorkerLoop(workerId: string, idleMs: number) {
   while (true) {
-    const processed = await runWorkerCycle(workerId);
+    const queueState = await getTranscriptionQueueState();
+    const processed = queueState.paused
+      ? await runRecoveryCycle(workerId)
+      : await runWorkerCycle(workerId);
+
     if (!processed) {
       await new Promise((resolve) => setTimeout(resolve, idleMs));
     }

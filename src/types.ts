@@ -1,4 +1,4 @@
-export type TaskStatus = 'pending' | 'processing' | 'completed' | 'failed';
+export type TaskStatus = 'pending' | 'processing' | 'blocked' | 'completed' | 'failed';
 
 export interface AuthUser {
   id: string;

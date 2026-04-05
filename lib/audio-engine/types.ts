@@ -101,6 +101,7 @@ export interface TranscriptionProvider {
   readonly name: string;
   readonly capabilities: TranscriptionProviderCapabilities;
   transcribe(input: TranscriptionJobInput): Promise<ProviderTranscriptionPayload>;
+  healthCheck?(): Promise<{ ok: boolean; detail?: string }>;
 }
 
 export interface TranscriptionProviderInfo {
@@ -117,4 +118,3 @@ export interface TranscriptionExecutionResult {
   skippedProviders: string[];
   result: TranscriptionResult;
 }
-
