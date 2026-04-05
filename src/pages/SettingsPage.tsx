@@ -4,6 +4,7 @@ import { apiJson } from '../api';
 import { cn, getLocalSetting, LANGUAGE_OPTIONS } from '../lib/utils';
 import { useAppDataContext } from '../contexts/AppDataContext';
 import { useAuthContext } from '../contexts/AuthContext';
+import { ApiTokensSection } from '../components/ApiTokensSection';
 import type { AuthUser, UserSettings } from '../types';
 
 export function SettingsPage({
@@ -788,6 +789,8 @@ export function SettingsPage({
               </button>
             </div>
           </div>
+
+          <ApiTokensSection />
 
           <button
             onClick={() => void onLogout()}

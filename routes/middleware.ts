@@ -4,6 +4,7 @@ import multer from 'multer';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import {
+  getApiTokenUser,
   getSessionCookieName,
   getSessionUser,
   readCookie,
@@ -11,6 +12,7 @@ import {
   serializeSessionCookie,
   type AuthUser,
 } from '../lib/auth.js';
+import { matchesScope } from '../lib/api-token-scopes.js';
 
 const configuredUploadDir = process.env.UPLOAD_DIR?.trim();
 export const uploadDir = path.resolve(configuredUploadDir || path.join(process.cwd(), 'uploads'));
@@ -54,6 +56,24 @@ export async function authenticateRequest(
   res: express.Response,
   next: express.NextFunction,
 ) {
+  const authHeader = req.headers.authorization;
+  if (authHeader?.startsWith('Bearer ')) {
+    const rawToken = authHeader.slice(7);
+    const result = await getApiTokenUser(rawToken);
+    if (!result) {
+      return res.status(401).json({ error: 'Invalid or expired API token.' });
+    }
+
+    const fullPath = req.baseUrl + req.path;
+    if (!matchesScope(req.method, fullPath, result.scopes)) {
+      return res.status(403).json({ error: 'API token does not have access to this endpoint.' });
+    }
+
+    req.authUser = result.user;
+    req.authTokenId = result.tokenId;
+    return next();
+  }
+
   const token = readCookie(req.headers.cookie, getSessionCookieName());
   const session = await getSessionUser(token);
   if (!session) {

@@ -18,12 +18,14 @@ import { notebooksRouter } from './routes/notebooks.js';
 import { searchRouter } from './routes/search.js';
 import { audioRouter } from './routes/audio.js';
 import { chunkedUploadRouter } from './routes/chunked-upload.js';
+import { apiTokensRouter } from './routes/api-tokens.js';
 
 declare global {
   namespace Express {
     interface Request {
       authUser?: AuthUser;
       authSessionId?: string;
+      authTokenId?: string;
     }
   }
 }
@@ -96,6 +98,7 @@ protectedApi.use(notebooksRouter);
 protectedApi.use(searchRouter);
 protectedApi.use(audioRouter);
 protectedApi.use(chunkedUploadRouter);
+protectedApi.use(apiTokensRouter);
 app.use('/api', protectedApi);
 
 // --- Error handler ---

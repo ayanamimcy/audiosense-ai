@@ -14,6 +14,11 @@ import {
   updateUserAuthRowById,
   type UserAuthRow,
 } from '../database/repositories/users-sessions-repository.js';
+import {
+  findApiTokenUserRowByTokenHash,
+  insertApiTokenRow,
+  updateApiTokenLastUsedAt,
+} from '../database/repositories/api-tokens-repository.js';
 
 const scrypt = promisify(scryptCallback);
 const SESSION_COOKIE = 'audiosense_session';
@@ -26,7 +31,7 @@ export interface AuthUser {
   createdAt: number;
 }
 
-function hashToken(token: string) {
+export function hashToken(token: string) {
   return createHash('sha256').update(token).digest('hex');
 }
 
@@ -203,6 +208,60 @@ export function readCookie(header: string | undefined, name: string) {
   }
 
   return undefined;
+}
+
+const API_TOKEN_PREFIX = 'ast_';
+
+export async function createApiToken(input: {
+  userId: string;
+  name: string;
+  scopes: string[];
+  expiresAt: number | null;
+}) {
+  const raw = randomBytes(32).toString('hex');
+  const rawToken = `${API_TOKEN_PREFIX}${raw}`;
+  const now = Date.now();
+  const row = {
+    id: uuidv4(),
+    userId: input.userId,
+    name: input.name,
+    tokenHash: hashToken(raw),
+    scopes: JSON.stringify(input.scopes),
+    expiresAt: input.expiresAt,
+    createdAt: now,
+    lastUsedAt: null,
+  };
+
+  await insertApiTokenRow(row);
+  return { rawToken, tokenRecord: row };
+}
+
+export async function getApiTokenUser(rawToken: string) {
+  if (!rawToken) {
+    return null;
+  }
+
+  const stripped = rawToken.startsWith(API_TOKEN_PREFIX)
+    ? rawToken.slice(API_TOKEN_PREFIX.length)
+    : rawToken;
+  const hashed = hashToken(stripped);
+  const row = await findApiTokenUserRowByTokenHash(hashed);
+
+  if (!row) {
+    return null;
+  }
+
+  if (row.expiresAt && Number(row.expiresAt) < Date.now()) {
+    return null;
+  }
+
+  void updateApiTokenLastUsedAt(String(row.tokenId), Date.now());
+
+  return {
+    user: sanitizeUser(row),
+    tokenId: String(row.tokenId),
+    scopes: JSON.parse(row.scopes) as string[],
+  };
 }
 
 function sanitizeUser(user: Pick<UserAuthRow, 'id' | 'name' | 'email' | 'createdAt'>) {
