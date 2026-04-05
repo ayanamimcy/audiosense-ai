@@ -1,14 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { format, isSameDay } from 'date-fns';
-import { ArrowLeft, Edit2, FileAudio, Loader2, Search } from 'lucide-react';
+import { ArrowLeft, FileAudio, Loader2, Plus, Search, X } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { cn } from './lib/utils';
 import { apiJson } from './api';
 import { useAppDataContext } from './contexts/AppDataContext';
-import { NotebookSidebar } from './components/NotebookSidebar';
-import { Calendar } from './components/Calendar';
 import { TaskEditModal } from './components/TaskEditModal';
 import { TaskDetail } from './components/TaskDetail';
+import { StatsRow } from './components/dashboard/StatsRow';
+import { InboxList } from './components/dashboard/InboxList';
+import { DashboardSidebar } from './components/dashboard/DashboardSidebar';
 import type { Task } from './types';
 
 export default function NotebookView() {
@@ -22,36 +22,39 @@ export default function NotebookView() {
   } = useAppDataContext();
   const onUpdateTasks = async () => { await fetchTasks(); await fetchTags(); };
 
-  const [currentPeriodDate, setCurrentPeriodDate] = useState(new Date());
-  const [calendarView, setCalendarView] = useState<'week' | 'month'>('week');
-  const [selectedDate, setSelectedDate] = useState<Date | null>(null);
-  const [selectedNotebookId, setSelectedNotebookId] = useState<string | null>(null);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [statsFilter, setStatsFilter] = useState<string | null>(null);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [mobileNotebookEdit, setMobileNotebookEdit] = useState(false);
+  const [mobileNewNotebook, setMobileNewNotebook] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
   // Server-side search state
   const [serverResults, setServerResults] = useState<Task[] | null>(null);
+  const [searchError, setSearchError] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const searchTimerRef = useRef<number | null>(null);
 
-  // Debounced server-side search when query is non-empty
   const runServerSearch = useCallback((q: string) => {
     if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current);
     if (!q.trim()) {
       setServerResults(null);
+      setSearchError(false);
       setIsSearching(false);
       return;
     }
     setIsSearching(true);
+    setSearchError(false);
     searchTimerRef.current = window.setTimeout(async () => {
       try {
         const results = await apiJson<Task[]>(
           `/api/search/tasks?q=${encodeURIComponent(q.trim())}`,
         );
         setServerResults(results);
+        setSearchError(false);
       } catch {
-        setServerResults(null);
+        setServerResults([]);
+        setSearchError(true);
       } finally {
         setIsSearching(false);
       }
@@ -75,222 +78,256 @@ export default function NotebookView() {
     navigate(`/notebook/${taskId}`);
   };
 
+  const [notebookFilter, setNotebookFilter] = useState<string | null>(null);
+
+  const handleSelectNotebook = (notebookId: string) => {
+    setNotebookFilter((current) => current === notebookId ? null : notebookId);
+    setStatsFilter(null);
+  };
+
   const handleBack = () => {
     navigate('/notebook', { replace: true });
   };
 
   const showingDetail = Boolean(id);
   const activeTask = selectedTask?.id === id ? selectedTask : null;
-  const selectedTagsLabel = selectedTags.map((tag) => `#${tag}`).join(', ');
 
-  // When no search query: local filter on lightweight task list.
-  // When search query present: use server results (which search transcript too).
   const baseTasks = serverResults ?? tasks;
 
   const filteredTasks = useMemo(() => {
-    return baseTasks.filter((task) => {
-      const notebookMatch = selectedNotebookId ? task.notebookId === selectedNotebookId : true;
-      const tagMatch = selectedTags.length > 0
-        ? selectedTags.some((tag) => task.tags.includes(tag))
-        : true;
-      return notebookMatch && tagMatch;
-    });
-  }, [selectedNotebookId, selectedTags, baseTasks]);
+    let result = baseTasks;
 
-  const visibleTasks = selectedDate
-    ? filteredTasks.filter((task) => isSameDay(new Date(task.eventDate || task.createdAt), selectedDate))
-    : filteredTasks;
+    if (notebookFilter) {
+      result = result.filter((t) => t.notebookId === notebookFilter);
+    } else if (statsFilter === 'inbox') {
+      result = result.filter((t) => !t.notebookId);
+    } else if (statsFilter === 'pending') {
+      result = result.filter((t) => t.status === 'pending' || t.status === 'processing');
+    } else if (statsFilter === 'completed') {
+      result = result.filter((t) => t.status === 'completed');
+    }
+
+    if (tagFilter) {
+      result = result.filter((t) => t.tags.includes(tagFilter));
+    }
+
+    return result;
+  }, [baseTasks, statsFilter, notebookFilter, tagFilter]);
 
   return (
-    <div
-      className={cn(
-        'flex flex-col lg:flex-row gap-4 lg:gap-6 h-full',
-        showingDetail ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar',
-        'lg:overflow-hidden',
-      )}
-    >
-      {/* Notebook sidebar — hidden on mobile when detail is open */}
-      <div className={cn(
-        showingDetail ? "hidden lg:flex" : "flex",
-        "flex-col shrink-0",
-      )}>
-        <NotebookSidebar
-          tasks={tasks}
-          notebooks={notebooks}
-          tags={tags}
-          selectedNotebookId={selectedNotebookId}
-          selectedTags={selectedTags}
-          onSelectAll={() => { setSelectedNotebookId(null); setSelectedDate(null); }}
-          onSelectNotebook={(id) => { setSelectedNotebookId(id); setSelectedDate(null); }}
-          onClearTags={() => setSelectedTags([])}
-          onToggleTag={(tag) => {
-            setSelectedTags((current) => (
-              current.includes(tag)
-                ? current.filter((item) => item !== tag)
-                : [...current, tag]
-            ));
-          }}
-          onSelectTask={handleSelectTask}
-          onEditTask={setEditingTask}
-          onUpdateNotebooks={fetchNotebooks}
-          onUpdateTasks={onUpdateTasks}
-        />
-      </div>
-
-      {/* Right content area: either calendar+grid OR task detail (replaces in-place) */}
-      <div
-        className={cn(
-          'lg:flex-1 flex-none bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col shrink-0',
-          showingDetail
-            ? 'h-full min-h-0 overflow-hidden'
-            : cn(
-                'h-auto p-4 sm:p-6',
-                calendarView === 'week' ? 'lg:overflow-hidden' : 'lg:overflow-y-auto custom-scrollbar',
-              ),
-        )}
-      >
-        {showingDetail ? (
-          /* Task detail view — replaces calendar+grid */
-          <>
-            <div className="flex items-center gap-3 px-4 sm:px-6 py-3 border-b border-slate-200 bg-white shrink-0">
-              <button
-                onClick={handleBack}
-                className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 transition-colors"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span className="text-sm font-medium">Back</span>
-              </button>
-              <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
-                {activeTask?.originalName || (selectedTaskLoading ? 'Loading task' : 'Task unavailable')}
-              </h2>
-            </div>
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-              {activeTask ? (
-                <TaskDetail
-                  task={activeTask}
-                  onUpdateTask={async () => {
-                    await refreshTasksAndSelection(activeTask.id);
-                    await fetchTags();
-                  }}
-                />
-              ) : selectedTaskLoading ? (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center">
-                  <Loader2 className="w-10 h-10 mb-4 animate-spin text-indigo-500" />
-                  <h3 className="text-lg font-medium text-slate-600">Loading task</h3>
-                </div>
-              ) : (
-                <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center">
-                  <FileAudio className="w-12 h-12 mb-4 opacity-20 text-indigo-500" />
-                  <h3 className="text-lg font-medium text-slate-600">Task unavailable</h3>
-                  <p className="text-sm mt-1">This task could not be loaded. It may have been removed or become inaccessible.</p>
-                </div>
-              )}
-            </div>
-          </>
-        ) : (
-          /* Calendar + task grid view */
-          <>
-            {/* Search bar */}
-            <div className="mb-4">
-              <div className="relative">
-                {isSearching ? (
-                  <Loader2 className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-indigo-500 animate-spin" />
-                ) : (
-                  <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                )}
-                <input
-                  type="text"
-                  placeholder="Search tasks, tags, or transcripts..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
-                />
-              </div>
-            </div>
-
-            <Calendar
-              tasks={filteredTasks}
-              currentPeriodDate={currentPeriodDate}
-              calendarView={calendarView}
-              selectedDate={selectedDate}
-              onPeriodChange={setCurrentPeriodDate}
-              onViewChange={setCalendarView}
-              onSelectDate={setSelectedDate}
-              onSelectTask={handleSelectTask}
-            />
-
-            <div
-              className={cn(
-                'mt-6 pt-6 border-t border-slate-200',
-                calendarView === 'week' ? 'lg:flex-1 lg:min-h-0 lg:overflow-y-auto lg:pr-1 custom-scrollbar' : 'shrink-0',
-              )}
+    <div className={cn(
+      'flex flex-col h-full',
+      showingDetail ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar lg:overflow-hidden',
+    )}>
+      {showingDetail ? (
+        <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+          <div className="flex items-center gap-3 px-4 sm:px-6 py-3 border-b border-slate-200 bg-white shrink-0">
+            <button
+              onClick={handleBack}
+              className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 transition-colors"
             >
-              <div className="flex items-center justify-between gap-4 flex-wrap">
-                <div>
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    {selectedDate ? `Tasks on ${format(selectedDate, 'MMMM d, yyyy')}` : 'All Filtered Tasks'}
-                  </h3>
-                  <p className="text-sm text-slate-500 mt-1">
-                    {selectedNotebookId ? 'Filtered by notebook.' : 'Showing all notebooks.'} {selectedTags.length > 0 ? `Tags: ${selectedTagsLabel}` : ''} {selectedDate ? '' : 'Select a date on the calendar to narrow it down.'}
-                  </p>
-                </div>
-                <div className="flex items-center gap-3">
-                  {selectedDate && (
-                    <button onClick={() => setSelectedDate(null)} className="text-xs font-medium text-indigo-600 hover:text-indigo-700">
-                      Clear date filter
-                    </button>
-                  )}
-                  <span className="text-sm text-slate-500">{visibleTasks.length} items</span>
-                </div>
+              <ArrowLeft className="w-4 h-4" />
+              <span className="text-sm font-medium">Back</span>
+            </button>
+            <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">
+              {activeTask?.originalName || (selectedTaskLoading ? 'Loading...' : 'Unavailable')}
+            </h2>
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+            {activeTask ? (
+              <TaskDetail
+                task={activeTask}
+                onUpdateTask={async () => {
+                  await refreshTasksAndSelection(activeTask.id);
+                  await fetchTags();
+                }}
+              />
+            ) : selectedTaskLoading ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center">
+                <Loader2 className="w-10 h-10 mb-4 animate-spin text-indigo-500" />
+                <h3 className="text-lg font-medium text-slate-600">Loading</h3>
               </div>
-
-              {visibleTasks.length === 0 ? (
-                <div className="text-sm text-slate-500 mt-4">
-                  {searchQuery ? 'No tasks match your search.' : selectedDate ? 'No tasks for the selected date.' : 'No tasks match the current notebook/tag filters.'}
-                </div>
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center">
+                <FileAudio className="w-12 h-12 mb-4 opacity-20 text-indigo-500" />
+                <h3 className="text-lg font-medium text-slate-600">Unavailable</h3>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-6 h-full overflow-hidden">
+          {/* Main content */}
+          <div className="flex-1 min-w-0 overflow-y-auto custom-scrollbar space-y-5 pr-1">
+            {/* Search */}
+            <div className="relative">
+              {isSearching ? (
+                <Loader2 className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-indigo-500 animate-spin" />
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 mt-4">
-                  {visibleTasks.map((task) => (
-                    <div
-                      key={task.id}
-                      onClick={() => handleSelectTask(task.id)}
-                      className="p-3 rounded-xl border border-slate-200 bg-slate-50 hover:bg-white hover:border-indigo-300 hover:shadow-sm cursor-pointer transition-all flex flex-col gap-2 relative group"
-                    >
-                      <button
-                        onClick={(e) => { e.stopPropagation(); setEditingTask(task); }}
-                        className="absolute top-2 right-2 hidden group-hover:block p-1.5 text-slate-400 hover:text-indigo-600 rounded-md bg-white/80 backdrop-blur-sm shadow-sm"
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              )}
+              <input
+                type="text"
+                placeholder="Search recordings, tags, or transcripts..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all shadow-sm"
+              />
+            </div>
+
+            {/* Stats */}
+            <StatsRow tasks={tasks} activeFilter={statsFilter} onFilterChange={(f) => { setStatsFilter(f); setNotebookFilter(null); }} />
+
+            {/* Mobile-only: Notebook + Tag filters */}
+            <div className="lg:hidden space-y-3">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => { setNotebookFilter(null); setStatsFilter(null); }}
+                  className={cn(
+                    'px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+                    !notebookFilter && !statsFilter ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-500 border-slate-200',
+                  )}
+                >
+                  All
+                </button>
+                {notebooks.map((nb) => (
+                  <button
+                    key={nb.id}
+                    type="button"
+                    onClick={() => mobileNotebookEdit ? undefined : handleSelectNotebook(nb.id)}
+                    className={cn(
+                      'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+                      notebookFilter === nb.id ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-500 border-slate-200',
+                    )}
+                  >
+                    {nb.name}
+                    {mobileNotebookEdit && (
+                      <span
+                        role="button"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm(`Delete "${nb.name}"?`)) return;
+                          await apiJson(`/api/notebooks/${nb.id}`, { method: 'DELETE' });
+                          if (notebookFilter === nb.id) setNotebookFilter(null);
+                          await fetchNotebooks();
+                          await fetchTasks();
+                        }}
+                        className="text-red-400 hover:text-red-600 ml-0.5"
                       >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <div className="flex items-start gap-2 pr-6">
-                        <FileAudio className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5" />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-900 truncate">{task.originalName}</p>
-                          <p className="text-xs text-slate-500">{format(task.createdAt, 'HH:mm')}</p>
-                        </div>
-                      </div>
-                      {task.tags.length > 0 && (
-                        <div className="flex flex-nowrap items-center gap-1 mt-1 overflow-hidden">
-                          {task.tags.slice(0, 2).map((tag) => (
-                            <span key={tag} className="text-[10px] font-medium text-slate-600 bg-slate-200/70 px-1.5 py-0.5 rounded whitespace-nowrap min-w-0 overflow-hidden text-ellipsis">
-                              #{tag}
-                            </span>
-                          ))}
-                          {task.tags.length > 2 && (
-                            <span className="shrink-0 text-[10px] font-medium text-slate-400 px-1 py-0.5">
-                              +{task.tags.length - 2}
-                            </span>
-                          )}
-                        </div>
+                        <X className="w-3 h-3" />
+                      </span>
+                    )}
+                  </button>
+                ))}
+                {mobileNotebookEdit ? (
+                  <div className="inline-flex items-center gap-1">
+                    <input
+                      type="text"
+                      value={mobileNewNotebook}
+                      onChange={(e) => setMobileNewNotebook(e.target.value)}
+                      onKeyDown={async (e) => {
+                        if (e.key === 'Enter' && mobileNewNotebook.trim()) {
+                          await apiJson('/api/notebooks', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ name: mobileNewNotebook.trim() }),
+                          });
+                          setMobileNewNotebook('');
+                          await fetchNotebooks();
+                        }
+                        if (e.key === 'Escape') setMobileNotebookEdit(false);
+                      }}
+                      placeholder="New..."
+                      className="w-20 px-2 py-0.5 text-[11px] border border-slate-200 rounded-full focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMobileNotebookEdit(false)}
+                      className="text-[11px] text-slate-400"
+                    >
+                      Done
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setMobileNotebookEdit(true)}
+                    className="w-6 h-6 flex items-center justify-center rounded-full border border-dashed border-slate-300 text-slate-400 hover:text-indigo-600 hover:border-indigo-300 transition-colors"
+                    title="Manage notebooks"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+              {tags.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {tags.slice(0, 8).map((tag) => (
+                    <button
+                      key={tag.name}
+                      type="button"
+                      onClick={() => setTagFilter((c) => c === tag.name ? null : tag.name)}
+                      className={cn(
+                        'px-2 py-0.5 rounded-full text-[10px] border transition-colors',
+                        tagFilter === tag.name ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'text-slate-500 bg-slate-50 border-slate-200',
                       )}
-                    </div>
+                    >
+                      #{tag.name}
+                    </button>
                   ))}
                 </div>
               )}
             </div>
-          </>
-        )}
-      </div>
+
+            {/* Active filter indicator */}
+            {(notebookFilter || tagFilter) && (
+              <div className="flex items-center gap-2 flex-wrap">
+                {notebookFilter && (
+                  <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                    Notebook: <span className="font-medium text-slate-700">{notebooks.find((n) => n.id === notebookFilter)?.name}</span>
+                    <button type="button" onClick={() => setNotebookFilter(null)} className="text-slate-400 hover:text-slate-600 ml-0.5">&times;</button>
+                  </span>
+                )}
+                {tagFilter && (
+                  <span className="inline-flex items-center gap-1 text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full">
+                    Tag: <span className="font-medium text-slate-700">#{tagFilter}</span>
+                    <button type="button" onClick={() => setTagFilter(null)} className="text-slate-400 hover:text-slate-600 ml-0.5">&times;</button>
+                  </span>
+                )}
+              </div>
+            )}
+
+            {searchError && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                Search failed. Showing no results.
+              </div>
+            )}
+
+            {/* Inbox list */}
+            <InboxList
+              tasks={filteredTasks}
+              title={notebookFilter ? notebooks.find((n) => n.id === notebookFilter)?.name || 'Notebook' : statsFilter === 'inbox' ? 'Inbox' : statsFilter === 'pending' ? 'Pending' : statsFilter === 'completed' ? 'Completed' : 'All Recordings'}
+              onSelectTask={handleSelectTask}
+            />
+
+          </div>
+
+          {/* Right sidebar — desktop only */}
+          <DashboardSidebar
+            notebooks={notebooks}
+            tasks={tasks}
+            tags={tags}
+            activeNotebookFilter={notebookFilter}
+            activeTagFilter={tagFilter}
+            onToggleTagFilter={(tag) => setTagFilter((c) => c === tag ? null : tag)}
+            onSelectNotebook={handleSelectNotebook}
+            onClearNotebookFilter={() => setNotebookFilter(null)}
+            onSelectTask={handleSelectTask}
+            onNotebooksChanged={async () => { await fetchNotebooks(); await fetchTasks(); }}
+          />
+        </div>
+      )}
 
       {editingTask && (
         <TaskEditModal

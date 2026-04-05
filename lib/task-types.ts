@@ -135,6 +135,9 @@ export function toTaskListResponse(task: TaskRow) {
     startedAt: task.startedAt,
     completedAt: task.completedAt,
     updatedAt: task.updatedAt,
+    summarySnippet: task.summary && task.summary !== '__generating__'
+      ? task.summary.slice(0, 100)
+      : null,
     segments: [],
     speakerCount: 0,
     metadata: {},

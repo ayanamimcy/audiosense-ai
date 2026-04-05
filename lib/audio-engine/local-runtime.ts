@@ -47,6 +47,7 @@ async function isRuntimeHealthy(baseUrlOverride?: string) {
   }
 }
 
+
 function registerCleanup() {
   if (cleanupRegistered) {
     return;

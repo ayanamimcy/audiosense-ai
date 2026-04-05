@@ -9,7 +9,7 @@ export function RecordPage({
 }: {
   onUploadSuccess: (taskId?: string) => void | Promise<void>;
 }) {
-  const { notebooks, capabilities, userSettings } = useAppDataContext();
+  const { notebooks, tags: allTags, capabilities, userSettings } = useAppDataContext();
   const [isRecording, setIsRecording] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -192,7 +192,7 @@ export function RecordPage({
             className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
           >
             <option value="">
-              Default ({userSettings?.defaultProvider || capabilities?.transcription.activeProvider || 'local-python'})
+              Default
             </option>
             {capabilities?.transcription.providers.map((item) => (
               <option key={item.id} value={item.id} disabled={!item.configured}>
@@ -233,7 +233,7 @@ export function RecordPage({
           </select>
         </label>
 
-        <label className="block">
+        <div className="block">
           <span className="text-sm font-medium text-slate-700">Tags</span>
           <input
             type="text"
@@ -242,7 +242,24 @@ export function RecordPage({
             placeholder="customer call, weekly sync"
             className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
-        </label>
+          {allTags.length > 0 && (
+            <div className="flex flex-wrap gap-1 mt-1.5">
+              {allTags.slice(0, 6).map((t) => (
+                <button
+                  key={t.name}
+                  type="button"
+                  onClick={() => setTags((prev) => {
+                    const current = prev.split(',').map((s) => s.trim()).filter(Boolean);
+                    return current.includes(t.name) ? prev : [...current, t.name].join(', ');
+                  })}
+                  className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full hover:bg-indigo-50 hover:text-indigo-600 transition-colors"
+                >
+                  #{t.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

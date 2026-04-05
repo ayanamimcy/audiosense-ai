@@ -1,9 +1,17 @@
 import React, { useState } from 'react';
-import { format } from 'date-fns';
+import { format, isToday, isYesterday, isThisWeek } from 'date-fns';
 import { Book, ChevronDown, ChevronUp, Loader2, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
 import { apiFetch } from '../api';
 import { cn } from '../lib/utils';
 import { useAppDataContext } from '../contexts/AppDataContext';
+
+function getTimeGroup(timestamp: number): string {
+  const date = new Date(timestamp);
+  if (isToday(date)) return 'Today';
+  if (isYesterday(date)) return 'Yesterday';
+  if (isThisWeek(date)) return 'This Week';
+  return format(date, 'MMMM yyyy');
+}
 
 export function TasksPage({
   onSelectTask,
@@ -14,6 +22,7 @@ export function TasksPage({
 }) {
   const { tasks, notebooks, tags, selectedTaskId } = useAppDataContext();
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string | null>(null);
   const [tagFilters, setTagFilters] = useState<string[]>([]);
   const [isTagFiltersExpanded, setIsTagFiltersExpanded] = useState(false);
 
@@ -35,6 +44,10 @@ export function TasksPage({
     await onRefresh();
   };
 
+  const pendingCount = tasks.filter((t) => t.status === 'pending' || t.status === 'processing').length;
+  const completedCount = tasks.filter((t) => t.status === 'completed').length;
+  const failedCount = tasks.filter((t) => t.status === 'failed').length;
+
   const filteredTasks = tasks.filter((task) => {
     const query = searchQuery.trim().toLowerCase();
     const matchesSearch =
@@ -42,10 +55,16 @@ export function TasksPage({
       task.originalName.toLowerCase().includes(query) ||
       task.tags.some((tag) => tag.toLowerCase().includes(query));
 
+    const matchesStatus = !statusFilter
+      ? true
+      : statusFilter === 'pending'
+        ? task.status === 'pending' || task.status === 'processing'
+        : task.status === statusFilter;
+
     const matchesTag = tagFilters.length === 0
       ? true
       : tagFilters.some((tag) => task.tags.includes(tag));
-    return matchesSearch && matchesTag;
+    return matchesSearch && matchesTag && matchesStatus;
   });
 
   const toggleTagFilter = (tag: string) => {
@@ -140,7 +159,7 @@ export function TasksPage({
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 flex flex-col h-full min-h-[400px] relative overflow-hidden">
       <div className="flex items-center justify-between mb-4 px-2">
-        <h2 className="text-lg font-semibold text-slate-900">Recent Tasks</h2>
+        <h2 className="text-lg font-semibold text-slate-900">Recordings</h2>
         <div className="flex items-center gap-3">
           {isBatchMode ? (
             <>
@@ -177,6 +196,49 @@ export function TasksPage({
             onChange={(event) => setSearchQuery(event.target.value)}
             className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 transition-all"
           />
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            onClick={() => setStatusFilter(null)}
+            className={cn(
+              'px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+              !statusFilter ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50',
+            )}
+          >
+            All {tasks.length}
+          </button>
+          {pendingCount > 0 && (
+            <button
+              onClick={() => setStatusFilter(statusFilter === 'pending' ? null : 'pending')}
+              className={cn(
+                'px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+                statusFilter === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50',
+              )}
+            >
+              Pending {pendingCount}
+            </button>
+          )}
+          <button
+            onClick={() => setStatusFilter(statusFilter === 'completed' ? null : 'completed')}
+            className={cn(
+              'px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+              statusFilter === 'completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50',
+            )}
+          >
+            Completed {completedCount}
+          </button>
+          {failedCount > 0 && (
+            <button
+              onClick={() => setStatusFilter(statusFilter === 'failed' ? null : 'failed')}
+              className={cn(
+                'px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+                statusFilter === 'failed' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50',
+              )}
+            >
+              Failed {failedCount}
+            </button>
+          )}
         </div>
 
         {!isBatchMode && (
@@ -249,14 +311,23 @@ export function TasksPage({
         isBatchMode && selectedIds.length > 0 ? "pb-28 lg:pb-20" : "",
       )}>
         {filteredTasks.length === 0 ? (
-          <div className="text-center py-8 text-slate-500 text-sm">{searchQuery || tagFilters.length > 0 ? 'No matching tasks found.' : 'No tasks yet.'}</div>
+          <div className="text-center py-8 text-slate-500 text-sm">{searchQuery || tagFilters.length > 0 || statusFilter ? 'No matching recordings found.' : 'No recordings yet.'}</div>
         ) : (
-          filteredTasks.map((task) => {
+          filteredTasks.map((task, index) => {
             const notebook = notebooks.find((item) => item.id === task.notebookId);
+            const prevTask = index > 0 ? filteredTasks[index - 1] : null;
+            const group = getTimeGroup(task.createdAt);
+            const prevGroup = prevTask ? getTimeGroup(prevTask.createdAt) : null;
+            const showGroupHeader = group !== prevGroup;
 
             return (
+              <React.Fragment key={task.id}>
+              {showGroupHeader && (
+                <div className="pt-2 pb-1 first:pt-0">
+                  <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">{group}</span>
+                </div>
+              )}
               <div
-                key={task.id}
                 onClick={() => isBatchMode ? toggleSelection(task.id) : onSelectTask(task.id)}
                 className={cn(
                   'p-3 rounded-xl border cursor-pointer transition-all flex items-start gap-3',
@@ -280,7 +351,7 @@ export function TasksPage({
                   <div className="mt-1">
                     {task.status === 'completed' && <div className="w-2.5 h-2.5 rounded-full bg-emerald-500" />}
                     {task.status === 'processing' && <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />}
-                    {task.status === 'pending' && <div className="w-2.5 h-2.5 rounded-full bg-slate-300" />}
+                    {task.status === 'pending' && <div className="w-2.5 h-2.5 rounded-full bg-indigo-400 animate-pulse" />}
                     {task.status === 'failed' && <div className="w-2.5 h-2.5 rounded-full bg-red-500" />}
                   </div>
                 )}
@@ -288,10 +359,13 @@ export function TasksPage({
                   <p className="text-sm font-medium text-slate-900 truncate">{task.originalName}</p>
                   <div className="flex items-center gap-2 mt-1 flex-wrap">
                     <span className="text-xs text-slate-500">{format(task.createdAt, 'MMM d, HH:mm')}</span>
+                    {task.durationSeconds ? <span className="text-xs text-slate-400">&bull; {Math.round(task.durationSeconds / 60)}m</span> : null}
                     <span className="text-xs text-slate-400 capitalize">&bull; {task.status}</span>
                     {notebook && <span className="text-xs text-indigo-600">&bull; {notebook.name}</span>}
-                    {task.provider && <span className="text-xs text-slate-500">&bull; {task.provider}</span>}
                   </div>
+                  {task.summarySnippet && (
+                    <p className="text-xs text-slate-400 mt-1 line-clamp-1">{task.summarySnippet}</p>
+                  )}
                   {task.tags.length > 0 && (
                     <div className="flex flex-nowrap items-center gap-1 mt-2 overflow-hidden">
                       {task.tags.slice(0, 2).map((tag) => (
@@ -316,6 +390,7 @@ export function TasksPage({
                   </button>
                 )}
               </div>
+              </React.Fragment>
             );
           })
         )}

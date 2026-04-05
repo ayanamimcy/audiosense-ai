@@ -49,14 +49,14 @@ export function TaskEditModal({
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-slate-900">Edit Task</h3>
+          <h3 className="text-lg font-semibold text-slate-900">Edit Recording</h3>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
             <X className="w-5 h-5" />
           </button>
         </div>
         <div className="p-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Task Name</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
             <input
               type="text"
               value={name}

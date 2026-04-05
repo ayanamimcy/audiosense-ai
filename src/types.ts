@@ -56,6 +56,7 @@ export interface Task {
   provider?: string | null;
   sourceType?: string | null;
   durationSeconds?: number | null;
+  summarySnippet?: string | null;
   segments: TranscriptSegment[];
   speakerCount: number;
   metadata?: Record<string, unknown>;

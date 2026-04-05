@@ -76,24 +76,32 @@ export function KnowledgeBase({
         </div>
 
         <div className="space-y-3">
-          <textarea
+          <input
+            type="text"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-            placeholder="Ask across all recordings, e.g. What decisions were made about launch timing?"
-            className="w-full min-h-28 px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && query.trim()) {
+                void runSearch();
+              }
+            }}
+            placeholder="Search across all recordings..."
+            className="w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
           />
           <div className="flex gap-3">
             <button
               onClick={() => void runSearch()}
               disabled={isSearching || !query.trim()}
               className="flex-1 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-slate-700 font-medium hover:bg-slate-50 disabled:opacity-50"
+              title="Find recordings matching your keywords"
             >
-              {isSearching ? 'Searching...' : 'Search'}
+              {isSearching ? 'Searching...' : 'Find recordings'}
             </button>
             <button
               onClick={() => void askKnowledgeBase()}
               disabled={isAnswering || !query.trim()}
               className="flex-1 px-4 py-2.5 rounded-xl bg-indigo-600 text-white font-medium hover:bg-indigo-700 disabled:opacity-50"
+              title="Get an AI-synthesized answer across all recordings"
             >
               {isAnswering ? 'Thinking...' : 'Ask AI'}
             </button>
@@ -107,8 +115,27 @@ export function KnowledgeBase({
           </div>
 
           {searchResults.length === 0 ? (
-            <div className="text-sm text-slate-500">
-              {query.trim() ? 'No results yet. Try searching or asking AI.' : `You currently have ${tasks.length} tasks available for cross-recording search.`}
+            <div className="text-sm text-slate-500 space-y-3">
+              {query.trim() ? (
+                <p>No results yet. Try searching or asking AI.</p>
+              ) : (
+                <>
+                  <p>{tasks.length} recording{tasks.length !== 1 ? 's' : ''} available for search.</p>
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Try asking</p>
+                    {['What key decisions were made recently?', 'Summarize discussions about the project timeline', 'What action items were mentioned?'].map((example) => (
+                      <button
+                        key={example}
+                        type="button"
+                        onClick={() => setQuery(example)}
+                        className="block w-full text-left text-xs text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg transition-colors"
+                      >
+                        {example}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
             </div>
           ) : (
             <div className="space-y-2">

@@ -85,8 +85,8 @@ function TaskPanelLayout({
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center bg-slate-50/50">
             <FileAudio className="w-16 h-16 mb-4 opacity-20 text-indigo-500" />
-            <h3 className="text-lg font-medium text-slate-600">No task selected</h3>
-            <p className="text-sm mt-1">Choose an audio task to review transcript, speakers, summary, and chat.</p>
+            <h3 className="text-lg font-medium text-slate-600">No recording selected</h3>
+            <p className="text-sm mt-1">Choose a recording to review transcript, speakers, summary, and chat.</p>
           </div>
         )}
       </div>

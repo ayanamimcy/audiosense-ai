@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { formatDistanceToNow } from 'date-fns';
 import { ChevronDown, ChevronUp, Edit2, FileAudio, Folder, Plus, Tag, Trash2, X } from 'lucide-react';
 import { apiFetch } from '../api';
 import { cn } from '../lib/utils';
@@ -104,7 +105,7 @@ export function NotebookSidebar({
             )}
           >
             <Folder className="w-4 h-4" />
-            <span className="flex-1 text-sm">All Tasks</span>
+            <span className="flex-1 text-sm">All Recordings</span>
             <span className="text-xs text-slate-400 bg-slate-200/50 px-2 py-0.5 rounded-full">{tasks.length}</span>
           </div>
         </div>
@@ -122,9 +123,14 @@ export function NotebookSidebar({
                     isSelected ? 'bg-indigo-50 text-indigo-700 font-medium' : 'text-slate-600 hover:bg-slate-100',
                   )}
                 >
-                  <Folder className="w-4 h-4" />
-                  <span className="flex-1 text-sm truncate">{notebook.name}</span>
-                  <span className="text-xs text-slate-400 bg-slate-200/50 px-2 py-0.5 rounded-full group-hover:hidden">{notebookTasks.length}</span>
+                  <Folder className="w-4 h-4 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm truncate block">{notebook.name}</span>
+                    {notebookTasks.length > 0 && (
+                      <span className="text-[10px] text-slate-400">{formatDistanceToNow(Math.max(...notebookTasks.map((t) => t.createdAt)), { addSuffix: true })}</span>
+                    )}
+                  </div>
+                  <span className="text-xs text-slate-400 bg-slate-200/50 px-2 py-0.5 rounded-full group-hover:hidden shrink-0">{notebookTasks.length}</span>
                   <button onClick={(e) => void handleDelete(e, notebook.id)} className="hidden group-hover:block p-1 text-slate-400 hover:text-red-500 rounded hover:bg-red-50">
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>

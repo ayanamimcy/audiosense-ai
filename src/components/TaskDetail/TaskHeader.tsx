@@ -195,7 +195,7 @@ export function TaskHeader({
             <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
               <span
                 className={cn(
-                  'rounded-full border px-3 py-1 text-sm font-medium capitalize whitespace-nowrap',
+                  'rounded-full border px-2 py-0.5 text-xs font-medium capitalize whitespace-nowrap',
                   task.status === 'completed'
                     ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
                     : task.status === 'processing'
@@ -207,7 +207,7 @@ export function TaskHeader({
               >
                 {task.status}
               </span>
-              <span className="whitespace-nowrap text-[15px] font-medium text-slate-500">
+              <span className="whitespace-nowrap text-xs text-slate-500">
                 {format(new Date(task.eventDate || task.createdAt), 'MMM d, yyyy')}
               </span>
               {isMobileMetadataExpanded && task.language ? (
@@ -346,7 +346,7 @@ export function TaskHeader({
                     </button>
                   ) : null}
                   <button onClick={() => setIsEditing(true)} className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:text-indigo-600 rounded-lg flex items-center gap-1.5 transition-colors shadow-sm">
-                    <Edit2 className="w-3.5 h-3.5" /> Edit Task
+                    <Edit2 className="w-3.5 h-3.5" /> Edit
                   </button>
                 </div>
               </div>
@@ -420,7 +420,7 @@ export function TaskHeader({
           className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
           aria-expanded={isMetadataVisible}
         >
-          <span className="text-xs font-medium text-slate-600">Task details</span>
+          <span className="text-xs font-medium text-slate-600">Details</span>
           <ChevronDown
             className={cn(
               'w-3.5 h-3.5 text-slate-400 transition-transform',

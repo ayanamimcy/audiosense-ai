@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { LogOut, RefreshCw } from 'lucide-react';
+import { ChevronDown, LogOut, RefreshCw } from 'lucide-react';
 import { apiJson } from '../api';
 import { cn, getLocalSetting, LANGUAGE_OPTIONS } from '../lib/utils';
 import { useAppDataContext } from '../contexts/AppDataContext';
@@ -27,6 +27,7 @@ export function SettingsPage({
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [llmModels, setLlmModels] = useState<string[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
 
@@ -197,8 +198,8 @@ export function SettingsPage({
 
         <div className="rounded-2xl border border-slate-200 p-5 space-y-5">
             <div>
-              <h3 className="text-base font-semibold text-slate-900">Provider Routing</h3>
-              <p className="text-sm text-slate-500 mt-1">Configure default provider, fallback chain, and circuit breaker strategy.</p>
+              <h3 className="text-base font-semibold text-slate-900">Transcription</h3>
+              <p className="text-sm text-slate-500 mt-1">Choose your transcription provider and automation preferences.</p>
             </div>
 
           <label className="block">
@@ -222,38 +223,6 @@ export function SettingsPage({
               ))}
             </select>
           </label>
-
-          <div>
-            <span className="text-sm font-medium text-slate-700">Fallback chain</span>
-            <div className="mt-2 space-y-2">
-              {providerOptions
-                .filter((provider) => provider.id !== draft.defaultProvider)
-                .map((provider) => {
-                  const checked = draft.fallbackProviders.includes(provider.id);
-                  return (
-                    <label key={provider.id} className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50">
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        onChange={(event) => {
-                          updateDraft((current) => ({
-                            ...current,
-                            fallbackProviders: event.target.checked
-                              ? [...current.fallbackProviders, provider.id]
-                              : current.fallbackProviders.filter((item) => item !== provider.id),
-                          }));
-                        }}
-                        className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                      />
-                      <div>
-                        <p className="text-sm font-medium text-slate-800">{provider.label}</p>
-                        <p className="text-xs text-slate-500 mt-1">{provider.description}</p>
-                      </div>
-                    </label>
-                  );
-                })}
-            </div>
-          </div>
 
           <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
             <input
@@ -291,6 +260,49 @@ export function SettingsPage({
             </div>
           </label>
 
+          <button
+            type="button"
+            onClick={() => setIsAdvancedOpen((v) => !v)}
+            className="flex items-center gap-2 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
+          >
+            <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', isAdvancedOpen && 'rotate-180')} />
+            Advanced provider settings
+          </button>
+
+          {isAdvancedOpen && (
+            <>
+              <div>
+                <span className="text-sm font-medium text-slate-700">Fallback chain</span>
+                <div className="mt-2 space-y-2">
+                  {providerOptions
+                    .filter((provider) => provider.id !== draft.defaultProvider)
+                    .map((provider) => {
+                      const checked = draft.fallbackProviders.includes(provider.id);
+                      return (
+                        <label key={provider.id} className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => {
+                              updateDraft((current) => ({
+                                ...current,
+                                fallbackProviders: event.target.checked
+                                  ? [...current.fallbackProviders, provider.id]
+                                  : current.fallbackProviders.filter((item) => item !== provider.id),
+                              }));
+                            }}
+                            className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <div>
+                            <p className="text-sm font-medium text-slate-800">{provider.label}</p>
+                            <p className="text-xs text-slate-500 mt-1">{provider.description}</p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                </div>
+              </div>
+
           <div className="grid md:grid-cols-2 gap-4">
             <label className="block">
               <span className="text-sm font-medium text-slate-700">Circuit breaker threshold</span>
@@ -325,6 +337,8 @@ export function SettingsPage({
               />
             </label>
           </div>
+            </>
+          )}
         </div>
 
         <div className="rounded-2xl border border-slate-200 p-5 space-y-5">
@@ -632,23 +646,14 @@ export function SettingsPage({
         </div>
 
         <div className="rounded-2xl border border-slate-200 p-5">
-          <h3 className="text-base font-semibold text-slate-900">Backend Capabilities</h3>
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
-              <p className="text-xs uppercase tracking-wider text-slate-400">Queue</p>
-              <p className="text-sm font-medium text-slate-800 mt-2">{capabilities?.queue.workerMode || 'separate-process'}</p>
-              <p className="text-xs text-slate-500 mt-1">{capabilities?.queue.recommendedCommand || 'npm run worker'}</p>
-            </div>
-            <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
-              <p className="text-xs uppercase tracking-wider text-slate-400">LLM</p>
-              <p className="text-sm font-medium text-slate-800 mt-2">{capabilities?.llm.configured ? capabilities.llm.model : 'Not configured'}</p>
-              <p className="text-xs text-slate-500 mt-1 break-all">{capabilities?.llm.baseUrl || 'Set LLM API config in settings'}</p>
-            </div>
-            <div className="rounded-xl bg-slate-50 border border-slate-200 p-4">
-              <p className="text-xs uppercase tracking-wider text-slate-400">Embeddings</p>
-              <p className="text-sm font-medium text-slate-800 mt-2">{capabilities?.embeddings.configured ? capabilities.embeddings.model : 'Not configured'}</p>
-              <p className="text-xs text-slate-500 mt-1 break-all">{capabilities?.embeddings.baseUrl || 'Set EMBEDDING_API_BASE_URL and EMBEDDING_API_KEY'}</p>
-            </div>
+          <h3 className="text-base font-semibold text-slate-900">System Status</h3>
+          <div className="mt-3 flex flex-wrap gap-3 text-xs">
+            <span className={cn('px-2.5 py-1 rounded-full border', capabilities?.llm.configured ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200')}>
+              LLM: {capabilities?.llm.configured ? capabilities.llm.model : 'Not configured'}
+            </span>
+            <span className={cn('px-2.5 py-1 rounded-full border', capabilities?.embeddings.configured ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200')}>
+              Embeddings: {capabilities?.embeddings.configured ? capabilities.embeddings.model : 'Off'}
+            </span>
           </div>
           <div className="mt-4 space-y-2">
             {providerOptions.map((provider) => (
