@@ -227,17 +227,20 @@ export function TaskTagSuggestionPanel({
   };
 
   const hasPanelContent = triggerBusy || Boolean(suggestionError) || suggestedTags.length > 0 || selectedCustomTags.length > 0;
+  const useFloatingMobilePanel = mode === 'inline' && compact;
 
   const panel = (
     <div
       className={cn(
-        'rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.12)]',
+        'flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.12)]',
         mode === 'desktop-popover'
-          ? 'absolute left-0 top-full z-30 mt-2 w-[min(26rem,calc(100vw-3rem))]'
-          : 'w-full max-w-none',
+          ? 'absolute left-0 top-full z-30 mt-2 w-[min(26rem,calc(100vw-3rem))] max-h-[min(32rem,calc(100dvh-7rem))]'
+          : useFloatingMobilePanel
+            ? 'fixed inset-x-3 top-3 bottom-[calc(6.5rem+env(safe-area-inset-bottom))] z-50'
+          : 'w-full max-w-none max-h-[min(28rem,calc(100dvh-16rem))]',
       )}
     >
-      <div className="space-y-4 p-4">
+      <div className="space-y-4 overflow-y-auto p-4 custom-scrollbar">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
@@ -248,7 +251,7 @@ export function TaskTagSuggestionPanel({
               Pick the tags you want to add, or mix in your own.
             </p>
           </div>
-          {mode === 'desktop-popover' ? (
+          {mode === 'desktop-popover' || useFloatingMobilePanel ? (
             <button
               type="button"
               onClick={() => setIsOpen(false)}
@@ -504,7 +507,19 @@ export function TaskTagSuggestionPanel({
         </button>
       </div>
 
-      {isOpen ? panel : null}
+      {isOpen && useFloatingMobilePanel ? (
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 z-40 bg-slate-900/20 backdrop-blur-[1px]"
+            aria-label="Close tag suggestions"
+            onClick={() => setIsOpen(false)}
+          />
+          {panel}
+        </>
+      ) : null}
+
+      {isOpen && !useFloatingMobilePanel ? panel : null}
     </div>
   );
 }

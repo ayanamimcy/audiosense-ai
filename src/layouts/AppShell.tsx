@@ -6,7 +6,6 @@ import {
   ChevronsRight,
   FolderKanban,
   HelpCircle,
-  List,
   LogOut,
   Menu,
   Mic,
@@ -22,14 +21,13 @@ import { BottomNavButton } from './nav/BottomNavButton';
 import { DrawerButton } from './nav/DrawerButton';
 import type { AuthUser } from '../types';
 
-export type Tab = 'upload' | 'record' | 'tasks' | 'notebook' | 'knowledge' | 'prompts' | 'settings';
+export type Tab = 'upload' | 'record' | 'notebook' | 'knowledge' | 'prompts' | 'settings';
 
 const TAB_TO_PATH: Record<Tab, string> = {
   notebook: '/notebook',
   knowledge: '/knowledge',
   upload: '/upload',
   record: '/record',
-  tasks: '/tasks',
   prompts: '/prompts',
   settings: '/settings',
 };
@@ -40,7 +38,6 @@ const PATH_TO_TAB: Record<string, Tab> = {
   '/knowledge': 'knowledge',
   '/upload': 'upload',
   '/record': 'record',
-  '/tasks': 'tasks',
   '/prompts': 'prompts',
   '/settings': 'settings',
 };
@@ -48,8 +45,6 @@ const PATH_TO_TAB: Record<string, Tab> = {
 function useActiveTab(): Tab {
   const { pathname } = useLocation();
   if (pathname.startsWith('/notebook')) return 'notebook';
-  // Match /tasks/:id as 'tasks' tab
-  if (pathname.startsWith('/tasks')) return 'tasks';
   return PATH_TO_TAB[pathname] || 'notebook';
 }
 
@@ -71,7 +66,6 @@ export function AppShell({
   const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const isMobileDetailChromeHidden =
-    pathname.startsWith('/tasks/') ||
     pathname.startsWith('/notebook/');
 
   const goTo = (tab: Tab) => {
@@ -142,9 +136,6 @@ export function AppShell({
               </div>
             )}
           </div>
-          <SidebarButton collapsed={isSidebarCollapsed} active={activeTab === 'tasks'} onClick={() => goTo('tasks')} icon={<List className="w-5 h-5" />}>
-            Recordings
-          </SidebarButton>
           <SidebarButton collapsed={isSidebarCollapsed} active={activeTab === 'prompts'} onClick={() => goTo('prompts')} icon={<Sparkles className="w-5 h-5" />}>
             Prompts
           </SidebarButton>
@@ -212,7 +203,7 @@ export function AppShell({
                 {isNewMenuOpen ? <X className="w-6 h-6" /> : <Plus className="w-6 h-6" />}
               </button>
             </div>
-            <BottomNavButton active={activeTab === 'tasks'} onClick={() => goTo('tasks')} icon={<List className="w-5 h-5" />} label="Recordings" />
+            <BottomNavButton active={activeTab === 'prompts'} onClick={() => goTo('prompts')} icon={<Sparkles className="w-5 h-5" />} label="Prompts" />
             <BottomNavButton active={isMobileMenuOpen} onClick={() => setIsMobileMenuOpen(true)} icon={<Menu className="w-5 h-5" />} label="More" />
           </nav>
 
@@ -268,7 +259,6 @@ export function AppShell({
 
               <div className="space-y-2">
                 <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-2">Workspace</h3>
-                <DrawerButton icon={<Sparkles className="w-5 h-5 text-slate-500" />} label="Summary Prompts" onClick={() => goTo('prompts')} />
                 <DrawerButton icon={<Settings className="w-5 h-5 text-slate-500" />} label="Settings & Preferences" onClick={() => goTo('settings')} />
               </div>
 

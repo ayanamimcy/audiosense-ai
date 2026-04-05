@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format, formatDistanceToNow, isToday, isYesterday, isThisWeek } from 'date-fns';
-import { FileAudio } from 'lucide-react';
+import { FileAudio, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import type { Task } from '../../types';
 
@@ -18,10 +18,22 @@ export function InboxList({
   tasks,
   title = 'Inbox',
   onSelectTask,
+  selectedTaskId,
+  isBatchMode = false,
+  selectedIds = [],
+  onToggleSelection,
+  onDeleteTask,
+  emptyStateMessage = 'No recordings yet.',
 }: {
   tasks: Task[];
   title?: string;
   onSelectTask: (taskId: string) => void;
+  selectedTaskId?: string | null;
+  isBatchMode?: boolean;
+  selectedIds?: string[];
+  onToggleSelection?: (taskId: string) => void;
+  onDeleteTask?: (taskId: string) => void;
+  emptyStateMessage?: string;
 }) {
   const [showAll, setShowAll] = useState(false);
   const sorted = [...tasks].sort((a, b) => b.createdAt - a.createdAt);
@@ -30,7 +42,7 @@ export function InboxList({
   if (sorted.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">
-        No recordings yet.
+        {emptyStateMessage}
       </div>
     );
   }
@@ -64,13 +76,29 @@ export function InboxList({
               )}
               <button
                 type="button"
-                onClick={() => onSelectTask(task.id)}
+                onClick={() => isBatchMode ? onToggleSelection?.(task.id) : onSelectTask(task.id)}
                 className={cn(
-                  'w-full text-left flex items-center gap-3 p-2.5 rounded-xl transition-colors hover:bg-slate-50',
+                  'w-full text-left flex items-center gap-3 p-2.5 rounded-xl border transition-colors',
+                  selectedTaskId === task.id && !isBatchMode
+                    ? 'border-indigo-500 bg-indigo-50/50'
+                    : isBatchMode && selectedIds.includes(task.id)
+                      ? 'border-indigo-400 bg-indigo-50/30 ring-1 ring-indigo-400'
+                      : 'border-transparent hover:bg-slate-50',
                   !task.notebookId && 'border-l-2 border-l-indigo-400',
                 )}
               >
-                <FileAudio className="w-4 h-4 text-indigo-400 shrink-0" />
+                {isBatchMode ? (
+                  <div className="mt-0.5 shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(task.id)}
+                      readOnly
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                  </div>
+                ) : (
+                  <FileAudio className="w-4 h-4 text-indigo-400 shrink-0" />
+                )}
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-medium text-slate-800 truncate">{task.originalName}</span>
@@ -94,6 +122,19 @@ export function InboxList({
                     <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-1">{task.summarySnippet}</p>
                   )}
                 </div>
+                {!isBatchMode && onDeleteTask ? (
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDeleteTask(task.id);
+                    }}
+                    className="shrink-0 rounded-md p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                    aria-label="Delete recording"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                ) : null}
               </button>
             </div>
           );

@@ -11,7 +11,6 @@ import { AppDataProvider, useAppDataContext, type AppDataContextValue } from './
 import { AppShell } from './layouts/AppShell';
 import { UploadPage } from './pages/UploadPage';
 import { RecordPage } from './pages/RecordPage';
-import { TasksPage } from './pages/TasksPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { KnowledgeBase } from './KnowledgeBase';
 import NotebookView from './Notebook';
@@ -94,21 +93,6 @@ function TaskPanelLayout({
   );
 }
 
-// --- Route-aware task detail page for /tasks/:id ---
-
-function TasksRouteSync() {
-  const { id } = useParams<{ id: string }>();
-  const { selectTask } = useAppDataContext();
-
-  useEffect(() => {
-    if (id) {
-      void selectTask(id);
-    }
-  }, [id]);
-
-  return null;
-}
-
 // --- Upload success handler ---
 
 function UploadTabContent() {
@@ -122,7 +106,7 @@ function UploadTabContent() {
           onUploadSuccess={async (taskId) => {
             await refreshTasksAndSelection(taskId);
             await fetchTags();
-            if (taskId) navigate(`/tasks/${taskId}`);
+            if (taskId) navigate(`/notebook/${taskId}`);
           }}
         />
       }
@@ -142,32 +126,12 @@ function RecordTabContent() {
           onUploadSuccess={async (taskId) => {
             await refreshTasksAndSelection(taskId);
             await fetchTags();
-            if (taskId) navigate(`/tasks/${taskId}`);
+            if (taskId) navigate(`/notebook/${taskId}`);
           }}
         />
       }
       // Record page: just clear selection, don't navigate away
     />
-  );
-}
-
-function TasksTabContent() {
-  const navigate = useNavigate();
-  const { refreshTasksAndSelection, selectedTaskId } = useAppDataContext();
-
-  return (
-    <>
-      <TasksRouteSync />
-      <TaskPanelLayout
-        onMobileBack={() => navigate('/tasks', { replace: true })}
-        left={
-          <TasksPage
-            onSelectTask={(taskId) => navigate(`/tasks/${taskId}`)}
-            onRefresh={() => refreshTasksAndSelection(selectedTaskId)}
-          />
-        }
-      />
-    </>
   );
 }
 
@@ -191,12 +155,12 @@ function AuthenticatedApp() {
         } />
         <Route path="/notebook/:id?" element={<NotebookView />} />
         <Route path="/knowledge" element={
-          <KnowledgeBase onSelectTask={(taskId) => navigate(`/tasks/${taskId}`)} />
+          <KnowledgeBase onSelectTask={(taskId) => navigate(`/notebook/${taskId}`)} />
         } />
         <Route path="/upload" element={<UploadTabContent />} />
         <Route path="/record" element={<RecordTabContent />} />
-        <Route path="/tasks" element={<TasksTabContent />} />
-        <Route path="/tasks/:id" element={<TasksTabContent />} />
+        <Route path="/tasks" element={<Navigate to="/notebook" replace />} />
+        <Route path="/tasks/:id" element={<TasksRedirect />} />
         <Route path="/prompts" element={
           <div className="h-full pb-6"><SummaryPromptPage /></div>
         } />
@@ -219,6 +183,12 @@ function AuthenticatedApp() {
       </Routes>
     </AppShell>
   );
+}
+
+function TasksRedirect() {
+  const { id } = useParams<{ id?: string }>();
+
+  return <Navigate to={id ? `/notebook/${id}` : '/notebook'} replace />;
 }
 
 // --- Root: handles auth loading, login, then delegates to routes ---

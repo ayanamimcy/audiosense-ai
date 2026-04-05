@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, FileAudio, Loader2, Plus, Search, X } from 'lucide-react';
+import { ArrowLeft, Book, FileAudio, Loader2, Plus, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { cn } from './lib/utils';
-import { apiJson } from './api';
+import { apiFetch, apiJson } from './api';
 import { useAppDataContext } from './contexts/AppDataContext';
 import { TaskEditModal } from './components/TaskEditModal';
 import { TaskDetail } from './components/TaskDetail';
@@ -17,7 +17,7 @@ export default function NotebookView() {
   const {
     tasks, notebooks, tags,
     fetchNotebooks, fetchTasks, fetchTags,
-    selectTask, selectedTask, selectedTaskLoading,
+    selectTask, selectedTask, selectedTaskLoading, selectedTaskId,
     refreshTasksAndSelection,
   } = useAppDataContext();
   const onUpdateTasks = async () => { await fetchTasks(); await fetchTags(); };
@@ -28,6 +28,12 @@ export default function NotebookView() {
   const [mobileNotebookEdit, setMobileNotebookEdit] = useState(false);
   const [mobileNewNotebook, setMobileNewNotebook] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isBatchMode, setIsBatchMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [batchAction, setBatchAction] = useState<'notebook' | 'tags' | null>(null);
+  const [batchNotebookId, setBatchNotebookId] = useState('');
+  const [batchTags, setBatchTags] = useState('');
+  const [isProcessingBatch, setIsProcessingBatch] = useState(false);
 
   // Server-side search state
   const [serverResults, setServerResults] = useState<Task[] | null>(null);
@@ -91,8 +97,8 @@ export default function NotebookView() {
 
   const showingDetail = Boolean(id);
   const activeTask = selectedTask?.id === id ? selectedTask : null;
-
-  const baseTasks = serverResults ?? tasks;
+  const hasActiveSearch = Boolean(searchQuery.trim());
+  const baseTasks = hasActiveSearch ? (serverResults ?? []) : tasks;
 
   const filteredTasks = useMemo(() => {
     let result = baseTasks;
@@ -114,9 +120,104 @@ export default function NotebookView() {
     return result;
   }, [baseTasks, statsFilter, notebookFilter, tagFilter]);
 
+  const toggleSelection = (taskId: string) => {
+    setSelectedIds((current) => (
+      current.includes(taskId)
+        ? current.filter((id) => id !== taskId)
+        : [...current, taskId]
+    ));
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.length === filteredTasks.length && filteredTasks.length > 0) {
+      setSelectedIds([]);
+      return;
+    }
+
+    setSelectedIds(filteredTasks.map((task) => task.id));
+  };
+
+  const exitBatchMode = () => {
+    setIsBatchMode(false);
+    setSelectedIds([]);
+    setBatchAction(null);
+    setBatchNotebookId('');
+    setBatchTags('');
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    if (!confirm('Are you sure you want to delete this recording?')) {
+      return;
+    }
+
+    await apiFetch(`/api/tasks/${taskId}`, { method: 'DELETE' });
+    await onUpdateTasks();
+  };
+
+  const runBatch = async (
+    ids: string[],
+    operation: (id: string) => Promise<unknown>,
+    label: string,
+  ) => {
+    setIsProcessingBatch(true);
+    try {
+      const results = await Promise.allSettled(ids.map(operation));
+      const failedIds = ids.filter((_, index) => results[index].status === 'rejected');
+      const successCount = ids.length - failedIds.length;
+
+      await onUpdateTasks();
+
+      if (failedIds.length === 0) {
+        exitBatchMode();
+      } else {
+        setSelectedIds(failedIds);
+        setBatchAction(null);
+        alert(`${label}: ${successCount} succeeded, ${failedIds.length} failed. Failed items remain selected.`);
+      }
+    } finally {
+      setIsProcessingBatch(false);
+    }
+  };
+
+  const handleBatchDelete = async () => {
+    if (!confirm(`Are you sure you want to delete ${selectedIds.length} recordings?`)) {
+      return;
+    }
+
+    await runBatch(
+      selectedIds,
+      (taskId) => apiFetch(`/api/tasks/${taskId}`, { method: 'DELETE' }),
+      'Delete',
+    );
+  };
+
+  const handleBatchNotebook = async () => {
+    await runBatch(
+      selectedIds,
+      (taskId) => apiFetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notebookId: batchNotebookId || null }),
+      }),
+      'Notebook update',
+    );
+  };
+
+  const handleBatchTags = async () => {
+    await runBatch(
+      selectedIds,
+      (taskId) => apiFetch(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tags: batchTags }),
+      }),
+      'Tags update',
+    );
+  };
+
   return (
     <div className={cn(
-      'flex flex-col h-full',
+      'relative flex flex-col h-full',
       showingDetail ? 'overflow-hidden' : 'overflow-y-auto custom-scrollbar lg:overflow-hidden',
     )}>
       {showingDetail ? (
@@ -158,7 +259,55 @@ export default function NotebookView() {
       ) : (
         <div className="flex gap-6 h-full overflow-hidden">
           {/* Main content */}
-          <div className="flex-1 min-w-0 overflow-y-auto custom-scrollbar space-y-5 pr-1">
+          <div className={cn(
+            'flex-1 min-w-0 overflow-y-auto custom-scrollbar space-y-5 pr-1',
+            isBatchMode && selectedIds.length > 0 ? 'pb-28 lg:pb-24' : '',
+          )}>
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h1 className="text-lg font-semibold text-slate-900">Workspace</h1>
+                <p className="text-xs text-slate-500 mt-0.5">Browse, organize, and batch-manage your recordings.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {isBatchMode ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={toggleSelectAll}
+                      className="rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+                    >
+                      {selectedIds.length === filteredTasks.length && filteredTasks.length > 0 ? 'Deselect all' : 'Select all'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={exitBatchMode}
+                      className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
+                    >
+                      Cancel
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsBatchMode(true)}
+                      className="rounded-lg bg-indigo-50 px-2.5 py-1.5 text-xs font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
+                    >
+                      Select
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void onUpdateTasks()}
+                      className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                      aria-label="Refresh recordings"
+                    >
+                      <RefreshCw className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+
             {/* Search */}
             <div className="relative">
               {isSearching ? (
@@ -309,6 +458,12 @@ export default function NotebookView() {
               tasks={filteredTasks}
               title={notebookFilter ? notebooks.find((n) => n.id === notebookFilter)?.name || 'Notebook' : statsFilter === 'inbox' ? 'Inbox' : statsFilter === 'pending' ? 'Pending' : statsFilter === 'completed' ? 'Completed' : 'All Recordings'}
               onSelectTask={handleSelectTask}
+              selectedTaskId={selectedTaskId}
+              isBatchMode={isBatchMode}
+              selectedIds={selectedIds}
+              onToggleSelection={toggleSelection}
+              onDeleteTask={(taskId) => void handleDeleteTask(taskId)}
+              emptyStateMessage={hasActiveSearch || notebookFilter || tagFilter || statsFilter ? 'No matching recordings found.' : 'No recordings yet.'}
             />
 
           </div>
@@ -328,6 +483,105 @@ export default function NotebookView() {
           />
         </div>
       )}
+
+      {isBatchMode && selectedIds.length > 0 ? (
+        <div className="fixed inset-x-3 bottom-[calc(var(--mobile-bottom-nav-height)+env(safe-area-inset-bottom)+0.75rem)] z-40 rounded-2xl border border-slate-200 bg-white p-3 shadow-[0_16px_40px_rgba(15,23,42,0.14)] lg:absolute lg:inset-x-0 lg:bottom-0 lg:z-10 lg:rounded-none lg:border-x-0 lg:border-b-0 lg:shadow-[0_-10px_20px_rgba(0,0,0,0.05)]">
+          {isProcessingBatch ? (
+            <div className="flex items-center justify-center gap-2 py-2 text-indigo-600">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span className="text-sm font-medium">Processing {selectedIds.length} recordings...</span>
+            </div>
+          ) : batchAction === 'notebook' ? (
+            <div className="flex flex-col gap-2">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-500">Assign to Notebook</span>
+                <button type="button" onClick={() => setBatchAction(null)} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={batchNotebookId}
+                  onChange={(event) => setBatchNotebookId(event.target.value)}
+                  className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  <option value="">None (Remove from notebook)</option>
+                  {notebooks.map((notebook) => (
+                    <option key={notebook.id} value={notebook.id}>
+                      {notebook.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void handleBatchNotebook()}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          ) : batchAction === 'tags' ? (
+            <div className="flex flex-col gap-2">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-500">Set Tags (comma separated)</span>
+                <button type="button" onClick={() => setBatchAction(null)} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={batchTags}
+                  onChange={(event) => setBatchTags(event.target.value)}
+                  placeholder="e.g. meeting, important"
+                  className="flex-1 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleBatchTags()}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between">
+              <span className="rounded-md bg-indigo-50 px-2 py-1 text-sm font-medium text-indigo-600">
+                {selectedIds.length} selected
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBatchAction('notebook')}
+                  className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                  title="Assign Notebook"
+                >
+                  <Book className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBatchAction('tags')}
+                  className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                  title="Set Tags"
+                >
+                  <Tag className="w-4 h-4" />
+                </button>
+                <div className="mx-1 h-4 w-px bg-slate-200" />
+                <button
+                  type="button"
+                  onClick={() => void handleBatchDelete()}
+                  className="rounded-lg p-2 text-red-600 transition-colors hover:bg-red-50"
+                  title="Delete Selected"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : null}
 
       {editingTask && (
         <TaskEditModal
