@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+import gc
 import importlib
 import inspect
 import logging
@@ -15,6 +16,17 @@ from .torchaudio_compat import ensure_torchaudio_compat, patch_loaded_huggingfac
 logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
+
+
+def release_accelerator_memory() -> None:
+    gc.collect()
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        logger.debug("Skipping CUDA cache cleanup", exc_info=True)
 
 
 def resolve_device(device: str) -> str:
@@ -161,6 +173,7 @@ class FasterWhisperBackend(BaseBackend):
 
     def unload(self) -> None:
         self._model = None
+        release_accelerator_memory()
 
     def supports_translation(self) -> bool:
         return True
@@ -278,6 +291,7 @@ class WhisperXBackend(BaseBackend):
         self._align_language = None
         self._transcribe_param_names = None
         self._compat_mode_logged = False
+        release_accelerator_memory()
 
     def supports_translation(self) -> bool:
         return True

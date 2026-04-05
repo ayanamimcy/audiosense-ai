@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 
 from .config import RuntimeConfig
-from .backends import resolve_device
+from .backends import release_accelerator_memory, resolve_device
 from .torchaudio_compat import ensure_torchaudio_compat, patch_loaded_huggingface_aliases
 
 logger = logging.getLogger(__name__)
@@ -163,6 +163,7 @@ class DiarizationEngine:
     def unload(self) -> None:
         self._pipeline = None
         self._loaded_model_name = None
+        release_accelerator_memory()
 
     def diarize(
         self,

@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 
 from .audio_utils import get_audio_duration_seconds, load_audio, normalize_audio_peak
-from .backends import BackendLoadSpec, BaseBackend, create_backend
+from .backends import BackendLoadSpec, BaseBackend, create_backend, release_accelerator_memory
 from .config import RuntimeConfig
 from .diarization import DiarizationEngine
 from .parallel_diarize import transcribe_and_diarize, transcribe_then_diarize
@@ -55,6 +55,7 @@ class ModelManager:
                 if self._diarization_engine is not None:
                     self._diarization_engine.unload()
                     self._diarization_engine = None
+            release_accelerator_memory()
 
     def _resolve_backend_spec(
         self,
@@ -104,6 +105,8 @@ class ModelManager:
                 return
             self._backend.unload()
             self._backend = None
+            self._backend_spec = None
+        release_accelerator_memory()
 
     def _transcribe_audio_with_backend(
         self,
