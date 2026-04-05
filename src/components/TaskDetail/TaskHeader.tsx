@@ -104,6 +104,7 @@ export function TaskHeader({
         <video
           ref={mediaRef as React.RefObject<HTMLVideoElement>}
           controls
+          playsInline
           preload="metadata"
           src={mediaUrl}
           className={cn(
