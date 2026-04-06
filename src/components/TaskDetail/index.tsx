@@ -911,24 +911,50 @@ export function TaskDetail({
     );
   };
 
+  const isDesktopVideo = !isCompactLayout && isVideo;
+
   return (
     <div className="flex h-full min-h-0 overflow-hidden">
-      <div className="flex flex-1 min-w-0 flex-col overflow-hidden">
-        <TaskHeader
-          task={task}
-          mediaRef={mediaRef}
-          onUpdateTask={onUpdateTask}
-          onTimeUpdate={resolveActiveSegmentId}
-          onDeleteTask={() => void handleDeleteTask()}
-          variant={isCompactLayout ? 'mobile-player' : 'default'}
-          mobilePresentation="full"
-          mobileAudioControls="native"
-          hidden={isCompactLayout && isMiniPlayer}
-        />
+      <div className={cn('flex flex-1 min-w-0 overflow-hidden', isDesktopVideo ? 'flex-row' : 'flex-col')}>
+        {/* Left column for desktop video: header + metadata, scrollable */}
+        {isDesktopVideo ? (
+          <>
+            <div className="flex w-[45%] shrink-0 flex-col overflow-y-auto custom-scrollbar border-r border-slate-200">
+              <TaskHeader
+                task={task}
+                mediaRef={mediaRef}
+                onUpdateTask={onUpdateTask}
+                onTimeUpdate={resolveActiveSegmentId}
+                onDeleteTask={() => void handleDeleteTask()}
+                variant="default"
+                mobilePresentation="full"
+                mobileAudioControls="native"
+              />
+            </div>
+            <div className="flex flex-1 min-w-0 flex-col overflow-hidden">
+              {renderPanelTabs()}
+              <div className="flex-1 min-h-0 bg-white overflow-hidden">{renderPanelContent()}</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <TaskHeader
+              task={task}
+              mediaRef={mediaRef}
+              onUpdateTask={onUpdateTask}
+              onTimeUpdate={resolveActiveSegmentId}
+              onDeleteTask={() => void handleDeleteTask()}
+              variant={isCompactLayout ? 'mobile-player' : 'default'}
+              mobilePresentation="full"
+              mobileAudioControls="native"
+              hidden={isCompactLayout && isMiniPlayer}
+            />
 
-        {renderPanelTabs()}
+            {renderPanelTabs()}
 
-        <div className="flex-1 min-h-0 bg-white overflow-hidden">{renderPanelContent()}</div>
+            <div className="flex-1 min-h-0 bg-white overflow-hidden">{renderPanelContent()}</div>
+          </>
+        )}
 
         {renderMobileDetailBar()}
 

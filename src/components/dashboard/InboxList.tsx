@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { format, formatDistanceToNow, isToday, isYesterday, isThisWeek } from 'date-fns';
-import { FileAudio, Trash2 } from 'lucide-react';
+import { ArrowDownUp, FileAudio, Trash2 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import type { Task } from '../../types';
 
@@ -36,7 +36,8 @@ export function InboxList({
   emptyStateMessage?: string;
 }) {
   const [showAll, setShowAll] = useState(false);
-  const sorted = [...tasks].sort((a, b) => b.createdAt - a.createdAt);
+  const [sortAsc, setSortAsc] = useState(false);
+  const sorted = [...tasks].sort((a, b) => sortAsc ? a.createdAt - b.createdAt : b.createdAt - a.createdAt);
   const visible = showAll ? sorted : sorted.slice(0, PAGE_SIZE);
 
   if (sorted.length === 0) {
@@ -50,7 +51,18 @@ export function InboxList({
   return (
     <div>
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+          <button
+            type="button"
+            onClick={() => setSortAsc((v) => !v)}
+            className="flex items-center gap-1 text-[11px] text-slate-400 hover:text-slate-600 transition-colors"
+            title={sortAsc ? 'Oldest first' : 'Newest first'}
+          >
+            <ArrowDownUp className="w-3 h-3" />
+            {sortAsc ? 'Oldest' : 'Newest'}
+          </button>
+        </div>
         {sorted.length > PAGE_SIZE && (
           <button
             type="button"

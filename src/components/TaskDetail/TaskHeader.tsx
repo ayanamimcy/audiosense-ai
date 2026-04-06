@@ -115,7 +115,7 @@ export function TaskHeader({
               ? isMini
                 ? 'aspect-video object-cover'
                 : 'h-full object-contain'
-              : 'sm:w-[26rem] shrink-0 aspect-video rounded-2xl border border-slate-200 shadow-sm',
+              : 'w-full aspect-video object-contain',
           )}
           onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
           onSeeked={(event) => onTimeUpdate(event.currentTarget.currentTime)}
@@ -248,9 +248,20 @@ export function TaskHeader({
   }
 
   return (
-    <div className="p-6 border-b border-slate-200 bg-slate-50/60 flex flex-col gap-4 shrink-0">
+    <div className="border-b border-slate-200 bg-slate-50/60 flex flex-col shrink-0">
+      {isVideo && (
+        <div className="w-full bg-slate-950">
+          {renderMedia()}
+        </div>
+      )}
+      <div className="p-4 lg:p-5 flex flex-col gap-3">
       <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex-1 min-w-[280px]">
+        {!isVideo && (
+          <div className="shrink-0">
+            {renderMedia()}
+          </div>
+        )}
+        <div className="flex-1 min-w-[200px]">
           {isEditing ? (
             <div className="space-y-3 bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
               <div>
@@ -386,11 +397,10 @@ export function TaskHeader({
             </div>
           )}
         </div>
-
-        {renderMedia()}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white">
+      </div>
+      <div className="rounded-xl border border-slate-200 bg-white mx-6 mb-4">
         <button
           type="button"
           onClick={() => setIsMetadataVisible((current) => !current)}
