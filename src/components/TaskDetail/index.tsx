@@ -320,6 +320,11 @@ export function TaskDetail({
       return;
     }
 
+    if (activePanel !== 'summary') {
+      setIsMiniPlayer(false);
+      return;
+    }
+
     const frame = window.requestAnimationFrame(() => {
       const scrollTop = contentScrollRef.current?.scrollTop ?? 0;
       setIsMiniPlayer(scrollTop > 72);
@@ -588,7 +593,7 @@ export function TaskDetail({
   const handlePanelScroll = (event: React.UIEvent<HTMLDivElement>) => {
     const scrollTop = event.currentTarget.scrollTop;
     if (isCompactLayout) {
-      setIsMiniPlayer(scrollTop > 72);
+      setIsMiniPlayer(activePanel === 'summary' && scrollTop > 72);
       setShowScrollTop(scrollTop > 300);
     }
   };
