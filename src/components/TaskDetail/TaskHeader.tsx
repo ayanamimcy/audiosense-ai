@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { format } from 'date-fns';
-import { Book, Check, ChevronDown, Edit2, Maximize2, Sparkles, Tag, Trash2, Users, Waves } from 'lucide-react';
+import { Book, Check, ChevronDown, Edit2, Sparkles, Tag, Trash2, Users, Waves } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { apiFetch } from '../../api';
 import { useAppDataContext } from '../../contexts/AppDataContext';
@@ -67,35 +67,6 @@ export function TaskHeader({
     task.language || task.provider || task.durationSeconds || notebook || task.tags.length > 0,
   );
 
-  const handleEnterFullscreen = async () => {
-    if (!isVideo) {
-      return;
-    }
-
-    const video = mediaRef.current as HTMLVideoElement | null;
-    if (!video) {
-      return;
-    }
-
-    const webkitVideo = video as HTMLVideoElement & {
-      webkitEnterFullscreen?: () => void;
-      webkitSupportsFullscreen?: boolean;
-    };
-
-    try {
-      if (typeof webkitVideo.webkitEnterFullscreen === 'function') {
-        webkitVideo.webkitEnterFullscreen();
-        return;
-      }
-
-      if (typeof video.requestFullscreen === 'function') {
-        await video.requestFullscreen();
-      }
-    } catch (error) {
-      console.error('Failed to enter fullscreen video playback:', error);
-    }
-  };
-
   const handleSave = async () => {
     const tagsArray = editTags
       .split(',')
@@ -132,39 +103,29 @@ export function TaskHeader({
   const renderMedia = () => {
     if (isVideo) {
       return (
-        <div className="relative h-full w-full">
-          <video
-            ref={mediaRef as React.RefObject<HTMLVideoElement>}
-            controls
-            playsInline
-            preload="metadata"
-            src={mediaUrl}
-            className={cn(
-              'w-full bg-slate-950',
-              variant === 'mobile-player'
-                ? isMini
-                  ? 'aspect-video object-cover'
-                  : 'h-full object-contain'
-                : 'w-full aspect-video object-contain',
-            )}
-            onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
-            onSeeked={(event) => onTimeUpdate(event.currentTarget.currentTime)}
-            onLoadedMetadata={(event) => onTimeUpdate(event.currentTarget.currentTime)}
-            onEnded={() => onTimeUpdate(-1)}
-          >
-            {subtitleUrl && (
-              <track kind="subtitles" src={subtitleUrl} srcLang={trackLanguage} label="Transcript" default />
-            )}
-          </video>
-          <button
-            type="button"
-            onClick={() => void handleEnterFullscreen()}
-            className="absolute right-3 top-3 inline-flex h-9 w-9 items-center justify-center rounded-full bg-slate-900/70 text-white shadow-lg backdrop-blur-sm transition-colors hover:bg-slate-900/85"
-            aria-label="Enter fullscreen video playback"
-          >
-            <Maximize2 className="h-4 w-4" />
-          </button>
-        </div>
+        <video
+          ref={mediaRef as React.RefObject<HTMLVideoElement>}
+          controls
+          playsInline
+          preload="metadata"
+          src={mediaUrl}
+          className={cn(
+            'w-full bg-slate-950',
+            variant === 'mobile-player'
+              ? isMini
+                ? 'aspect-video object-cover'
+                : 'h-full object-contain'
+              : 'w-full aspect-video object-contain',
+          )}
+          onTimeUpdate={(event) => onTimeUpdate(event.currentTarget.currentTime)}
+          onSeeked={(event) => onTimeUpdate(event.currentTarget.currentTime)}
+          onLoadedMetadata={(event) => onTimeUpdate(event.currentTarget.currentTime)}
+          onEnded={() => onTimeUpdate(-1)}
+        >
+          {subtitleUrl && (
+            <track kind="subtitles" src={subtitleUrl} srcLang={trackLanguage} label="Transcript" default />
+          )}
+        </video>
       );
     }
 
