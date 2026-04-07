@@ -17,7 +17,7 @@ import {
   Waves,
   X,
 } from 'lucide-react';
-import { cn, formatTime } from '../../lib/utils';
+import { cn, formatTime, LANGUAGE_OPTIONS } from '../../lib/utils';
 import { consumeSseStream } from '../../hooks/useSseStream';
 import { apiFetch } from '../../api';
 import { isVideoTask } from '../../lib/media';
@@ -96,6 +96,8 @@ export function TaskDetail({
   const [isDesktop, setIsDesktop] = useState(getInitialIsDesktop);
   const [isMiniPlayer, setIsMiniPlayer] = useState(false);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
+  const [isReprocessOpen, setIsReprocessOpen] = useState(false);
+  const [reprocessLanguage, setReprocessLanguage] = useState(task.language || 'auto');
   const [isChatOverlayOpen, setIsChatOverlayOpen] = useState(false);
   const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
   const [isMediaPlaying, setIsMediaPlaying] = useState(false);
@@ -632,10 +634,7 @@ export function TaskDetail({
       ) : null}
       {(task.status === 'completed' || task.status === 'failed') && (
         <button
-          onClick={async () => {
-            await apiFetch(`/api/tasks/${task.id}/reprocess`, { method: 'POST' });
-            await onUpdateTask();
-          }}
+          onClick={() => setIsReprocessOpen(true)}
           className={cn(
             'px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 bg-slate-100 rounded-lg flex items-center gap-1 shrink-0',
             isCompactLayout ? '' : 'ml-auto',
@@ -870,19 +869,34 @@ export function TaskDetail({
                 </button>
 
                 {(task.status === 'completed' || task.status === 'failed') ? (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await apiFetch(`/api/tasks/${task.id}/reprocess`, { method: 'POST' });
-                      await onUpdateTask();
-                      setIsActionSheetOpen(false);
-                    }}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left"
-                  >
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left space-y-2">
                     <RefreshCw className="w-4 h-4 text-amber-600" />
-                    <p className="mt-2 text-sm font-semibold text-slate-900">Reprocess</p>
-                    <p className="mt-1 text-xs text-slate-500">Run transcription again.</p>
-                  </button>
+                    <p className="text-sm font-semibold text-slate-900">Reprocess</p>
+                    <select
+                      value={reprocessLanguage}
+                      onChange={(e) => setReprocessLanguage(e.target.value)}
+                      className="w-full px-2 py-1.5 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none"
+                    >
+                      {LANGUAGE_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>{opt.label}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await apiFetch(`/api/tasks/${task.id}/reprocess`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ language: reprocessLanguage }),
+                        });
+                        await onUpdateTask();
+                        setIsActionSheetOpen(false);
+                      }}
+                      className="w-full px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg"
+                    >
+                      Start
+                    </button>
+                  </div>
                 ) : (
                   <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-3 text-left">
                     <Waves className="w-4 h-4 text-slate-400" />
@@ -1057,6 +1071,53 @@ export function TaskDetail({
               compact
               overlay
             />
+          </div>
+        </div>
+      )}
+
+      {isReprocessOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-sm" onClick={() => setIsReprocessOpen(false)}>
+          <div className="w-72 rounded-2xl border border-slate-200 bg-white p-5 shadow-xl space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div>
+              <h3 className="text-sm font-semibold text-slate-900">Reprocess Recording</h3>
+              <p className="text-xs text-slate-500 mt-1">Choose a language and re-run transcription.</p>
+            </div>
+            <label className="block">
+              <span className="text-xs font-medium text-slate-600">Language</span>
+              <select
+                value={reprocessLanguage}
+                onChange={(e) => setReprocessLanguage(e.target.value)}
+                className="w-full mt-1 px-3 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                {LANGUAGE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </label>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setIsReprocessOpen(false)}
+                className="flex-1 px-3 py-2 text-xs font-medium text-slate-600 bg-slate-100 rounded-xl hover:bg-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsReprocessOpen(false);
+                  await apiFetch(`/api/tasks/${task.id}/reprocess`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ language: reprocessLanguage }),
+                  });
+                  await onUpdateTask();
+                }}
+                className="flex-1 px-3 py-2 text-xs font-medium text-white bg-indigo-600 rounded-xl hover:bg-indigo-700 transition-colors"
+              >
+                Reprocess
+              </button>
+            </div>
           </div>
         </div>
       )}

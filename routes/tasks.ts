@@ -40,7 +40,10 @@ router.post('/upload', upload.single('audio'), asyncRoute(async (req, res) => {
 router.post('/tasks/:id/reprocess', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   try {
-    await reprocessTaskForUser(user.id, req.params.id, req.body.provider);
+    await reprocessTaskForUser(user.id, req.params.id, {
+      provider: req.body.provider,
+      language: req.body.language,
+    });
     return res.json({ success: true });
   } catch (error) {
     if (error instanceof UserTaskNotFoundError) {

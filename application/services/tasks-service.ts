@@ -49,7 +49,7 @@ export async function createUploadTaskForUser(input: UploadTaskInput) {
 export async function reprocessTaskForUser(
   userId: string,
   taskId: string,
-  providerOverride?: string | null,
+  options?: { provider?: string | null; language?: string | null },
 ) {
   const task = await findTaskForUser(userId, taskId);
   if (!task) {
@@ -57,15 +57,19 @@ export async function reprocessTaskForUser(
   }
 
   const provider = String(
-    providerOverride || task.provider || process.env.TRANSCRIPTION_PROVIDER || 'local-python',
+    options?.provider || task.provider || process.env.TRANSCRIPTION_PROVIDER || 'local-python',
   );
-  await updateTaskRowById(task.id, {
+  const updates: Record<string, unknown> = {
     status: 'pending',
     summary: null,
     result: null,
     metadata: resetTaskDerivedState(task),
     updatedAt: Date.now(),
-  });
+  };
+  if (options?.language !== undefined) {
+    updates.language = options.language || 'auto';
+  }
+  await updateTaskRowById(task.id, updates);
   await enqueueTaskJob({ taskId: task.id, userId, provider });
 }
 
