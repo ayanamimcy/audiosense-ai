@@ -51,6 +51,28 @@ function useActiveTab(): Tab {
   return PATH_TO_TAB[pathname] || 'notebook';
 }
 
+function isScrollableElement(node: HTMLElement) {
+  const style = window.getComputedStyle(node);
+  const overflowY = style.overflowY;
+  return (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') && node.scrollHeight > node.clientHeight;
+}
+
+function isTouchAtTopOfScrollableChain(target: EventTarget | null, boundary: HTMLElement | null) {
+  if (!(target instanceof HTMLElement) || !boundary) {
+    return true;
+  }
+
+  let current: HTMLElement | null = target;
+  while (current && current !== boundary) {
+    if (isScrollableElement(current) && current.scrollTop > 0) {
+      return false;
+    }
+    current = current.parentElement;
+  }
+
+  return boundary.scrollTop <= 0;
+}
+
 export function AppShell({
   currentUser,
   onLogout,
@@ -81,7 +103,7 @@ export function AppShell({
 
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     const el = mainScrollRef.current;
-    if (!el || el.scrollTop > 0 || isRefreshing) return;
+    if (!el || isRefreshing || !isTouchAtTopOfScrollableChain(e.target, el)) return;
     pullStartY.current = e.touches[0].clientY;
     isPulling.current = true;
   }, [mainScrollRef, isRefreshing]);

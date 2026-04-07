@@ -224,7 +224,10 @@ export default function NotebookView() {
     )}>
       {showingDetail ? (
         <div className="flex-1 min-h-0 flex flex-col bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-          <div className="flex items-center gap-3 px-4 sm:px-6 py-3 border-b border-slate-200 bg-white shrink-0">
+          <div
+            className="flex items-center gap-3 px-4 sm:px-6 pb-3 pt-3 border-b border-slate-200 bg-white shrink-0"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
+          >
             <button
               onClick={handleBack}
               className="flex items-center gap-1.5 text-slate-600 hover:text-slate-900 transition-colors"
