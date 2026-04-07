@@ -267,8 +267,7 @@ export default function NotebookView() {
           )}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h1 className="text-lg font-semibold text-slate-900">Workspace</h1>
-                <p className="text-xs text-slate-500 mt-0.5">Browse, organize, and batch-manage your recordings.</p>
+                <h1 className="text-base font-semibold text-slate-900">Workspace</h1>
               </div>
               <div className="flex items-center gap-2">
                 {isBatchMode ? (

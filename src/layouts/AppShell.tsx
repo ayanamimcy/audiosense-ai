@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowUp,
@@ -7,6 +7,7 @@ import {
   ChevronsRight,
   FolderKanban,
   HelpCircle,
+  Loader2,
   LogOut,
   Menu,
   Mic,
@@ -20,6 +21,7 @@ import { cn } from '../lib/utils';
 import { SidebarButton } from './nav/SidebarButton';
 import { BottomNavButton } from './nav/BottomNavButton';
 import { DrawerButton } from './nav/DrawerButton';
+import { useAppDataContext } from '../contexts/AppDataContext';
 import type { AuthUser } from '../types';
 
 export type Tab = 'upload' | 'record' | 'notebook' | 'knowledge' | 'prompts' | 'settings';
@@ -67,8 +69,49 @@ export function AppShell({
   const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const pullStartY = useRef(0);
+  const isPulling = useRef(false);
+  const { refreshAll } = useAppDataContext();
   const isMobileDetailChromeHidden =
     pathname.startsWith('/notebook/');
+
+  const PULL_THRESHOLD = 60;
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    const el = mainScrollRef.current;
+    if (!el || el.scrollTop > 0 || isRefreshing) return;
+    pullStartY.current = e.touches[0].clientY;
+    isPulling.current = true;
+  }, [mainScrollRef, isRefreshing]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    if (!isPulling.current) return;
+    const dy = e.touches[0].clientY - pullStartY.current;
+    if (dy > 0) {
+      setPullDistance(Math.min(dy * 0.4, 80));
+    } else {
+      isPulling.current = false;
+      setPullDistance(0);
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(async () => {
+    if (!isPulling.current) return;
+    isPulling.current = false;
+    if (pullDistance >= PULL_THRESHOLD) {
+      setIsRefreshing(true);
+      setPullDistance(0);
+      try {
+        await refreshAll();
+      } finally {
+        setIsRefreshing(false);
+      }
+    } else {
+      setPullDistance(0);
+    }
+  }, [pullDistance, refreshAll]);
 
   const handleMainScroll = useCallback(() => {
     const el = mainScrollRef.current;
@@ -91,12 +134,12 @@ export function AppShell({
   return (
     <div className="h-[100dvh] bg-slate-50 text-slate-900 flex flex-col lg:flex-row overflow-hidden relative">
       {!isMobileDetailChromeHidden ? (
-        <header className="lg:hidden bg-white border-b border-slate-200 p-4 flex items-center justify-between shrink-0 z-20 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="bg-indigo-600 p-2 rounded-lg shadow-sm">
-              <Mic className="w-5 h-5 text-white" />
+        <header className="lg:hidden bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between shrink-0 z-20 shadow-sm">
+          <div className="flex items-center gap-2">
+            <div className="bg-indigo-600 p-1.5 rounded-lg shadow-sm">
+              <Mic className="w-4 h-4 text-white" />
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-800">AudioSense AI</h1>
+            <h1 className="text-lg font-bold tracking-tight text-slate-800">AudioSense AI</h1>
           </div>
           <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm">
             {currentUser.name.charAt(0).toUpperCase()}
@@ -194,9 +237,17 @@ export function AppShell({
       <main className="flex-1 overflow-hidden relative bg-slate-50">
         <div
           ref={mainScrollRef}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={() => void handleTouchEnd()}
           className="absolute inset-x-0 top-0 bottom-0 overflow-y-auto custom-scrollbar mobile-main-scroll-region"
         >
-          <div className="w-full px-2 py-3 sm:px-4 sm:py-4 lg:px-6 lg:py-6 h-full flex flex-col">
+          {(pullDistance > 0 || isRefreshing) && (
+            <div className="flex items-center justify-center py-2 text-indigo-500 lg:hidden" style={pullDistance > 0 ? { height: pullDistance } : undefined}>
+              <Loader2 className={cn('w-5 h-5', isRefreshing && 'animate-spin')} style={!isRefreshing ? { opacity: Math.min(pullDistance / 60, 1) } : undefined} />
+            </div>
+          )}
+          <div className="w-full px-2 py-2 sm:px-4 sm:py-3 lg:px-6 lg:py-6 h-full flex flex-col">
             {children}
           </div>
         </div>
