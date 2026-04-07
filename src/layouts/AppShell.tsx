@@ -134,7 +134,10 @@ export function AppShell({
   return (
     <div className="h-[100dvh] bg-slate-50 text-slate-900 flex flex-col lg:flex-row overflow-hidden relative">
       {!isMobileDetailChromeHidden ? (
-        <header className="lg:hidden bg-white border-b border-slate-200 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)] flex items-center justify-between shrink-0 z-20 shadow-sm">
+        <header
+          className="lg:hidden bg-white border-b border-slate-200 px-4 pb-2 pt-3 flex items-center justify-between shrink-0 z-20 shadow-sm"
+          style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
+        >
           <div className="flex items-center gap-2">
             <div className="bg-indigo-600 p-1.5 rounded-lg shadow-sm">
               <Mic className="w-4 h-4 text-white" />
