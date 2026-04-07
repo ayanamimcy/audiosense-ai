@@ -148,6 +148,8 @@ export interface LlmSettings {
 }
 
 export interface UserSettings {
+  parseLanguage: string;
+  enableDiarization: boolean;
   defaultProvider: string;
   fallbackProviders: string[];
   autoGenerateSummary: boolean;

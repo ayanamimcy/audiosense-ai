@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { BrowserRouter, Navigate, Routes, Route, useNavigate, useParams } from 'react-router-dom';
+import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, FileAudio, Loader2 } from 'lucide-react';
 import { cn } from './lib/utils';
 import { storeUser } from './api';
@@ -194,6 +194,7 @@ function TasksRedirect() {
 // --- Root: handles auth loading, login, then delegates to routes ---
 
 function AppRoot() {
+  const { pathname } = useLocation();
   const auth = useAuth();
   const { authLoading, currentUser, publicConfig, setCurrentUser, handleLogout: authLogout } = auth;
   const appData = useAppData(currentUser);
@@ -204,7 +205,20 @@ function AppRoot() {
     fetchCapabilities, fetchSettings, fetchProviderHealth,
     refreshTasksAndSelection, refreshAll, clearAll,
   } = appData;
-  useTaskPolling(currentUser, tasks, selectedTaskId, selectedTask, fetchTasks, appData.fetchTaskDetail);
+  const isNotebookDetailRoute = pathname.startsWith('/notebook/');
+  const isNotebookListRoute = pathname === '/notebook';
+  useTaskPolling(
+    currentUser,
+    tasks,
+    selectedTaskId,
+    selectedTask,
+    {
+      pollList: isNotebookListRoute,
+      pollDetail: isNotebookDetailRoute,
+    },
+    fetchTasks,
+    appData.fetchTaskDetail,
+  );
 
   const handleLogout = async () => {
     await authLogout();

@@ -1,6 +1,6 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Upload } from 'lucide-react';
-import { cn, getLocalSetting, LANGUAGE_OPTIONS } from '../lib/utils';
+import { cn, LANGUAGE_OPTIONS } from '../lib/utils';
 import { isLargeFile, chunkedUpload, directUploadWithProgress, type UploadProgress } from '../lib/chunked-upload';
 import { useAppDataContext } from '../contexts/AppDataContext';
 
@@ -31,13 +31,17 @@ export function UploadPage({
   const [selectedNotebookId, setSelectedNotebookId] = useState('');
   const [tags, setTags] = useState('');
   const [provider, setProvider] = useState('');
-  const [language, setLanguage] = useState(() => getLocalSetting('parseLanguage', 'auto'));
+  const [language, setLanguage] = useState(userSettings?.parseLanguage || 'auto');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setLanguage(userSettings?.parseLanguage || 'auto');
+  }, [userSettings?.parseLanguage]);
 
   const buildMetadata = () => {
     const meta: Record<string, string> = {
       language,
-      diarization: getLocalSetting('enableDiarization', 'true'),
+      diarization: String(userSettings?.enableDiarization !== false),
       sourceType: 'upload',
     };
     if (selectedNotebookId) meta.notebookId = selectedNotebookId;

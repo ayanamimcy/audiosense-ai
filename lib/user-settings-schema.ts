@@ -36,6 +36,8 @@ export interface LlmSettings {
 }
 
 export interface UserSettings {
+  parseLanguage: string;
+  enableDiarization: boolean;
   defaultProvider: string;
   fallbackProviders: string[];
   autoGenerateSummary: boolean;
@@ -89,6 +91,8 @@ export function getDefaultSettings(): UserSettings {
   );
 
   return {
+    parseLanguage: 'auto',
+    enableDiarization: true,
     defaultProvider: (process.env.TRANSCRIPTION_PROVIDER || 'local-python').toLowerCase(),
     fallbackProviders: [],
     autoGenerateSummary: process.env.AUTO_GENERATE_SUMMARY === 'true',
@@ -189,6 +193,8 @@ export function sanitizeUserSettings(
     : base.fallbackProviders;
 
   return {
+    parseLanguage: readString(merged.parseLanguage, base.parseLanguage),
+    enableDiarization: readBool(merged.enableDiarization, base.enableDiarization),
     defaultProvider,
     fallbackProviders,
     autoGenerateSummary: readBool(merged.autoGenerateSummary, base.autoGenerateSummary),

@@ -34,7 +34,10 @@ export async function createUploadTask(input: UploadTaskInput) {
   const now = Date.now();
   const taskId = uuidv4();
   const userSettings = await getUserSettings(userId);
-  const diarizationEnabled = body.diarization !== 'false';
+  const diarizationEnabled =
+    body.diarization !== undefined
+      ? body.diarization !== 'false'
+      : userSettings.enableDiarization !== false;
   const wordTimestampsEnabled = body.wordTimestamps === 'true';
   const translationEnabled = body.translationEnabled === 'true';
   const translationTargetLanguage = body.translationTargetLanguage
@@ -64,7 +67,7 @@ export async function createUploadTask(input: UploadTaskInput) {
     createdAt: now,
     notebookId: body.notebookId || null,
     tags: JSON.stringify(normalizeTags(body.tags)),
-    language: body.language || 'auto',
+    language: body.language || userSettings.parseLanguage || 'auto',
     provider,
     sourceType: body.sourceType || 'upload',
     eventDate: body.eventDate ? Number(body.eventDate) : now,

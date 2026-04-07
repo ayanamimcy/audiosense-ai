@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, LogOut, RefreshCw } from 'lucide-react';
 import { apiJson } from '../api';
-import { cn, getLocalSetting, LANGUAGE_OPTIONS } from '../lib/utils';
+import { cn, LANGUAGE_OPTIONS } from '../lib/utils';
 import { useAppDataContext } from '../contexts/AppDataContext';
 import { useAuthContext } from '../contexts/AuthContext';
 import { ApiTokensSection } from '../components/ApiTokensSection';
@@ -18,8 +18,6 @@ export function SettingsPage({
 }) {
   const { capabilities, userSettings, providerHealth } = useAppDataContext();
   const { currentUser } = useAuthContext();
-  const [language, setLanguage] = useState('auto');
-  const [enableDiarization, setEnableDiarization] = useState(true);
   const [draft, setDraft] = useState<UserSettings | null>(userSettings);
   const [isSaving, setIsSaving] = useState(false);
   const [profileName, setProfileName] = useState(currentUser.name);
@@ -46,11 +44,6 @@ export function SettingsPage({
   }, []);
 
   useEffect(() => {
-    setLanguage(getLocalSetting('parseLanguage', 'auto'));
-    setEnableDiarization(getLocalSetting('enableDiarization', 'true') === 'true');
-  }, []);
-
-  useEffect(() => {
     if (!userSettings) {
       return;
     }
@@ -73,9 +66,6 @@ export function SettingsPage({
     if (!draft) {
       return;
     }
-
-    localStorage.setItem('parseLanguage', language);
-    localStorage.setItem('enableDiarization', String(enableDiarization));
 
     setIsSaving(true);
     try {
@@ -172,8 +162,13 @@ export function SettingsPage({
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-2">Parsing Language</label>
           <select
-            value={language}
-            onChange={(event) => setLanguage(event.target.value)}
+            value={draft.parseLanguage}
+            onChange={(event) =>
+              updateDraft((current) => ({
+                ...current,
+                parseLanguage: event.target.value,
+              }))
+            }
             className="w-full max-w-md px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700"
           >
             {LANGUAGE_OPTIONS.map((option) => (
@@ -187,8 +182,13 @@ export function SettingsPage({
         <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
           <input
             type="checkbox"
-            checked={enableDiarization}
-            onChange={(event) => setEnableDiarization(event.target.checked)}
+            checked={draft.enableDiarization}
+            onChange={(event) =>
+              updateDraft((current) => ({
+                ...current,
+                enableDiarization: event.target.checked,
+              }))
+            }
             className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
           />
           <div>

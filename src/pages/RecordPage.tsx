@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Mic, Square } from 'lucide-react';
 import { apiFetch } from '../api';
-import { formatTime, getLocalSetting, LANGUAGE_OPTIONS } from '../lib/utils';
+import { formatTime, LANGUAGE_OPTIONS } from '../lib/utils';
 import { useAppDataContext } from '../contexts/AppDataContext';
 
 export function RecordPage({
@@ -16,10 +16,14 @@ export function RecordPage({
   const [selectedNotebookId, setSelectedNotebookId] = useState('');
   const [tags, setTags] = useState('');
   const [provider, setProvider] = useState('');
-  const [language, setLanguage] = useState(() => getLocalSetting('parseLanguage', 'auto'));
+  const [language, setLanguage] = useState(userSettings?.parseLanguage || 'auto');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    setLanguage(userSettings?.parseLanguage || 'auto');
+  }, [userSettings?.parseLanguage]);
 
   const clearRecordingTimer = () => {
     if (timerRef.current !== null) {
@@ -32,7 +36,7 @@ export function RecordPage({
     const formData = new FormData();
     formData.append('audio', file);
     formData.append('language', language);
-    formData.append('diarization', getLocalSetting('enableDiarization', 'true'));
+    formData.append('diarization', String(userSettings?.enableDiarization !== false));
     formData.append('sourceType', 'record');
     if (selectedNotebookId) {
       formData.append('notebookId', selectedNotebookId);
