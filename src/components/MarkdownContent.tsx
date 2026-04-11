@@ -129,7 +129,9 @@ export function MarkdownContent({
   proseClassName: string;
   tableVariant?: 'default' | 'inverse' | 'error';
 }) {
-  const blocks = parseMarkdownBlocks(content);
+  // Normalize HTML <br> tags to markdown line breaks
+  const normalized = content.replace(/<br\s*\/?>/gi, '  \n');
+  const blocks = parseMarkdownBlocks(normalized);
 
   const tableClasses =
     tableVariant === 'inverse'

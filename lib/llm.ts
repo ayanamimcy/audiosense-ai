@@ -16,12 +16,19 @@ interface LlmTaskContext {
   speakers?: SpeakerSummary[];
 }
 
+interface KnowledgeSourceChunk {
+  content: string;
+  startTime?: number | null;
+  endTime?: number | null;
+}
+
 interface KnowledgeSource {
   title: string;
   transcript: string;
   language?: string | null;
   notebook?: string | null;
   tags?: string[];
+  chunks?: KnowledgeSourceChunk[];
 }
 
 interface TagSuggestionContext {
@@ -279,6 +286,44 @@ function buildContextBlock(context: LlmTaskContext) {
   ].join('\n');
 }
 
+function formatTimestamp(seconds: number | null | undefined) {
+  if (seconds == null || !Number.isFinite(seconds)) return null;
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function buildSourceBlockWithTimestamps(sources: KnowledgeSource[]) {
+  return sources
+    .map((source, index) => {
+      const header = [
+        `Source ${index + 1}: ${source.title}`,
+        `Language: ${source.language || 'unknown'}`,
+        `Notebook: ${source.notebook || 'unassigned'}`,
+        `Tags: ${(source.tags || []).join(', ') || 'none'}`,
+      ].join('\n');
+
+      if (source.chunks && source.chunks.length > 0) {
+        const chunkTexts = source.chunks.map((chunk) => {
+          const start = formatTimestamp(chunk.startTime);
+          const end = formatTimestamp(chunk.endTime);
+          const timeRange = start && end ? ` [${start}-${end}]` : start ? ` [${start}]` : '';
+          return `${chunk.content}${timeRange}`;
+        });
+        return `${header}\n${chunkTexts.join('\n\n')}`;
+      }
+
+      return `${header}\n${source.transcript || '(empty transcript)'}`;
+    })
+    .join('\n\n---\n\n');
+}
+
+const CITATION_SYSTEM_PROMPT =
+  'You answer questions across multiple audio transcripts. Synthesize only from the provided sources. ' +
+  'When referencing specific information, cite inline using the format [Source N @ MM:SS] where N is the source number and MM:SS is the timestamp. ' +
+  'If no timestamp is available, use [Source N]. Cite uncertainty clearly. ' +
+  'End with a short "Sources" section listing the titles you relied on.';
+
 function clipText(value: string | null | undefined, maxLength: number) {
   const trimmed = String(value || '').trim();
   if (!trimmed) {
@@ -468,24 +513,13 @@ export async function answerAcrossKnowledgeBase(
     throw new Error('No source transcripts available for knowledge-base answering.');
   }
 
-  const sourceBlock = sources
-    .map((source, index) =>
-      [
-        `Source ${index + 1}: ${source.title}`,
-        `Language: ${source.language || 'unknown'}`,
-        `Notebook: ${source.notebook || 'unassigned'}`,
-        `Tags: ${(source.tags || []).join(', ') || 'none'}`,
-        source.transcript || '(empty transcript)',
-      ].join('\n'),
-    )
-    .join('\n\n---\n\n');
+  const sourceBlock = buildSourceBlockWithTimestamps(sources);
 
   return callChatCompletion(
     [
       {
         role: 'system',
-        content:
-          'You answer questions across multiple audio transcripts. Synthesize only from the provided sources, cite uncertainty clearly, and end with a short "Sources" section listing the titles you relied on.',
+        content: CITATION_SYSTEM_PROMPT,
       },
       {
         role: 'user',
@@ -495,6 +529,43 @@ export async function answerAcrossKnowledgeBase(
     0.2,
     settings,
   );
+}
+
+export async function streamAnswerAcrossKnowledgeBase(
+  query: string,
+  sources: KnowledgeSource[],
+  history: LlmMessage[],
+  settings?: Partial<UserSettings>,
+  onDelta?: (text: string) => Promise<void> | void,
+  signal?: AbortSignal,
+) {
+  if (sources.length === 0 && history.length === 0) {
+    throw new Error('No source transcripts or conversation history available.');
+  }
+
+  const sourceBlock = buildSourceBlockWithTimestamps(sources);
+
+  const messages: LlmMessage[] = [
+    {
+      role: 'system',
+      content: CITATION_SYSTEM_PROMPT,
+    },
+  ];
+
+  if (sourceBlock) {
+    messages.push({
+      role: 'system',
+      content: `Knowledge sources:\n\n${sourceBlock}`,
+    });
+  }
+
+  messages.push(...history);
+  messages.push({
+    role: 'user',
+    content: query,
+  });
+
+  return streamChatCompletion(messages, onDelta, 0.2, settings, signal);
 }
 
 export function getLlmInfo(settings?: Partial<UserSettings>) {

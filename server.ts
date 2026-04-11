@@ -19,6 +19,8 @@ import { searchRouter } from './routes/search.js';
 import { audioRouter } from './routes/audio.js';
 import { chunkedUploadRouter } from './routes/chunked-upload.js';
 import { apiTokensRouter } from './routes/api-tokens.js';
+import { knowledgeRouter } from './routes/knowledge.js';
+import { associationsRouter } from './routes/associations.js';
 
 declare global {
   namespace Express {
@@ -99,6 +101,8 @@ protectedApi.use(searchRouter);
 protectedApi.use(audioRouter);
 protectedApi.use(chunkedUploadRouter);
 protectedApi.use(apiTokensRouter);
+protectedApi.use(knowledgeRouter);
+protectedApi.use(associationsRouter);
 app.use('/api', protectedApi);
 
 // --- Error handler ---

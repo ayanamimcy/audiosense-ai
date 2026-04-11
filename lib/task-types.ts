@@ -53,6 +53,24 @@ export interface TaskJobRow {
   updatedAt: number;
 }
 
+export interface KnowledgeConversationRow {
+  id: string;
+  userId: string;
+  title: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface KnowledgeMessageRow {
+  id: string;
+  conversationId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  mentions?: string | null;
+  metadata?: string | null;
+  createdAt: number;
+}
+
 export interface QueueStateRow {
   queueName: string;
   paused: boolean;

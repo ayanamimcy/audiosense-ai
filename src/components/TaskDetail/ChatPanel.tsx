@@ -69,7 +69,7 @@ export function ChatPanel({
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.shiftKey && e.key === 'Enter' && canSendMessage) {
+    if (e.key === 'Enter' && !e.shiftKey && canSendMessage) {
       e.preventDefault();
       onSendMessage();
     }

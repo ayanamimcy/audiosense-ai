@@ -21,6 +21,7 @@ export async function searchTasks(userId: string, query: string) {
   const ranking = await searchChunksHybrid(userId, query, {
     retrievalMode: userSettings.retrievalMode,
     maxChunks: userSettings.maxKnowledgeChunks,
+    settings: userSettings,
   });
   const rankingMap = new Map(ranking.taskRanking.map((item) => [item.taskId, item]));
 
@@ -61,14 +62,15 @@ export async function answerFromKnowledgeBase(
     taskIds: selectedIds.length ? selectedIds : undefined,
     retrievalMode: userSettings.retrievalMode,
     maxChunks: userSettings.maxKnowledgeChunks,
+    settings: userSettings,
   });
 
+  const MAX_SOURCE_TASKS = 8;
   const taskRanking = retrieval.taskRanking;
-  const candidateTasks = (selectedIds.length
-    ? allTasks.filter((task) => selectedIds.includes(task.id))
-    : taskRanking
-        .map((item) => allTasks.find((task) => task.id === item.taskId))
-        .filter(Boolean)) as typeof allTasks;
+  const candidateTasks = taskRanking
+    .map((item) => allTasks.find((task) => task.id === item.taskId))
+    .filter(Boolean)
+    .slice(0, MAX_SOURCE_TASKS) as typeof allTasks;
 
   if (candidateTasks.length === 0) {
     throw new Error('No matching transcripts found.');
@@ -78,17 +80,22 @@ export async function answerFromKnowledgeBase(
   const notebookMap = new Map(notebooks.map((item) => [item.id, item.name]));
   const answer = await answerAcrossKnowledgeBase(
     query,
-    candidateTasks.map((task) => ({
-      title: repairPossiblyMojibakeText(task.originalName),
-      transcript:
-        retrieval.chunkRanking
-          .filter((chunk) => chunk.taskId === task.id)
-          .map((chunk) => chunk.content)
-          .join('\n\n') || task.transcript || '',
-      language: task.language,
-      notebook: task.notebookId ? notebookMap.get(task.notebookId) || null : null,
-      tags: task.tags,
-    })),
+    candidateTasks.map((task) => {
+      const taskChunks = retrieval.chunkRanking.filter((chunk) => chunk.taskId === task.id);
+      const chunkContent = taskChunks.map((chunk) => chunk.content).join('\n\n');
+      return {
+        title: repairPossiblyMojibakeText(task.originalName),
+        transcript: chunkContent || task.transcript?.slice(0, 2000) || '',
+        language: task.language,
+        notebook: task.notebookId ? notebookMap.get(task.notebookId) || null : null,
+        tags: task.tags,
+        chunks: taskChunks.map((chunk) => ({
+          content: chunk.content,
+          startTime: chunk.startTime ?? null,
+          endTime: chunk.endTime ?? null,
+        })),
+      };
+    }),
     userSettings,
   );
 

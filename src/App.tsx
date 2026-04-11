@@ -155,7 +155,7 @@ function AuthenticatedApp() {
         } />
         <Route path="/notebook/:id?" element={<NotebookView />} />
         <Route path="/knowledge" element={
-          <KnowledgeBase onSelectTask={(taskId) => navigate(`/notebook/${taskId}`)} />
+          <KnowledgeBase onSelectTask={(taskId, seekTo) => navigate(`/notebook/${taskId}${seekTo != null ? `?seekTo=${seekTo}` : ''}`)} />
         } />
         <Route path="/upload" element={<UploadTabContent />} />
         <Route path="/record" element={<RecordTabContent />} />

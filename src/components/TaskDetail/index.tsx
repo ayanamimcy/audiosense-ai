@@ -27,6 +27,7 @@ import { PanelButton } from './PanelButton';
 import { SummaryPanel } from './SummaryPanel';
 import { TranscriptPanel } from './TranscriptPanel';
 import { ChatPanel } from './ChatPanel';
+import { RelatedRecordings } from './RelatedRecordings';
 import { TaskEditModal } from '../TaskEditModal';
 import type { Task, TaskMessage } from '../../types';
 
@@ -313,6 +314,32 @@ export function TaskDetail({
       media.removeEventListener('ended', handleEnded);
     };
   }, [task.id, isCompactLayout, isVideo]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const seekTo = params.get('seekTo');
+    if (!seekTo) return;
+
+    const seconds = Number(seekTo);
+    if (!Number.isFinite(seconds)) return;
+
+    const media = mediaRef.current;
+    if (media) {
+      const doSeek = () => {
+        media.currentTime = Math.max(seconds, 0);
+        setMediaCurrentTime(seconds);
+        void media.play().catch(() => {});
+      };
+
+      if (media.readyState >= 1) {
+        doSeek();
+      } else {
+        media.addEventListener('loadedmetadata', doSeek, { once: true });
+      }
+    }
+
+    window.history.replaceState({}, '', window.location.pathname);
+  }, [task.id]);
 
   useEffect(() => {
     if (!isCompactLayout) {
@@ -712,22 +739,34 @@ export function TaskDetail({
 
     if (activePanel === 'summary') {
       return (
-        <SummaryPanel
-          task={task}
-          summaryInstructions={summaryInstructions}
-          onSummaryInstructionsChange={setSummaryInstructions}
-          summaryPromptSelection={summaryPromptSelection}
-          onSummaryPromptSelectionChange={setSummaryPromptSelection}
-          isGenerating={isGeneratingSummary || isSummaryGenerating}
-          onGenerate={() => void handleGenerateSummary()}
-          onCancelSummary={async () => {
-            await apiFetch(`/api/tasks/${task.id}/summary/cancel`, { method: 'POST' });
-            await onUpdateTask();
-          }}
-          compact={isCompactLayout}
-          scrollContainerRef={contentScrollRef}
-          onScroll={handlePanelScroll}
-        />
+        <>
+          <SummaryPanel
+            task={task}
+            summaryInstructions={summaryInstructions}
+            onSummaryInstructionsChange={setSummaryInstructions}
+            summaryPromptSelection={summaryPromptSelection}
+            onSummaryPromptSelectionChange={setSummaryPromptSelection}
+            isGenerating={isGeneratingSummary || isSummaryGenerating}
+            onGenerate={() => void handleGenerateSummary()}
+            onCancelSummary={async () => {
+              await apiFetch(`/api/tasks/${task.id}/summary/cancel`, { method: 'POST' });
+              await onUpdateTask();
+            }}
+            compact={isCompactLayout}
+            scrollContainerRef={contentScrollRef}
+            onScroll={handlePanelScroll}
+          />
+          {!isCompactLayout && (
+            <div className="px-6 pb-6">
+              <RelatedRecordings
+                taskId={task.id}
+                onNavigate={(id) => {
+                  window.location.href = `/notebook/${id}`;
+                }}
+              />
+            </div>
+          )}
+        </>
       );
     }
 
