@@ -48,6 +48,7 @@ class RuntimeConfig:
     preload: bool
     diarization_strategy: str
     prefer_integrated_diarization: bool
+    exclusive_diarization: bool
     sequential_unload_between_stages: bool
     translation_target_language: str
     normalize_audio: bool
@@ -91,6 +92,10 @@ def load_config() -> RuntimeConfig:
         diarization_strategy=os.getenv("LOCAL_AUDIO_ENGINE_DIARIZATION_STRATEGY", "auto").strip().lower(),
         prefer_integrated_diarization=_read_bool(
             "LOCAL_AUDIO_ENGINE_PREFER_INTEGRATED_DIARIZATION",
+            True,
+        ),
+        exclusive_diarization=_read_bool(
+            "LOCAL_AUDIO_ENGINE_EXCLUSIVE_DIARIZATION",
             True,
         ),
         sequential_unload_between_stages=_read_bool(

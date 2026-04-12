@@ -12,11 +12,23 @@ import { getAvailableTranscriptionProviders } from './audio-engine/providers/ind
 import {
   getDefaultSettings,
   sanitizeUserSettings,
+  toClientUserSettings,
+  type ClientUserSettings,
+  type StoredUserSettingsInput,
   type UserSettings,
 } from './user-settings-schema.js';
 
 export { getDefaultSettings, sanitizeUserSettings };
-export type { LlmSettings, LocalRuntimeSettings, OpenAIWhisperSettings, UserSettings } from './user-settings-schema.js';
+export type {
+  ClientUserSettings,
+  SubtitleSplitSettings,
+  LlmSettings,
+  LocalRuntimeSettings,
+  OpenAIWhisperSettings,
+  RuntimeUserSettings,
+  StoredUserSettingsInput,
+  UserSettings,
+} from './user-settings-schema.js';
 
 async function loadStoredUserSettingsInput(userId: string) {
   const row = await findStoredUserSettingsRow(userId);
@@ -34,7 +46,7 @@ async function loadStoredUserSettingsInput(userId: string) {
     });
   }
 
-  return JSON.parse(stored.plaintext) as Partial<UserSettings>;
+  return JSON.parse(stored.plaintext) as StoredUserSettingsInput;
 }
 
 export async function getUserSettings(userId: string) {
@@ -53,23 +65,10 @@ export async function getUserSettings(userId: string) {
 export async function getUserSettingsForClient(userId: string) {
   const storedInput = await loadStoredUserSettingsInput(userId).catch(() => null);
   const settings = sanitizeUserSettings(storedInput || {});
-
-  // Do not leak environment-derived defaults to the browser. Only include the
-  // secret fields when the user explicitly saved them in their own settings.
-  if (!storedInput?.openaiWhisper?.apiKey) {
-    settings.openaiWhisper.apiKey = '';
-  }
-  if (!storedInput?.localRuntime?.hfToken) {
-    settings.localRuntime.hfToken = '';
-  }
-  if (!storedInput?.llm?.apiKey) {
-    settings.llm.apiKey = '';
-  }
-
-  return settings;
+  return toClientUserSettings(settings, storedInput);
 }
 
-export async function saveUserSettings(userId: string, input: Partial<UserSettings>) {
+export async function saveUserSettings(userId: string, input: StoredUserSettingsInput) {
   const currentSettings = await getUserSettings(userId);
   const settings = sanitizeUserSettings(input, currentSettings);
   const now = Date.now();

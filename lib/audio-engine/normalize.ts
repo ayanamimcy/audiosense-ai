@@ -3,6 +3,8 @@ import {
   buildSpeakerSegments,
   type DiarizationSegment,
 } from './speaker-merge.js';
+import { splitLongSegments } from './subtitle-split-pipeline.js';
+import type { LlmSplitConfig } from './subtitle-split-llm-types.js';
 import type {
   AudioFileMetadata,
   ProviderTranscriptionPayload,
@@ -258,12 +260,13 @@ function getText(payload: Record<string, unknown>, segments: TranscriptSegment[]
   );
 }
 
-export function buildTranscriptionResult(input: {
+export async function buildTranscriptionResult(input: {
   providerCapabilities: TranscriptionProviderCapabilities;
   request: TranscriptionJobInput;
   providerResponse: ProviderTranscriptionPayload;
   media?: AudioFileMetadata;
   providerName: string;
+  llmConfig?: LlmSplitConfig;
 }) {
   const payload = findNestedRecord(input.providerResponse.payload);
   let segments = normalizeSegments(payload.segments);
@@ -329,12 +332,17 @@ export function buildTranscriptionResult(input: {
     warnings.push(`Provider ${input.providerName} returned transcript without speaker labels.`);
   }
 
+  const splitResult = await splitLongSegments(segments, input.llmConfig);
+  segments = splitResult.segments;
+  warnings.push(...splitResult.warnings);
+
   const speakers = summarizeSpeakers(segments, words);
 
   return {
     text,
     language: readString(payload.language),
-    languageProbability: readNumber(payload.language_probability) ?? readNumber(payload.languageProbability),
+    languageProbability:
+      readNumber(payload.language_probability) ?? readNumber(payload.languageProbability),
     durationSeconds,
     segments,
     speakers,

@@ -35,6 +35,15 @@ export interface LlmSettings {
   model: string;
 }
 
+export interface SubtitleSplitSettings {
+  enabled: boolean;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  requestTimeoutMs: number;
+  maxRetries: number;
+}
+
 export interface UserSettings {
   parseLanguage: string;
   enableDiarization: boolean;
@@ -49,7 +58,17 @@ export interface UserSettings {
   openaiWhisper: OpenAIWhisperSettings;
   localRuntime: LocalRuntimeSettings;
   llm: LlmSettings;
+  subtitleSplit: SubtitleSplitSettings;
 }
+
+export interface LegacySubtitleSplitSettingsInput extends Partial<LlmSettings> {}
+
+export interface StoredUserSettingsInput extends Partial<UserSettings> {
+  subtitleLlm?: LegacySubtitleSplitSettingsInput;
+}
+
+export type RuntimeUserSettings = UserSettings;
+export type ClientUserSettings = Omit<UserSettings, 'subtitleSplit'>;
 
 function readString(value: unknown, fallback: string) {
   return typeof value === 'string' ? value.trim() || fallback : fallback;
@@ -137,13 +156,47 @@ export function getDefaultSettings(): UserSettings {
       apiKey: process.env.LLM_API_KEY || process.env.OPENAI_API_KEY || '',
       model: process.env.LLM_MODEL || 'gpt-4o-mini',
     },
+    subtitleSplit: {
+      enabled: process.env.SUBTITLE_SPLIT_ENABLED !== 'false',
+      baseUrl: (
+        process.env.SUBTITLE_SPLIT_API_BASE_URL ||
+        process.env.SUBTITLE_LLM_API_BASE_URL ||
+        process.env.LLM_API_BASE_URL ||
+        'https://api.openai.com/v1'
+      ).replace(/\/$/, ''),
+      apiKey:
+        process.env.SUBTITLE_SPLIT_API_KEY ||
+        process.env.SUBTITLE_LLM_API_KEY ||
+        process.env.LLM_API_KEY ||
+        process.env.OPENAI_API_KEY ||
+        '',
+      model: process.env.SUBTITLE_SPLIT_MODEL || process.env.SUBTITLE_LLM_MODEL || 'gpt-4o-mini',
+      requestTimeoutMs: Math.max(
+        5_000,
+        Number(process.env.SUBTITLE_SPLIT_REQUEST_TIMEOUT_MS || 60_000),
+      ),
+      maxRetries: Math.min(
+        5,
+        Math.max(0, Number(process.env.SUBTITLE_SPLIT_MAX_RETRIES || 2)),
+      ),
+    },
+  };
+}
+
+function readLegacySubtitleSplitSettings(input: StoredUserSettingsInput) {
+  return {
+    baseUrl: readString(input.subtitleLlm?.baseUrl, ''),
+    apiKey: readOptionalString(input.subtitleLlm?.apiKey),
+    model: readString(input.subtitleLlm?.model, ''),
   };
 }
 
 export function mergeUserSettings(
   base: UserSettings,
-  input: Partial<UserSettings>,
+  input: StoredUserSettingsInput,
 ): Partial<UserSettings> {
+  const legacySubtitleSplit = readLegacySubtitleSplitSettings(input);
+
   return {
     ...base,
     ...input,
@@ -159,11 +212,18 @@ export function mergeUserSettings(
       ...base.llm,
       ...(input.llm || {}),
     },
+    subtitleSplit: {
+      ...base.subtitleSplit,
+      ...(legacySubtitleSplit.baseUrl || legacySubtitleSplit.apiKey || legacySubtitleSplit.model
+        ? legacySubtitleSplit
+        : {}),
+      ...(input.subtitleSplit || {}),
+    },
   };
 }
 
 export function sanitizeUserSettings(
-  input: Partial<UserSettings>,
+  input: StoredUserSettingsInput,
   base: UserSettings = getDefaultSettings(),
 ): UserSettings {
   const merged = mergeUserSettings(base, input);
@@ -260,7 +320,57 @@ export function sanitizeUserSettings(
       apiKey: readOptionalString(merged.llm?.apiKey),
       model: readString(merged.llm?.model, base.llm.model),
     },
+    subtitleSplit: {
+      enabled: readBool(merged.subtitleSplit?.enabled, base.subtitleSplit.enabled),
+      baseUrl: readString(merged.subtitleSplit?.baseUrl, base.subtitleSplit.baseUrl).replace(/\/$/, ''),
+      apiKey: readOptionalString(merged.subtitleSplit?.apiKey),
+      model: readString(merged.subtitleSplit?.model, base.subtitleSplit.model),
+      requestTimeoutMs: clampNumber(
+        merged.subtitleSplit?.requestTimeoutMs,
+        base.subtitleSplit.requestTimeoutMs,
+        5_000,
+        5 * 60 * 1000,
+      ),
+      maxRetries: clampNumber(
+        merged.subtitleSplit?.maxRetries,
+        base.subtitleSplit.maxRetries,
+        0,
+        5,
+      ),
+    },
   };
+}
+
+export function toClientUserSettings(
+  settings: UserSettings,
+  storedInput?: StoredUserSettingsInput | null,
+): ClientUserSettings {
+  const clientSettings: ClientUserSettings = {
+    parseLanguage: settings.parseLanguage,
+    enableDiarization: settings.enableDiarization,
+    defaultProvider: settings.defaultProvider,
+    fallbackProviders: [...settings.fallbackProviders],
+    autoGenerateSummary: settings.autoGenerateSummary,
+    autoSuggestTags: settings.autoSuggestTags,
+    circuitBreakerThreshold: settings.circuitBreakerThreshold,
+    circuitBreakerCooldownMs: settings.circuitBreakerCooldownMs,
+    retrievalMode: settings.retrievalMode,
+    maxKnowledgeChunks: settings.maxKnowledgeChunks,
+    openaiWhisper: {
+      ...settings.openaiWhisper,
+      apiKey: storedInput?.openaiWhisper?.apiKey ? settings.openaiWhisper.apiKey : '',
+    },
+    localRuntime: {
+      ...settings.localRuntime,
+      hfToken: storedInput?.localRuntime?.hfToken ? settings.localRuntime.hfToken : '',
+    },
+    llm: {
+      ...settings.llm,
+      apiKey: storedInput?.llm?.apiKey ? settings.llm.apiKey : '',
+    },
+  };
+
+  return clientSettings;
 }
 
 export function resolveOpenAIWhisperSettings(settings?: Partial<UserSettings>) {
@@ -273,6 +383,10 @@ export function resolveLocalRuntimeSettings(_settings?: Partial<UserSettings>) {
 
 export function resolveLlmSettings(settings?: Partial<UserSettings>) {
   return sanitizeUserSettings(settings || {}, getDefaultSettings()).llm;
+}
+
+export function resolveSubtitleSplitSettings(settings?: Partial<UserSettings>) {
+  return sanitizeUserSettings(settings || {}, getDefaultSettings()).subtitleSplit;
 }
 
 export function getLocalRuntimeCatalogSnapshot(): LocalRuntimeCatalog {

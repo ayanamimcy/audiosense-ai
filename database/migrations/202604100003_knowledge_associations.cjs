@@ -16,6 +16,15 @@ exports.up = async function up(knex) {
       table.index(['userId', 'taskIdB']);
       table.unique(['userId', 'taskIdA', 'taskIdB']);
     });
+  } else {
+    // Table may exist from a prior migration without the unique constraint — add it idempotently
+    try {
+      await knex.schema.alterTable('task_associations', (table) => {
+        table.unique(['userId', 'taskIdA', 'taskIdB']);
+      });
+    } catch (_err) {
+      // Constraint already exists — safe to ignore
+    }
   }
 };
 

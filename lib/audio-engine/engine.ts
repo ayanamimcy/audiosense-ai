@@ -21,6 +21,8 @@ export async function parseAudioWithFallback(
   const attemptedProviders: string[] = [];
   const skippedProviders: string[] = [];
   const errors: string[] = [];
+  console.log(`[transcribe] Starting transcription for "${input.fileName || input.filePath}"`);
+  const pipelineStart = Date.now();
   const inspectedFile = await inspectAudioFile(input.filePath, {
     mimeType: input.mimeType,
     fileName: input.fileName,
@@ -38,11 +40,16 @@ export async function parseAudioWithFallback(
 
     try {
       const provider = createTranscriptionProvider(providerName, userSettings || undefined);
+      console.log(`[transcribe] Sending to provider "${providerName}"...`);
+      const providerStart = Date.now();
       const providerResponse = await provider.transcribe({
         ...input,
         wordTimestamps: input.wordTimestamps ?? false,
       });
-      const result = buildTranscriptionResult({
+      console.log(`[transcribe] Provider "${providerName}" completed in ${((Date.now() - providerStart) / 1000).toFixed(1)}s`);
+      console.log(`[transcribe] Normalizing and splitting segments...`);
+      const normalizeStart = Date.now();
+      const result = await buildTranscriptionResult({
         providerName: provider.name,
         providerCapabilities: provider.capabilities,
         request: input,
@@ -51,8 +58,19 @@ export async function parseAudioWithFallback(
           warnings: [...inspectedFile.warnings, ...(providerResponse.warnings || [])],
         },
         media: inspectedFile.metadata,
+        llmConfig: userSettings?.subtitleSplit?.enabled && userSettings.subtitleSplit.apiKey
+          ? {
+              apiKey: userSettings.subtitleSplit.apiKey,
+              baseUrl: userSettings.subtitleSplit.baseUrl,
+              model: userSettings.subtitleSplit.model,
+              requestTimeoutMs: userSettings.subtitleSplit.requestTimeoutMs,
+              maxRetries: userSettings.subtitleSplit.maxRetries,
+            }
+          : undefined,
       });
 
+      console.log(`[transcribe] Normalization + splitting completed in ${((Date.now() - normalizeStart) / 1000).toFixed(1)}s (${result.segments.length} segments)`);
+      console.log(`[transcribe] Total pipeline: ${((Date.now() - pipelineStart) / 1000).toFixed(1)}s`);
       await recordProviderSuccess(provider.name);
       return {
         providerName: provider.name,

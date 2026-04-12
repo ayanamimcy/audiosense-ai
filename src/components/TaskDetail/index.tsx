@@ -108,6 +108,8 @@ export function TaskDetail({
   const mediaRef = useRef<HTMLMediaElement | null>(null);
   const segmentRefs = useRef(new Map<string, HTMLDivElement>());
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
+  const isFollowModeRef = useRef(true);
+  const userScrollTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
   const chatFabRef = useRef<HTMLButtonElement | null>(null);
   const chatFabDrag = useRef({ startX: 0, startY: 0, startRight: 16, startBottom: 0, moved: false });
   const [chatFabPos, setChatFabPos] = useState<{ right: number; bottom: number } | null>(null);
@@ -216,42 +218,39 @@ export function TaskDetail({
     }
   }, [task.status]);
 
+  // Follow-mode: auto-scroll active segment to top ~15% of container during playback.
+  // Pauses when user manually scrolls; resumes when a new segment becomes active.
   useEffect(() => {
-    if (activePanel !== 'transcript' || !activeSegmentId) {
+    if (activePanel !== 'transcript' || !activeSegmentId || !isMediaPlaying) {
+      return;
+    }
+
+    if (!isFollowModeRef.current) {
       return;
     }
 
     const element = segmentRefs.current.get(activeSegmentId);
     const container = contentScrollRef.current;
-    if (!element) {
-      return;
-    }
-
-    if (!isCompactLayout || !container) {
-      element.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (!element || !container) {
       return;
     }
 
     const containerRect = container.getBoundingClientRect();
     const elementRect = element.getBoundingClientRect();
-    const comfortTop = containerRect.top + containerRect.height * 0.28;
-    const comfortBottom = containerRect.bottom - containerRect.height * 0.28;
+    const targetTop = containerRect.top + containerRect.height * 0.15;
 
-    if (elementRect.top >= comfortTop && elementRect.bottom <= comfortBottom) {
-      return;
-    }
+    // Only scroll if the segment isn't already near the target position
+    const distance = Math.abs(elementRect.top - targetTop);
+    if (distance < 20) return;
 
-    const nextTop =
-      container.scrollTop +
-      (elementRect.top - containerRect.top) -
-      container.clientHeight / 2 +
-      element.clientHeight / 2;
+    const nextScrollTop =
+      container.scrollTop + (elementRect.top - containerRect.top) - containerRect.height * 0.15;
 
     container.scrollTo({
-      top: Math.max(nextTop, 0),
+      top: Math.max(nextScrollTop, 0),
       behavior: 'smooth',
     });
-  }, [activePanel, activeSegmentId, isCompactLayout]);
+  }, [activePanel, activeSegmentId, isMediaPlaying]);
 
   useEffect(() => {
     const loadMessages = async () => {
@@ -622,6 +621,16 @@ export function TaskDetail({
     if (isCompactLayout) {
       setIsMiniPlayer(activePanel === 'summary' && scrollTop > 72);
       setShowScrollTop(scrollTop > 300);
+    }
+
+    // Pause follow-mode on manual scroll during playback
+    if (activePanel === 'transcript' && isMediaPlaying) {
+      isFollowModeRef.current = false;
+      clearTimeout(userScrollTimeoutRef.current);
+      // Re-enable after 3s of no manual scrolling
+      userScrollTimeoutRef.current = setTimeout(() => {
+        isFollowModeRef.current = true;
+      }, 3000);
     }
   };
 

@@ -69,8 +69,10 @@ router.get('/settings', asyncRoute(async (req, res) => {
 
 router.patch('/settings', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const settings = await saveUserSettings(user.id, req.body || {});
-  return res.json({ settings });
+  await saveUserSettings(user.id, req.body || {});
+  return res.json({
+    settings: await getUserSettingsForClient(user.id),
+  });
 }));
 
 router.patch('/account/profile', asyncRoute(async (req, res) => {
@@ -217,6 +219,7 @@ router.post('/provider-health/:provider/reset', asyncRoute(async (req, res) => {
 router.get('/llm/models', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   const userSettings = await getUserSettings(user.id);
+  const config = userSettings.llm;
   const info = getLlmInfo(userSettings);
 
   if (!info.configured || !info.baseUrl) {
@@ -226,7 +229,7 @@ router.get('/llm/models', asyncRoute(async (req, res) => {
   try {
     const response = await axios.get(`${info.baseUrl}/models`, {
       headers: {
-        Authorization: `Bearer ${userSettings.llm.apiKey}`,
+        Authorization: `Bearer ${config.apiKey}`,
       },
       timeout: 10_000,
     });
@@ -237,7 +240,7 @@ router.get('/llm/models', asyncRoute(async (req, res) => {
 
     return res.json({ data: models });
   } catch (error) {
-    console.error('Failed to fetch LLM models:', error instanceof Error ? error.message : error);
+    console.error('Failed to fetch llm models:', error instanceof Error ? error.message : error);
     return res.json({ data: [] });
   }
 }));

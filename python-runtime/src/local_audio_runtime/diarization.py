@@ -172,6 +172,7 @@ class DiarizationEngine:
         sample_rate: int,
         num_speakers: int | None = None,
         hf_token: str | None = None,
+        exclusive: bool = True,
     ) -> list[dict[str, Any]]:
         if self._pipeline is None:
             self.load(hf_token=hf_token)
@@ -182,9 +183,20 @@ class DiarizationEngine:
         import torch
 
         waveform = torch.from_numpy(audio).float().unsqueeze(0)
+
+        pipeline_kwargs: dict[str, Any] = {
+            "num_speakers": num_speakers,
+        }
+
+        # Exclusive mode: each time frame assigned to exactly one speaker (no overlap).
+        # Better for podcasts and interviews where speakers take turns.
+        if exclusive:
+            pipeline_kwargs["min_speakers"] = num_speakers
+            pipeline_kwargs["max_speakers"] = num_speakers
+
         diarization = self._pipeline(
             {"waveform": waveform, "sample_rate": sample_rate},
-            num_speakers=num_speakers,
+            **{k: v for k, v in pipeline_kwargs.items() if v is not None},
         )
 
         segments: list[dict[str, Any]] = []

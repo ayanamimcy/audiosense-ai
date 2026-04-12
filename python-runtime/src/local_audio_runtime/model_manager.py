@@ -238,6 +238,7 @@ class ModelManager:
                     sample_rate=sample_rate,
                     num_speakers=expected_speakers,
                     hf_token=hf_token,
+                    exclusive=self._config.exclusive_diarization,
                 )
 
             if strategy == "parallel" or strategy == "auto":
