@@ -13,6 +13,7 @@ type SearchChunk = {
   id: string;
   taskId: string;
   userId: string;
+  workspaceId?: string | null;
   chunkIndex: number;
   content: string;
   embedding?: string | null;
@@ -161,11 +162,72 @@ export async function clearTaskIndex(taskId: string) {
   await db('task_chunks').where({ taskId }).delete();
 }
 
+export async function syncTaskWorkspaceScope(taskIds: string[], workspaceId: string) {
+  const uniqueTaskIds = [...new Set(taskIds.map((taskId) => String(taskId || '').trim()).filter(Boolean))];
+  if (uniqueTaskIds.length === 0) {
+    return;
+  }
+
+  const now = Date.now();
+  await db('task_chunks').whereIn('taskId', uniqueTaskIds).update({
+    workspaceId,
+    updatedAt: now,
+  });
+
+  if (!isSqliteDb()) {
+    return;
+  }
+
+  const placeholders = uniqueTaskIds.map(() => '?').join(', ');
+  await db.raw(`DELETE FROM task_chunk_fts WHERE taskId IN (${placeholders})`, uniqueTaskIds);
+
+  const ftsRows = await db('task_chunks')
+    .innerJoin('tasks', 'tasks.id', 'task_chunks.taskId')
+    .whereNull('task_chunks.parentId')
+    .whereIn('task_chunks.taskId', uniqueTaskIds)
+    .select(
+      'task_chunks.id as taskChunkId',
+      'task_chunks.taskId as taskId',
+      'task_chunks.userId as userId',
+      'task_chunks.workspaceId as workspaceId',
+      'tasks.originalName as title',
+      'tasks.summary as summary',
+      'tasks.tags as tags',
+      'task_chunks.content as content',
+    ) as Array<{
+    taskChunkId: string;
+    taskId: string;
+    userId: string;
+    workspaceId: string;
+    title: string;
+    summary: string | null;
+    tags: string | null;
+    content: string;
+  }>;
+
+  for (const row of ftsRows) {
+    await db.raw(
+      'INSERT INTO task_chunk_fts (taskChunkId, taskId, userId, workspaceId, title, summary, tags, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        row.taskChunkId,
+        row.taskId,
+        row.userId,
+        row.workspaceId,
+        row.title,
+        row.summary || '',
+        row.tags || '',
+        row.content,
+      ],
+    );
+  }
+}
+
 export async function reindexTask(task: TaskRow) {
   await clearTaskIndex(task.id);
 
   const userId = task.userId;
-  if (!userId || !task.transcript) {
+  const workspaceId = task.workspaceId;
+  if (!userId || !workspaceId || !task.transcript) {
     return;
   }
 
@@ -189,6 +251,7 @@ export async function reindexTask(task: TaskRow) {
       id: parentId,
       taskId: task.id,
       userId,
+      workspaceId,
       chunkIndex: index,
       content: parentContent,
       embedding: null,
@@ -203,8 +266,8 @@ export async function reindexTask(task: TaskRow) {
     // FTS index on parent chunk (keyword search operates on full content)
     if (isSqliteDb()) {
       await db.raw(
-        'INSERT INTO task_chunk_fts (taskChunkId, taskId, userId, title, summary, tags, content) VALUES (?, ?, ?, ?, ?, ?, ?)',
-        [parentId, task.id, userId, title, summary, ftsTags, parentContent],
+        'INSERT INTO task_chunk_fts (taskChunkId, taskId, userId, workspaceId, title, summary, tags, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [parentId, task.id, userId, workspaceId, title, summary, ftsTags, parentContent],
       );
     }
 
@@ -229,6 +292,7 @@ export async function reindexTask(task: TaskRow) {
             id: uuidv4(),
             taskId: task.id,
             userId,
+            workspaceId,
             chunkIndex: index * 100 + ci,
             content: childContent,
             embedding: JSON.stringify(result.vector),
@@ -251,7 +315,7 @@ export async function reindexTask(task: TaskRow) {
   }
 }
 
-export async function searchTasksByText(userId: string, query: string) {
+export async function searchTasksByText(userId: string, workspaceId: string, query: string) {
   if (!query.trim()) {
     return [];
   }
@@ -259,6 +323,7 @@ export async function searchTasksByText(userId: string, query: string) {
   if (!isSqliteDb()) {
     const rows = await db('tasks')
       .where({ userId })
+      .andWhere({ workspaceId })
       .andWhere((builder) => {
         builder
           .whereILike('originalName', `%${query}%`)
@@ -276,12 +341,12 @@ export async function searchTasksByText(userId: string, query: string) {
   }
 
   const result = await db.raw(
-    `SELECT taskId, -bm25(task_chunk_fts) AS score, snippet(task_chunk_fts, 6, '[', ']', '...', 12) AS snippet
+    `SELECT taskId, -bm25(task_chunk_fts) AS score, snippet(task_chunk_fts, 7, '[', ']', '...', 12) AS snippet
      FROM task_chunk_fts
-     WHERE task_chunk_fts MATCH ? AND userId = ?
+     WHERE task_chunk_fts MATCH ? AND userId = ? AND workspaceId = ?
      ORDER BY score DESC
      LIMIT 50`,
-    [sqliteQuery, userId],
+    [sqliteQuery, userId, workspaceId],
   );
 
   const rows = (result as Array<{ taskId: string; score: number; snippet: string }> | { rows: Array<{ taskId: string; score: number; snippet: string }> })
@@ -304,6 +369,7 @@ export async function searchTasksByText(userId: string, query: string) {
 
 export async function searchChunksHybrid(
   userId: string,
+  workspaceId: string,
   query: string,
   options?: {
     taskIds?: string[];
@@ -351,7 +417,7 @@ export async function searchChunksHybrid(
       : Promise.resolve(null),
     // Baseline: FTS on original query runs in parallel
     retrievalMode !== 'vector'
-      ? searchTasksByText(userId, query)
+      ? searchTasksByText(userId, workspaceId, query)
       : Promise.resolve([]),
   ]);
 
@@ -359,7 +425,7 @@ export async function searchChunksHybrid(
 
   // Use rewritten query FTS only if it differs from the original and enhancement succeeded
   const ftsResults = rewrittenQuery !== query && retrievalMode !== 'vector'
-    ? await searchTasksByText(userId, rewrittenQuery).catch(() => baselineFtsResults)
+    ? await searchTasksByText(userId, workspaceId, rewrittenQuery).catch(() => baselineFtsResults)
     : baselineFtsResults;
 
   let vectorResults: Array<{
@@ -377,7 +443,7 @@ export async function searchChunksHybrid(
 
     // Query only child chunks (those with embeddings) for vector search
     let chunkRowsQuery = db('task_chunks')
-      .where({ userId })
+      .where({ userId, workspaceId })
       .whereNotNull('embedding')
       .select('id', 'taskId', 'content', 'embedding', 'startTime', 'endTime', 'parentId');
 

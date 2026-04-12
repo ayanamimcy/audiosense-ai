@@ -42,6 +42,7 @@ export interface SpeakerSummary {
 export interface Task {
   id: string;
   userId?: string | null;
+  workspaceId?: string | null;
   filename: string;
   originalName: string;
   status: TaskStatus;
@@ -66,6 +67,7 @@ export interface Task {
 export interface Notebook {
   id: string;
   userId?: string | null;
+  workspaceId?: string | null;
   name: string;
   description?: string | null;
   color?: string | null;
@@ -148,6 +150,7 @@ export interface LlmSettings {
 }
 
 export interface UserSettings {
+  currentWorkspaceId: string;
   parseLanguage: string;
   enableDiarization: boolean;
   defaultProvider: string;
@@ -232,6 +235,7 @@ export interface KnowledgeAnswer {
 export interface KnowledgeConversation {
   id: string;
   userId: string;
+  workspaceId?: string | null;
   title: string;
   createdAt: number;
   updatedAt: number;
@@ -291,10 +295,21 @@ export interface MentionCandidate {
 export interface SummaryPrompt {
   id: string;
   userId?: string;
+  workspaceId?: string | null;
   name: string;
   prompt: string;
   notebookIds: string[];
   isDefault: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Workspace {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string | null;
+  color?: string | null;
   createdAt: number;
   updatedAt: number;
 }

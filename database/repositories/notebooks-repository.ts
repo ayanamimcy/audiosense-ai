@@ -3,6 +3,7 @@ import { db } from '../client.js';
 export interface NotebookRow {
   id: string;
   userId: string;
+  workspaceId?: string | null;
   name: string;
   description?: string | null;
   color?: string | null;
@@ -13,10 +14,27 @@ export async function listNotebookRowsByUser(userId: string) {
   return (await db('notebooks').where({ userId }).orderBy('createdAt', 'desc')) as NotebookRow[];
 }
 
+export async function listNotebookRowsByUserAndWorkspace(userId: string, workspaceId: string) {
+  return (await db('notebooks')
+    .where({ userId, workspaceId })
+    .orderBy('createdAt', 'desc')) as NotebookRow[];
+}
+
 export async function listNotebookIdRowsByUser(userId: string, requestedIds: string[]) {
   return (await db('notebooks').where({ userId }).whereIn('id', requestedIds).select('id')) as Array<{
     id: string;
   }>;
+}
+
+export async function listNotebookIdRowsByUserAndWorkspace(
+  userId: string,
+  workspaceId: string,
+  requestedIds: string[],
+) {
+  return (await db('notebooks')
+    .where({ userId, workspaceId })
+    .whereIn('id', requestedIds)
+    .select('id')) as Array<{ id: string }>;
 }
 
 export async function findNotebookRowByUserAndId(userId: string, notebookId: string) {

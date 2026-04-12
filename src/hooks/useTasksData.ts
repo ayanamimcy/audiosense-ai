@@ -47,7 +47,7 @@ export function useTasksData() {
     if (!taskId) {
       setSelectedTask(null);
       setSelectedTaskLoading(false);
-      return;
+      return null;
     }
 
     setSelectedTask((current) => (current?.id === taskId ? current : null));
@@ -58,11 +58,13 @@ export function useTasksData() {
       if (requestId === selectTaskRequestRef.current) {
         setSelectedTask(task);
       }
+      return task;
     } catch (error) {
       if (requestId === selectTaskRequestRef.current) {
         console.error('Failed to load selected task:', error);
         setSelectedTask(null);
       }
+      return null;
     } finally {
       if (requestId === selectTaskRequestRef.current) {
         setSelectedTaskLoading(false);

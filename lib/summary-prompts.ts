@@ -2,6 +2,8 @@ import {
   clearDefaultSummaryPromptRows,
   findSummaryPromptRow,
   listSummaryPromptRows,
+  findSummaryPromptRowByWorkspace,
+  listSummaryPromptRowsByWorkspace,
   type SummaryPromptRow,
 } from '../database/repositories/summary-prompts-repository.js';
 import { parseJsonField } from './task-types.js';
@@ -9,6 +11,7 @@ import { parseJsonField } from './task-types.js';
 export interface SummaryPromptRecord {
   id: string;
   userId: string;
+  workspaceId?: string | null;
   name: string;
   prompt: string;
   notebookIds: string[];
@@ -29,6 +32,7 @@ export function toSummaryPromptRecord(row: SummaryPromptRow): SummaryPromptRecor
   return {
     id: row.id,
     userId: row.userId,
+    workspaceId: row.workspaceId || null,
     name: String(row.name || '').trim(),
     prompt: String(row.prompt || '').trim(),
     notebookIds: normalizeSummaryPromptNotebookIds(parseJsonField<string[]>(row.notebookIds, [])),
@@ -38,12 +42,17 @@ export function toSummaryPromptRecord(row: SummaryPromptRow): SummaryPromptRecor
   };
 }
 
-export async function listSummaryPrompts(userId: string) {
-  return (await listSummaryPromptRows(userId)).map(toSummaryPromptRecord);
+export async function listSummaryPrompts(userId: string, workspaceId?: string) {
+  const rows = workspaceId
+    ? await listSummaryPromptRowsByWorkspace(userId, workspaceId)
+    : await listSummaryPromptRows(userId);
+  return rows.map(toSummaryPromptRecord);
 }
 
-export async function findSummaryPrompt(userId: string, id: string) {
-  const row = await findSummaryPromptRow(userId, id);
+export async function findSummaryPrompt(userId: string, id: string, workspaceId?: string) {
+  const row = workspaceId
+    ? await findSummaryPromptRowByWorkspace(userId, workspaceId, id)
+    : await findSummaryPromptRow(userId, id);
   return row ? toSummaryPromptRecord(row) : null;
 }
 

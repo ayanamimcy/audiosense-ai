@@ -3,7 +3,9 @@ import { insertTaskRow } from '../database/repositories/tasks-repository.js';
 import { repairPossiblyMojibakeText } from './text-encoding.js';
 import { enqueueTaskJob } from './task-queue.js';
 import { getUserSettings } from './settings.js';
+import { validateNotebookForWorkspace } from './task-helpers.js';
 import { normalizeTags, type TaskRow } from './task-types.js';
+import { resolveCurrentWorkspaceForUser } from './workspaces.js';
 
 export interface UploadTaskInput {
   userId: string;
@@ -34,6 +36,7 @@ export async function createUploadTask(input: UploadTaskInput) {
   const now = Date.now();
   const taskId = uuidv4();
   const userSettings = await getUserSettings(userId);
+  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(userId);
   const diarizationEnabled =
     body.diarization !== undefined
       ? body.diarization !== 'false'
@@ -57,15 +60,19 @@ export async function createUploadTask(input: UploadTaskInput) {
       process.env.TRANSCRIPTION_PROVIDER ||
       'local-python',
   ).toLowerCase();
+  const notebookId = body.notebookId ? String(body.notebookId) : null;
+
+  await validateNotebookForWorkspace(userId, currentWorkspaceId, notebookId);
 
   const task: TaskRow = {
     id: taskId,
     userId,
+    workspaceId: currentWorkspaceId,
     filename: file.filename,
     originalName,
     status: 'pending',
     createdAt: now,
-    notebookId: body.notebookId || null,
+    notebookId,
     tags: JSON.stringify(normalizeTags(body.tags)),
     language: body.language || userSettings.parseLanguage || 'auto',
     provider,

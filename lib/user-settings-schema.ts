@@ -45,6 +45,7 @@ export interface SubtitleSplitSettings {
 }
 
 export interface UserSettings {
+  currentWorkspaceId: string;
   parseLanguage: string;
   enableDiarization: boolean;
   defaultProvider: string;
@@ -110,6 +111,7 @@ export function getDefaultSettings(): UserSettings {
   );
 
   return {
+    currentWorkspaceId: '',
     parseLanguage: 'auto',
     enableDiarization: true,
     defaultProvider: (process.env.TRANSCRIPTION_PROVIDER || 'local-python').toLowerCase(),
@@ -253,6 +255,7 @@ export function sanitizeUserSettings(
     : base.fallbackProviders;
 
   return {
+    currentWorkspaceId: readOptionalString(merged.currentWorkspaceId),
     parseLanguage: readString(merged.parseLanguage, base.parseLanguage),
     enableDiarization: readBool(merged.enableDiarization, base.enableDiarization),
     defaultProvider,
@@ -346,6 +349,7 @@ export function toClientUserSettings(
   storedInput?: StoredUserSettingsInput | null,
 ): ClientUserSettings {
   const clientSettings: ClientUserSettings = {
+    currentWorkspaceId: settings.currentWorkspaceId,
     parseLanguage: settings.parseLanguage,
     enableDiarization: settings.enableDiarization,
     defaultProvider: settings.defaultProvider,

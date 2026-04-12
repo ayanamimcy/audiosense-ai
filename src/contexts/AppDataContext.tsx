@@ -7,9 +7,13 @@ import type {
   TagStat,
   Task,
   UserSettings,
+  Workspace,
 } from '../types';
 
 export interface AppDataContextValue {
+  workspaces: Workspace[];
+  currentWorkspaceId: string | null;
+  currentWorkspace: Workspace | null;
   tasks: Task[];
   notebooks: Notebook[];
   tags: TagStat[];
@@ -18,9 +22,11 @@ export interface AppDataContextValue {
   userSettings: UserSettings | null;
   providerHealth: ProviderHealth[];
   selectedTaskId: string | null;
-  selectTask: (taskId: string | null) => Promise<void>;
+  selectTask: (taskId: string | null) => Promise<Task | null>;
   selectedTask: Task | null;
   selectedTaskLoading: boolean;
+  fetchWorkspaces: () => Promise<{ workspaces: Workspace[]; currentWorkspaceId: string }>;
+  selectWorkspace: (workspaceId: string, preferredTaskId?: string | null) => Promise<void>;
   fetchTasks: () => Promise<Task[]>;
   fetchTaskDetail: (taskId: string) => Promise<Task>;
   fetchNotebooks: () => Promise<void>;
@@ -31,6 +37,7 @@ export interface AppDataContextValue {
   fetchProviderHealth: () => Promise<void>;
   refreshTasksAndSelection: (preferredTaskId?: string | null) => Promise<void>;
   refreshAll: (preferredTaskId?: string | null) => Promise<void>;
+  clearAll: () => void;
 }
 
 const AppDataContext = createContext<AppDataContextValue | null>(null);

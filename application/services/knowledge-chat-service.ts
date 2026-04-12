@@ -1,17 +1,18 @@
 import {
-  listConversationsByUser,
+  listConversationsByUserAndWorkspace,
   findConversationById,
   deleteConversation,
   updateConversation,
   listMessagesByConversation,
 } from '../../database/repositories/knowledge-conversations-repository.js';
-import { listNotebookRowsByUser } from '../../database/repositories/notebooks-repository.js';
-import { listTaskRowsByUser } from '../../database/repositories/tasks-repository.js';
+import { listNotebookRowsByUserAndWorkspace } from '../../database/repositories/notebooks-repository.js';
+import { listTaskRowsByUserAndWorkspace } from '../../database/repositories/tasks-repository.js';
 import { streamKnowledgeChatMessage, type MentionRef } from '../../lib/knowledge-chat-service.js';
 import { isLlmConfigured } from '../../lib/llm.js';
 import { getUserSettings } from '../../lib/settings.js';
 import type { TaskRow } from '../../lib/task-types.js';
 import { repairPossiblyMojibakeText } from '../../lib/text-encoding.js';
+import { resolveCurrentWorkspaceForUser } from '../../lib/workspaces.js';
 
 export class ConversationNotFoundError extends Error {
   constructor() { super('Conversation not found.'); }
@@ -26,12 +27,18 @@ export class MessageRequiredError extends Error {
 }
 
 export async function listConversationsForUser(userId: string) {
-  return listConversationsByUser(userId);
+  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(userId);
+  return listConversationsByUserAndWorkspace(userId, currentWorkspaceId);
 }
 
 export async function getConversationMessages(userId: string, conversationId: string) {
+  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(userId);
   const conversation = await findConversationById(conversationId);
-  if (!conversation || conversation.userId !== userId) {
+  if (
+    !conversation ||
+    conversation.userId !== userId ||
+    conversation.workspaceId !== currentWorkspaceId
+  ) {
     throw new ConversationNotFoundError();
   }
 
@@ -47,8 +54,13 @@ export async function getConversationMessages(userId: string, conversationId: st
 }
 
 export async function renameConversationForUser(userId: string, conversationId: string, title: string) {
+  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(userId);
   const conversation = await findConversationById(conversationId);
-  if (!conversation || conversation.userId !== userId) {
+  if (
+    !conversation ||
+    conversation.userId !== userId ||
+    conversation.workspaceId !== currentWorkspaceId
+  ) {
     throw new ConversationNotFoundError();
   }
 
@@ -56,8 +68,13 @@ export async function renameConversationForUser(userId: string, conversationId: 
 }
 
 export async function deleteConversationForUser(userId: string, conversationId: string) {
+  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(userId);
   const conversation = await findConversationById(conversationId);
-  if (!conversation || conversation.userId !== userId) {
+  if (
+    !conversation ||
+    conversation.userId !== userId ||
+    conversation.workspaceId !== currentWorkspaceId
+  ) {
     throw new ConversationNotFoundError();
   }
 
@@ -81,8 +98,10 @@ export async function streamMessageForUser(
     throw new LlmNotConfiguredError();
   }
 
+  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(userId);
   return streamKnowledgeChatMessage(
     userId,
+    currentWorkspaceId,
     conversationId,
     message.trim(),
     mentions,
@@ -92,9 +111,10 @@ export async function streamMessageForUser(
 }
 
 export async function getMentionCandidates(userId: string, query?: string) {
+  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(userId);
   const [notebooks, taskRows] = await Promise.all([
-    listNotebookRowsByUser(userId),
-    listTaskRowsByUser(userId) as Promise<TaskRow[]>,
+    listNotebookRowsByUserAndWorkspace(userId, currentWorkspaceId),
+    listTaskRowsByUserAndWorkspace(userId, currentWorkspaceId) as Promise<TaskRow[]>,
   ]);
 
   const lowerQuery = query?.toLowerCase().trim() || '';

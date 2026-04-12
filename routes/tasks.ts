@@ -4,13 +4,16 @@ import {
   buildTaskSubtitlesForUser,
   dismissTaskTagSuggestionsForUser,
   UserTaskNotFoundError,
+  UserTaskSelectionError,
   UserTaskTagSuggestionError,
+  UserTaskWorkspaceValidationError,
   createUploadTaskForUser,
   generateTaskTagSuggestionsForUser,
   deleteTaskForUserAndCleanup,
   getTaskDetailForUser,
   listTaskMessagesForUser,
   listTasksForUser,
+  moveTasksToWorkspaceForUser,
   reprocessTaskForUser,
   updateTaskForUser,
 } from '../application/services/tasks-service.js';
@@ -32,6 +35,9 @@ router.post('/upload', upload.single('audio'), asyncRoute(async (req, res) => {
     });
     return res.json({ taskId, message: 'Upload successful, task queued.' });
   } catch (error) {
+    if (error instanceof UserTaskWorkspaceValidationError) {
+      return res.status(400).json({ error: error.message });
+    }
     console.error('Failed to create task:', error);
     return res.status(500).json({ error: 'Database error while creating task.' });
   }
@@ -48,6 +54,25 @@ router.post('/tasks/:id/reprocess', asyncRoute(async (req, res) => {
   } catch (error) {
     if (error instanceof UserTaskNotFoundError) {
       return res.status(404).json({ error: error.message });
+    }
+    if (error instanceof UserTaskWorkspaceValidationError) {
+      return res.status(400).json({ error: error.message });
+    }
+    throw error;
+  }
+}));
+
+router.post('/tasks/batch/workspace', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  try {
+    const taskIds = Array.isArray(req.body.taskIds)
+      ? req.body.taskIds.map((value: unknown) => String(value))
+      : [];
+    const workspaceId = String(req.body.workspaceId || '').trim();
+    return res.json(await moveTasksToWorkspaceForUser(user.id, taskIds, workspaceId));
+  } catch (error) {
+    if (error instanceof UserTaskWorkspaceValidationError || error instanceof UserTaskSelectionError) {
+      return res.status(400).json({ error: error.message });
     }
     throw error;
   }

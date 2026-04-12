@@ -23,7 +23,7 @@ export function KnowledgeBase({
 }: {
   onSelectTask: (taskId: string, seekTo?: number) => void;
 }) {
-  const { capabilities } = useAppDataContext();
+  const { capabilities, currentWorkspaceId } = useAppDataContext();
   const llmConfigured = Boolean(capabilities?.llm.configured);
   const [messageInput, setMessageInput] = useState('');
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -56,7 +56,14 @@ export function KnowledgeBase({
 
   useEffect(() => {
     void loadConversations();
-  }, [loadConversations]);
+  }, [loadConversations, currentWorkspaceId]);
+
+  useEffect(() => {
+    setMessageInput('');
+    setHistoryOpen(false);
+    startNewConversation();
+    clearMentions();
+  }, [currentWorkspaceId, startNewConversation, clearMentions]);
 
   const handleSend = (directMessage?: string) => {
     const content = directMessage || messageInput;

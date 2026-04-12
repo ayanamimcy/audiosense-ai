@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import { listNotebookRowsByUser } from '../database/repositories/notebooks-repository.js';
-import { listTaskRowsByUser } from '../database/repositories/tasks-repository.js';
+import { listNotebookRowsByUserAndWorkspace } from '../database/repositories/notebooks-repository.js';
+import { listTaskRowsByUserAndWorkspace } from '../database/repositories/tasks-repository.js';
 import {
   findConversationById,
   insertConversation,
@@ -68,6 +68,7 @@ function resolveMentionTaskIds(
 
 export async function streamKnowledgeChatMessage(
   userId: string,
+  workspaceId: string,
   conversationId: string | null,
   message: string,
   mentions: MentionRef[],
@@ -88,13 +89,14 @@ export async function streamKnowledgeChatMessage(
     await insertConversation({
       id: convId,
       userId,
+      workspaceId,
       title,
       createdAt: now,
       updatedAt: now,
     });
   } else {
     const existing = await findConversationById(convId);
-    if (!existing || existing.userId !== userId) {
+    if (!existing || existing.userId !== userId || existing.workspaceId !== workspaceId) {
       throw new Error('Conversation not found.');
     }
   }
@@ -116,7 +118,9 @@ export async function streamKnowledgeChatMessage(
   // The frontend persists mentions across messages in the UI,
   // so the user controls scope by adding/removing chips.
   // If mentions are empty, search across all recordings.
-  const allTasks = ((await listTaskRowsByUser(userId)) as TaskRow[]).map(toTaskResponse);
+  const allTasks = ((await listTaskRowsByUserAndWorkspace(userId, workspaceId)) as TaskRow[]).map(
+    toTaskResponse,
+  );
   const mentionTaskIds = resolveMentionTaskIds(mentions, allTasks);
 
   // If user explicitly mentioned something but it resolved to no tasks (e.g. empty notebook),
@@ -133,7 +137,7 @@ export async function streamKnowledgeChatMessage(
     return { conversationId: convId, messageId: assistantMsgId, content: responseText, sources: [], retrieval: { mode: 'empty', chunkCount: 0 } };
   }
 
-  const retrieval = await searchChunksHybrid(userId, message, {
+  const retrieval = await searchChunksHybrid(userId, workspaceId, message, {
     taskIds: mentionTaskIds.length ? mentionTaskIds : undefined,
     retrievalMode: userSettings.retrievalMode,
     maxChunks: userSettings.maxKnowledgeChunks,
@@ -150,7 +154,7 @@ export async function streamKnowledgeChatMessage(
     .filter(Boolean)
     .slice(0, MAX_SOURCE_TASKS) as typeof allTasks;
 
-  const notebooks = await listNotebookRowsByUser(userId);
+  const notebooks = await listNotebookRowsByUserAndWorkspace(userId, workspaceId);
   const notebookMap = new Map(notebooks.map((item) => [item.id, item.name]));
 
   const sources = candidateTasks.map((task) => {

@@ -2,10 +2,10 @@ import axios from 'axios';
 import express from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import {
-  clearDefaultSummaryPromptRows,
-  deleteSummaryPromptRow,
+  clearDefaultSummaryPromptRowsByWorkspace,
+  deleteSummaryPromptRowByWorkspace,
   insertSummaryPromptRow,
-  updateSummaryPromptRow,
+  updateSummaryPromptRowByWorkspace,
 } from '../database/repositories/summary-prompts-repository.js';
 import {
   authenticateUser,
@@ -32,6 +32,8 @@ import {
 import { getAvailableTranscriptionProviders } from '../lib/transcription.js';
 import { getLocalRuntimeCatalogSnapshot } from '../lib/user-settings-schema.js';
 import { getValidatedNotebookIdsForUser } from '../lib/task-helpers.js';
+import { getValidatedNotebookIdsForWorkspace } from '../lib/task-helpers.js';
+import { resolveCurrentWorkspaceForUser } from '../lib/workspaces.js';
 import { asyncRoute, requireAuthUser, setSessionCookie } from './middleware.js';
 
 const router = express.Router();
@@ -62,6 +64,7 @@ router.get('/capabilities', asyncRoute(async (req, res) => {
 
 router.get('/settings', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
+  await resolveCurrentWorkspaceForUser(user.id);
   return res.json({
     settings: await getUserSettingsForClient(user.id),
   });
@@ -70,6 +73,7 @@ router.get('/settings', asyncRoute(async (req, res) => {
 router.patch('/settings', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   await saveUserSettings(user.id, req.body || {});
+  await resolveCurrentWorkspaceForUser(user.id);
   return res.json({
     settings: await getUserSettingsForClient(user.id),
   });
@@ -128,11 +132,13 @@ router.get('/provider-health', asyncRoute(async (req, res) => {
 
 router.get('/summary-prompts', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  return res.json(await listSummaryPrompts(user.id));
+  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(user.id);
+  return res.json(await listSummaryPrompts(user.id, currentWorkspaceId));
 }));
 
 router.post('/summary-prompts', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
+  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(user.id);
   const name = String(req.body.name || '').trim();
   const prompt = String(req.body.prompt || '').trim();
   if (!name) {
@@ -142,12 +148,17 @@ router.post('/summary-prompts', asyncRoute(async (req, res) => {
     return res.status(400).json({ error: 'Prompt content is required.' });
   }
 
-  const notebookIds = await getValidatedNotebookIdsForUser(user.id, req.body.notebookIds);
+  const notebookIds = await getValidatedNotebookIdsForWorkspace(
+    user.id,
+    currentWorkspaceId,
+    req.body.notebookIds,
+  );
   const isDefault = req.body.isDefault === true;
   const now = Date.now();
   const record = {
     id: uuidv4(),
     userId: user.id,
+    workspaceId: currentWorkspaceId,
     name,
     prompt,
     notebookIds: JSON.stringify(notebookIds),
@@ -157,16 +168,17 @@ router.post('/summary-prompts', asyncRoute(async (req, res) => {
   };
 
   if (isDefault) {
-    await clearDefaultSummaryPromptRows(user.id);
+    await clearDefaultSummaryPromptRowsByWorkspace(user.id, currentWorkspaceId);
   }
 
   await insertSummaryPromptRow(record);
-  return res.json(await findSummaryPrompt(user.id, record.id));
+  return res.json(await findSummaryPrompt(user.id, record.id, currentWorkspaceId));
 }));
 
 router.patch('/summary-prompts/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const current = await findSummaryPrompt(user.id, req.params.id);
+  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(user.id);
+  const current = await findSummaryPrompt(user.id, req.params.id, currentWorkspaceId);
   if (!current) {
     return res.status(404).json({ error: 'Summary prompt not found.' });
   }
@@ -182,14 +194,18 @@ router.patch('/summary-prompts/:id', asyncRoute(async (req, res) => {
 
   const notebookIds =
     req.body.notebookIds !== undefined
-      ? await getValidatedNotebookIdsForUser(user.id, req.body.notebookIds)
+      ? await getValidatedNotebookIdsForWorkspace(
+          user.id,
+          currentWorkspaceId,
+          req.body.notebookIds,
+        )
       : current.notebookIds;
   const isDefault = req.body.isDefault !== undefined ? req.body.isDefault === true : current.isDefault;
   if (isDefault) {
-    await clearDefaultSummaryPromptRows(user.id, current.id);
+    await clearDefaultSummaryPromptRowsByWorkspace(user.id, currentWorkspaceId, current.id);
   }
 
-  await updateSummaryPromptRow(user.id, current.id, {
+  await updateSummaryPromptRowByWorkspace(user.id, currentWorkspaceId, current.id, {
     name: nextName,
     prompt: nextPrompt,
     notebookIds: JSON.stringify(notebookIds),
@@ -197,12 +213,13 @@ router.patch('/summary-prompts/:id', asyncRoute(async (req, res) => {
     updatedAt: Date.now(),
   });
 
-  return res.json(await findSummaryPrompt(user.id, current.id));
+  return res.json(await findSummaryPrompt(user.id, current.id, currentWorkspaceId));
 }));
 
 router.delete('/summary-prompts/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const deleted = await deleteSummaryPromptRow(user.id, req.params.id);
+  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(user.id);
+  const deleted = await deleteSummaryPromptRowByWorkspace(user.id, currentWorkspaceId, req.params.id);
   if (!deleted) {
     return res.status(404).json({ error: 'Summary prompt not found.' });
   }

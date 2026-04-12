@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { db } from '../../database/client.js';
 import {
   deleteTaskJobRowsByTaskId,
 } from '../../database/repositories/task-jobs-repository.js';
@@ -9,12 +10,13 @@ import {
 } from '../../database/repositories/task-messages-repository.js';
 import {
   deleteTaskRowForUser,
-  listTaskRowsByUser,
+  listTaskRowsByUserAndIds,
+  listTaskRowsByUserAndNotebook,
   updateTaskRowById,
   updateTaskRowForUser,
 } from '../../database/repositories/tasks-repository.js';
 import { isLlmConfigured } from '../../lib/llm.js';
-import { clearTaskIndex, reindexTask } from '../../lib/search-index.js';
+import { clearTaskIndex, reindexTask, syncTaskWorkspaceScope } from '../../lib/search-index.js';
 import { getUserSettings } from '../../lib/settings.js';
 import { buildWebVttFromSegments } from '../../lib/subtitles.js';
 import {
@@ -24,11 +26,20 @@ import {
   removeAppliedTagsFromSuggestions,
 } from '../../lib/task-tag-suggestions.js';
 import { resetTaskDerivedState } from '../../lib/task-derived-state.js';
-import { findTaskForUser } from '../../lib/task-helpers.js';
+import {
+  findTaskForUser,
+  NotebookWorkspaceValidationError,
+  validateNotebookForWorkspace,
+} from '../../lib/task-helpers.js';
 import { repairPossiblyMojibakeText } from '../../lib/text-encoding.js';
 import { enqueueTaskJob } from '../../lib/task-queue.js';
 import { normalizeTags, parseJsonField, toTaskListResponse, toTaskResponse, type TaskRow } from '../../lib/task-types.js';
 import { createUploadTask, type UploadTaskInput } from '../../lib/upload-service.js';
+import {
+  assertWorkspaceBelongsToUser,
+  resolveCurrentWorkspaceForUser,
+} from '../../lib/workspaces.js';
+import { listTaskRowsByUserAndWorkspace } from '../../database/repositories/tasks-repository.js';
 
 export class UserTaskNotFoundError extends Error {
   constructor() {
@@ -42,8 +53,49 @@ export class UserTaskTagSuggestionError extends Error {
   }
 }
 
+export class UserTaskWorkspaceValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+export class UserTaskSelectionError extends Error {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+async function syncTaskSearchIndex(previousTask: TaskRow, updatedTask: TaskRow) {
+  const workspaceChanged = previousTask.workspaceId !== updatedTask.workspaceId;
+  const searchMetadataChanged =
+    previousTask.originalName !== updatedTask.originalName ||
+    previousTask.summary !== updatedTask.summary ||
+    previousTask.tags !== updatedTask.tags;
+
+  if (workspaceChanged && !searchMetadataChanged) {
+    await syncTaskWorkspaceScope([updatedTask.id], String(updatedTask.workspaceId || ''));
+    return;
+  }
+
+  if (updatedTask.status === 'completed' && updatedTask.transcript) {
+    await reindexTask(updatedTask);
+    return;
+  }
+
+  if (workspaceChanged) {
+    await clearTaskIndex(updatedTask.id);
+  }
+}
+
 export async function createUploadTaskForUser(input: UploadTaskInput) {
-  return createUploadTask(input);
+  try {
+    return await createUploadTask(input);
+  } catch (error) {
+    if (error instanceof NotebookWorkspaceValidationError) {
+      throw new UserTaskWorkspaceValidationError(error.message);
+    }
+    throw error;
+  }
 }
 
 export async function reprocessTaskForUser(
@@ -74,7 +126,8 @@ export async function reprocessTaskForUser(
 }
 
 export async function listTasksForUser(userId: string) {
-  return (await listTaskRowsByUser(userId)).map(toTaskListResponse);
+  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(userId);
+  return (await listTaskRowsByUserAndWorkspace(userId, currentWorkspaceId)).map(toTaskListResponse);
 }
 
 export async function getTaskDetailForUser(userId: string, taskId: string) {
@@ -93,6 +146,7 @@ export async function updateTaskForUser(
     originalName?: unknown;
     tags?: unknown;
     notebookId?: unknown;
+    workspaceId?: unknown;
     eventDate?: unknown;
     summary?: unknown;
   },
@@ -105,6 +159,23 @@ export async function updateTaskForUser(
   const updates: Partial<TaskRow> = {
     updatedAt: Date.now(),
   };
+  const requestedWorkspaceId =
+    input.workspaceId !== undefined ? String(input.workspaceId || '').trim() || null : undefined;
+  const targetWorkspaceId =
+    requestedWorkspaceId !== undefined
+      ? requestedWorkspaceId
+      : String(task.workspaceId || '').trim() || null;
+
+  if (requestedWorkspaceId) {
+    try {
+      await assertWorkspaceBelongsToUser(userId, requestedWorkspaceId);
+      updates.workspaceId = requestedWorkspaceId;
+    } catch (error) {
+      throw new UserTaskWorkspaceValidationError(
+        error instanceof Error ? error.message : 'Workspace not found.',
+      );
+    }
+  }
 
   if (input.originalName !== undefined) {
     updates.originalName = repairPossiblyMojibakeText(String(input.originalName || '').trim());
@@ -117,8 +188,27 @@ export async function updateTaskForUser(
       updates.metadata = nextMetadata;
     }
   }
-  if (input.notebookId !== undefined) {
-    updates.notebookId = input.notebookId ? String(input.notebookId) : null;
+  if (input.notebookId !== undefined || requestedWorkspaceId !== undefined) {
+    try {
+      updates.notebookId =
+        input.notebookId !== undefined
+          ? input.notebookId
+            ? String(input.notebookId)
+            : null
+          : requestedWorkspaceId !== undefined && requestedWorkspaceId !== task.workspaceId
+            ? null
+            : task.notebookId || null;
+      await validateNotebookForWorkspace(
+        userId,
+        String(targetWorkspaceId || ''),
+        updates.notebookId,
+      );
+    } catch (error) {
+      if (error instanceof NotebookWorkspaceValidationError) {
+        throw new UserTaskWorkspaceValidationError(error.message);
+      }
+      throw error;
+    }
   }
   if (input.eventDate !== undefined) {
     updates.eventDate = input.eventDate ? Number(input.eventDate) : null;
@@ -133,11 +223,50 @@ export async function updateTaskForUser(
     throw new UserTaskNotFoundError();
   }
 
-  if (updatedTask.status === 'completed' && updatedTask.transcript) {
-    await reindexTask(updatedTask);
-  }
+  await syncTaskSearchIndex(task, updatedTask);
 
   return toTaskResponse(updatedTask);
+}
+
+export async function moveTasksToWorkspaceForUser(
+  userId: string,
+  taskIds: string[],
+  workspaceId: string,
+) {
+  const uniqueTaskIds = [...new Set(taskIds.map((taskId) => String(taskId || '').trim()).filter(Boolean))];
+  if (uniqueTaskIds.length === 0) {
+    throw new UserTaskSelectionError('At least one task is required.');
+  }
+
+  try {
+    await assertWorkspaceBelongsToUser(userId, workspaceId);
+  } catch (error) {
+    throw new UserTaskWorkspaceValidationError(
+      error instanceof Error ? error.message : 'Workspace not found.',
+    );
+  }
+
+  const tasks = await listTaskRowsByUserAndIds(userId, uniqueTaskIds);
+  if (tasks.length !== uniqueTaskIds.length) {
+    throw new UserTaskSelectionError('One or more tasks were not found.');
+  }
+
+  const now = Date.now();
+  await db('tasks')
+    .where({ userId })
+    .whereIn('id', uniqueTaskIds)
+    .update({
+      workspaceId,
+      notebookId: null,
+      updatedAt: now,
+    });
+
+  await syncTaskWorkspaceScope(uniqueTaskIds, workspaceId);
+
+  return {
+    moved: uniqueTaskIds.length,
+    workspaceId,
+  };
 }
 
 export async function generateTaskTagSuggestionsForUser(userId: string, taskId: string) {

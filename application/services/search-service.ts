@@ -1,6 +1,7 @@
 import { answerFromKnowledgeBase, searchTasks } from '../../lib/knowledge-service.js';
 import { isLlmConfigured } from '../../lib/llm.js';
 import { getUserSettings } from '../../lib/settings.js';
+import { resolveCurrentWorkspaceForUser } from '../../lib/workspaces.js';
 
 export class KnowledgeQueryRequiredError extends Error {
   constructor() {
@@ -21,7 +22,8 @@ export class KnowledgeNoMatchesError extends Error {
 }
 
 export async function searchTasksForUser(userId: string, query: string) {
-  return searchTasks(userId, query.trim());
+  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(userId);
+  return searchTasks(userId, currentWorkspaceId, query.trim());
 }
 
 export async function answerKnowledgeForUser(
@@ -40,7 +42,13 @@ export async function answerKnowledgeForUser(
   }
 
   try {
-    return await answerFromKnowledgeBase(userId, normalizedQuery, taskIds?.length ? taskIds : undefined);
+    const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(userId);
+    return await answerFromKnowledgeBase(
+      userId,
+      currentWorkspaceId,
+      normalizedQuery,
+      taskIds?.length ? taskIds : undefined,
+    );
   } catch (error) {
     if (error instanceof Error && error.message === 'No matching transcripts found.') {
       throw new KnowledgeNoMatchesError();

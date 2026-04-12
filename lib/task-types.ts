@@ -7,6 +7,7 @@ export type JobStatus = 'queued' | 'processing' | 'blocked' | 'completed' | 'fai
 export interface TaskRow {
   id: string;
   userId?: string | null;
+  workspaceId?: string | null;
   filename: string;
   originalName: string;
   status: TaskStatus;
@@ -56,6 +57,7 @@ export interface TaskJobRow {
 export interface KnowledgeConversationRow {
   id: string;
   userId: string;
+  workspaceId?: string | null;
   title: string;
   createdAt: number;
   updatedAt: number;
@@ -118,6 +120,7 @@ export function toTaskResponse(task: TaskRow) {
 
   return {
     id: task.id,
+    workspaceId: task.workspaceId || null,
     filename: task.filename,
     originalName: repairPossiblyMojibakeText(task.originalName),
     status: task.status,
@@ -151,6 +154,7 @@ export function toTaskListResponse(task: TaskRow) {
   return {
     id: task.id,
     userId: task.userId,
+    workspaceId: task.workspaceId || null,
     filename: task.filename,
     originalName: repairPossiblyMojibakeText(task.originalName),
     status: task.status,

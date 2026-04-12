@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowUp,
   BrainCircuit,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   FolderKanban,
@@ -89,13 +90,14 @@ export function AppShell({
   const activeTab = useActiveTab();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
+  const [isWorkspaceSheetOpen, setIsWorkspaceSheetOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showScrollTop, setShowScrollTop] = useState(false);
   const [pullDistance, setPullDistance] = useState(0);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const pullStartY = useRef(0);
   const isPulling = useRef(false);
-  const { refreshAll } = useAppDataContext();
+  const { refreshAll, workspaces, currentWorkspace, currentWorkspaceId, selectWorkspace } = useAppDataContext();
   const isMobileDetailChromeHidden =
     pathname.startsWith('/notebook/');
 
@@ -153,6 +155,20 @@ export function AppShell({
     setIsMobileMenuOpen(false);
   };
 
+  const handleWorkspaceChange = async (workspaceId: string) => {
+    if (!workspaceId || workspaceId === currentWorkspaceId) {
+      return;
+    }
+
+    try {
+      await selectWorkspace(workspaceId);
+      setIsWorkspaceSheetOpen(false);
+    } catch (error) {
+      console.error('Failed to switch workspace:', error);
+      window.alert(error instanceof Error ? error.message : 'Failed to switch workspace.');
+    }
+  };
+
   return (
     <div className="h-[100dvh] bg-slate-50 text-slate-900 flex flex-col lg:flex-row overflow-hidden relative">
       {!isMobileDetailChromeHidden ? (
@@ -160,12 +176,24 @@ export function AppShell({
           className="lg:hidden bg-white border-b border-slate-200 px-4 pb-2 pt-3 flex items-center justify-between shrink-0 z-20 shadow-sm"
           style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.75rem)' }}
         >
-          <div className="flex items-center gap-2">
-            <div className="bg-indigo-600 p-1.5 rounded-lg shadow-sm">
+          <button
+            type="button"
+            onClick={() => setIsWorkspaceSheetOpen(true)}
+            className="flex min-w-0 items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-left shadow-sm transition-colors active:scale-[0.99]"
+          >
+            <div className="bg-indigo-600 p-1.5 rounded-lg shadow-sm shrink-0">
               <Mic className="w-4 h-4 text-white" />
             </div>
-            <h1 className="text-lg font-bold tracking-tight text-slate-800">AudioSense AI</h1>
-          </div>
+            <div className="min-w-0">
+              <p className="truncate text-base font-semibold tracking-tight text-slate-800">
+                {currentWorkspace?.name || 'Select workspace'}
+              </p>
+              <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-slate-400">
+                Current workspace
+              </p>
+            </div>
+            <ChevronDown className="w-4 h-4 shrink-0 text-slate-400" />
+          </button>
           <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-sm">
             {currentUser.name.charAt(0).toUpperCase()}
           </div>
@@ -195,8 +223,26 @@ export function AppShell({
           'flex-1 flex-col space-y-1 custom-scrollbar',
           isSidebarCollapsed ? 'p-2 overflow-visible' : 'p-4 overflow-y-auto',
         )}>
+          {!isSidebarCollapsed && workspaces.length > 0 ? (
+            <div className="px-2 pb-3">
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                Current workspace
+              </label>
+              <select
+                value={currentWorkspaceId || ''}
+                onChange={(event) => void handleWorkspaceChange(event.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+              >
+                {workspaces.map((workspace) => (
+                  <option key={workspace.id} value={workspace.id}>
+                    {workspace.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ) : null}
           <SidebarButton collapsed={isSidebarCollapsed} active={activeTab === 'notebook'} onClick={() => goTo('notebook')} icon={<FolderKanban className="w-5 h-5" />}>
-            Workspace
+            Recordings
           </SidebarButton>
           <SidebarButton collapsed={isSidebarCollapsed} active={activeTab === 'knowledge'} onClick={() => goTo('knowledge')} icon={<BrainCircuit className="w-5 h-5" />}>
             Knowledge
@@ -361,6 +407,24 @@ export function AppShell({
 
               <div className="space-y-2">
                 <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3 px-2">Workspace</h3>
+                {workspaces.length > 0 ? (
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <label className="mb-2 block text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                      Current workspace
+                    </label>
+                    <select
+                      value={currentWorkspaceId || ''}
+                      onChange={(event) => void handleWorkspaceChange(event.target.value)}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                    >
+                      {workspaces.map((workspace) => (
+                        <option key={workspace.id} value={workspace.id}>
+                          {workspace.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
                 <DrawerButton icon={<Settings className="w-5 h-5 text-slate-500" />} label="Settings & Preferences" onClick={() => goTo('settings')} />
               </div>
 
@@ -376,6 +440,63 @@ export function AppShell({
                 <LogOut className="w-5 h-5" />
                 Sign Out
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isWorkspaceSheetOpen && !isMobileDetailChromeHidden && (
+        <div
+          className="lg:hidden fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm"
+          onClick={() => setIsWorkspaceSheetOpen(false)}
+        >
+          <div
+            className="absolute inset-x-0 bottom-0 rounded-t-[28px] bg-white px-5 pb-[calc(env(safe-area-inset-bottom,0px)+1.25rem)] pt-4 shadow-2xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200" />
+            <div className="mb-4 text-center">
+              <h2 className="text-base font-semibold text-slate-900">Switch Workspace</h2>
+              <p className="mt-1 text-sm text-slate-500">Choose where you want to browse, search, and chat.</p>
+            </div>
+
+            <div className="space-y-2">
+              {workspaces.map((workspace) => {
+                const isCurrent = workspace.id === currentWorkspaceId;
+                return (
+                  <button
+                    key={workspace.id}
+                    type="button"
+                    onClick={() => void handleWorkspaceChange(workspace.id)}
+                    className={cn(
+                      'flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors',
+                      isCurrent
+                        ? 'border-indigo-200 bg-indigo-50'
+                        : 'border-slate-200 bg-white hover:bg-slate-50',
+                    )}
+                  >
+                    <div
+                      className={cn(
+                        'flex h-11 w-11 items-center justify-center rounded-2xl text-base font-semibold',
+                        isCurrent ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600',
+                      )}
+                    >
+                      {workspace.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-semibold text-slate-900">{workspace.name}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        {workspace.description || (isCurrent ? 'Current workspace' : 'Tap to switch')}
+                      </p>
+                    </div>
+                    {isCurrent ? (
+                      <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+                        Current
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>

@@ -19,6 +19,7 @@ import {
   insertApiTokenRow,
   updateApiTokenLastUsedAt,
 } from '../database/repositories/api-tokens-repository.js';
+import { createDefaultWorkspaceForUser } from './workspaces.js';
 
 const scrypt = promisify(scryptCallback);
 const SESSION_COOKIE = 'audiosense_session';
@@ -72,6 +73,7 @@ export async function createUser(input: { name: string; email: string; password:
   };
 
   await insertUserAuthRow(user);
+  await createDefaultWorkspaceForUser(user.id);
   return sanitizeUser(user);
 }
 

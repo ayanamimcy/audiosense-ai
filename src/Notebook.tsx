@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Book, FileAudio, Loader2, Plus, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Book, FileAudio, FolderKanban, Loader2, Plus, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { cn } from './lib/utils';
 import { apiFetch, apiJson } from './api';
@@ -15,7 +15,7 @@ export default function NotebookView() {
   const navigate = useNavigate();
   const { id } = useParams<{ id?: string }>();
   const {
-    tasks, notebooks, tags,
+    tasks, notebooks, tags, workspaces, currentWorkspaceId, selectWorkspace,
     fetchNotebooks, fetchTasks, fetchTags,
     selectTask, selectedTask, selectedTaskLoading, selectedTaskId,
     refreshTasksAndSelection,
@@ -30,10 +30,12 @@ export default function NotebookView() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [batchAction, setBatchAction] = useState<'notebook' | 'tags' | null>(null);
+  const [batchAction, setBatchAction] = useState<'notebook' | 'tags' | 'workspace' | null>(null);
   const [batchNotebookId, setBatchNotebookId] = useState('');
+  const [batchWorkspaceId, setBatchWorkspaceId] = useState('');
   const [batchTags, setBatchTags] = useState('');
   const [isProcessingBatch, setIsProcessingBatch] = useState(false);
+  const [notebookMoveTargetId, setNotebookMoveTargetId] = useState('');
 
   // Server-side search state
   const [serverResults, setServerResults] = useState<Task[] | null>(null);
@@ -70,15 +72,29 @@ export default function NotebookView() {
   useEffect(() => {
     runServerSearch(searchQuery);
     return () => { if (searchTimerRef.current) window.clearTimeout(searchTimerRef.current); };
-  }, [searchQuery, runServerSearch]);
+  }, [searchQuery, runServerSearch, currentWorkspaceId]);
+
+  useEffect(() => {
+    setServerResults(null);
+    setSearchError(false);
+  }, [currentWorkspaceId]);
 
   useEffect(() => {
     if (id) {
-      void selectTask(id);
+      void (async () => {
+        const task = await selectTask(id);
+        if (
+          task?.workspaceId &&
+          currentWorkspaceId &&
+          task.workspaceId !== currentWorkspaceId
+        ) {
+          await selectWorkspace(task.workspaceId, task.id);
+        }
+      })();
       return;
     }
     void selectTask(null);
-  }, [id]);
+  }, [id, currentWorkspaceId, selectTask, selectWorkspace]);
 
   const handleSelectTask = (taskId: string) => {
     navigate(`/notebook/${taskId}`);
@@ -122,6 +138,23 @@ export default function NotebookView() {
     return result;
   }, [baseTasks, statsFilter, notebookFilter, tagFilter]);
 
+  const destinationWorkspaces = useMemo(
+    () => workspaces.filter((workspace) => workspace.id !== currentWorkspaceId),
+    [workspaces, currentWorkspaceId],
+  );
+
+  useEffect(() => {
+    if (!destinationWorkspaces.some((workspace) => workspace.id === batchWorkspaceId)) {
+      setBatchWorkspaceId(destinationWorkspaces[0]?.id || '');
+    }
+  }, [destinationWorkspaces, batchWorkspaceId]);
+
+  useEffect(() => {
+    if (!destinationWorkspaces.some((workspace) => workspace.id === notebookMoveTargetId)) {
+      setNotebookMoveTargetId(destinationWorkspaces[0]?.id || '');
+    }
+  }, [destinationWorkspaces, notebookMoveTargetId]);
+
   const toggleSelection = (taskId: string) => {
     setSelectedIds((current) => (
       current.includes(taskId)
@@ -144,6 +177,7 @@ export default function NotebookView() {
     setSelectedIds([]);
     setBatchAction(null);
     setBatchNotebookId('');
+    setBatchWorkspaceId('');
     setBatchTags('');
   };
 
@@ -217,6 +251,56 @@ export default function NotebookView() {
     );
   };
 
+  const handleBatchWorkspace = async () => {
+    if (!batchWorkspaceId) {
+      return;
+    }
+
+    setIsProcessingBatch(true);
+    try {
+      await apiJson('/api/tasks/batch/workspace', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskIds: selectedIds,
+          workspaceId: batchWorkspaceId,
+        }),
+      });
+      await onUpdateTasks();
+      exitBatchMode();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to move recordings.');
+    } finally {
+      setIsProcessingBatch(false);
+    }
+  };
+
+  const handleMoveNotebook = async () => {
+    if (!notebookFilter || !notebookMoveTargetId) {
+      return;
+    }
+
+    const notebookName = notebooks.find((item) => item.id === notebookFilter)?.name || 'this notebook';
+    if (!confirm(`Move "${notebookName}" and its recordings to the selected workspace?`)) {
+      return;
+    }
+
+    try {
+      await apiJson(`/api/notebooks/${notebookFilter}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ workspaceId: notebookMoveTargetId }),
+      });
+      setNotebookFilter(null);
+      setNotebookMoveTargetId('');
+      await fetchNotebooks();
+      await fetchTasks();
+      await fetchTags();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to move notebook.');
+    }
+  };
+
   return (
     <div className={cn(
       'relative flex flex-col h-full',
@@ -270,7 +354,7 @@ export default function NotebookView() {
           )}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h1 className="text-base font-semibold text-slate-900">Workspace</h1>
+                <h1 className="text-base font-semibold text-slate-900">Recordings</h1>
               </div>
               <div className="flex items-center gap-2">
                 {isBatchMode ? (
@@ -451,6 +535,39 @@ export default function NotebookView() {
               </div>
             )}
 
+            {notebookFilter && destinationWorkspaces.length > 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center">
+                  <div className="md:flex-1">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Move notebook</p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Move <span className="font-medium text-slate-900">{notebooks.find((item) => item.id === notebookFilter)?.name}</span> and all of its recordings into another workspace.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={notebookMoveTargetId}
+                      onChange={(event) => setNotebookMoveTargetId(event.target.value)}
+                      className="rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {destinationWorkspaces.map((workspace) => (
+                        <option key={workspace.id} value={workspace.id}>
+                          {workspace.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => void handleMoveNotebook()}
+                      className="rounded-xl bg-slate-900 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-slate-800"
+                    >
+                      Move
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {searchError && (
               <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
                 Search failed. Showing no results.
@@ -550,12 +667,52 @@ export default function NotebookView() {
                 </button>
               </div>
             </div>
+          ) : batchAction === 'workspace' ? (
+            <div className="flex flex-col gap-2">
+              <div className="mb-1 flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-500">Move to Workspace</span>
+                <button type="button" onClick={() => setBatchAction(null)} className="text-slate-400 hover:text-slate-600">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={batchWorkspaceId}
+                  onChange={(event) => setBatchWorkspaceId(event.target.value)}
+                  className="flex-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  {destinationWorkspaces.map((workspace) => (
+                    <option key={workspace.id} value={workspace.id}>
+                      {workspace.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void handleBatchWorkspace()}
+                  disabled={!batchWorkspaceId}
+                  className="rounded-lg bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Move
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="flex items-center justify-between">
               <span className="rounded-md bg-indigo-50 px-2 py-1 text-sm font-medium text-indigo-600">
                 {selectedIds.length} selected
               </span>
               <div className="flex items-center gap-2">
+                {destinationWorkspaces.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => setBatchAction('workspace')}
+                    className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-indigo-50 hover:text-indigo-600"
+                    title="Move to workspace"
+                  >
+                    <FolderKanban className="w-4 h-4" />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => setBatchAction('notebook')}

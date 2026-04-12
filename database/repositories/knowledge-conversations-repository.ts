@@ -7,6 +7,12 @@ export async function listConversationsByUser(userId: string) {
     .orderBy('updatedAt', 'desc')) as KnowledgeConversationRow[];
 }
 
+export async function listConversationsByUserAndWorkspace(userId: string, workspaceId: string) {
+  return (await db('knowledge_conversations')
+    .where({ userId, workspaceId })
+    .orderBy('updatedAt', 'desc')) as KnowledgeConversationRow[];
+}
+
 export async function findConversationById(id: string) {
   return (await db('knowledge_conversations').where({ id }).first()) as KnowledgeConversationRow | undefined;
 }

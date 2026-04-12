@@ -21,6 +21,7 @@ import { chunkedUploadRouter } from './routes/chunked-upload.js';
 import { apiTokensRouter } from './routes/api-tokens.js';
 import { knowledgeRouter } from './routes/knowledge.js';
 import { associationsRouter } from './routes/associations.js';
+import { workspacesRouter } from './routes/workspaces.js';
 
 declare global {
   namespace Express {
@@ -103,6 +104,7 @@ protectedApi.use(chunkedUploadRouter);
 protectedApi.use(apiTokensRouter);
 protectedApi.use(knowledgeRouter);
 protectedApi.use(associationsRouter);
+protectedApi.use(workspacesRouter);
 app.use('/api', protectedApi);
 
 // --- Error handler ---

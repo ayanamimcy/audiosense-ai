@@ -1,5 +1,5 @@
-import { listNotebookRowsByUser } from '../database/repositories/notebooks-repository.js';
-import { listTaskRowsByUser } from '../database/repositories/tasks-repository.js';
+import { listNotebookRowsByUserAndWorkspace } from '../database/repositories/notebooks-repository.js';
+import { listTaskRowsByUserAndWorkspace } from '../database/repositories/tasks-repository.js';
 import {
   answerAcrossKnowledgeBase,
   isLlmConfigured,
@@ -10,15 +10,17 @@ import { repairPossiblyMojibakeText } from './text-encoding.js';
 import { toTaskResponse, type TaskRow } from './task-types.js';
 import { scoreTask } from './task-helpers.js';
 
-export async function searchTasks(userId: string, query: string) {
-  const tasks = ((await listTaskRowsByUser(userId)) as TaskRow[]).map(toTaskResponse);
+export async function searchTasks(userId: string, workspaceId: string, query: string) {
+  const tasks = ((await listTaskRowsByUserAndWorkspace(userId, workspaceId)) as TaskRow[]).map(
+    toTaskResponse,
+  );
 
   if (!query) {
     return tasks.slice(0, 20);
   }
 
   const userSettings = await getUserSettings(userId);
-  const ranking = await searchChunksHybrid(userId, query, {
+  const ranking = await searchChunksHybrid(userId, workspaceId, query, {
     retrievalMode: userSettings.retrievalMode,
     maxChunks: userSettings.maxKnowledgeChunks,
     settings: userSettings,
@@ -48,6 +50,7 @@ export async function searchTasks(userId: string, query: string) {
 
 export async function answerFromKnowledgeBase(
   userId: string,
+  workspaceId: string,
   query: string,
   taskIds?: string[],
 ) {
@@ -56,10 +59,18 @@ export async function answerFromKnowledgeBase(
     throw new Error('LLM API is not configured.');
   }
 
-  const allTasks = ((await listTaskRowsByUser(userId)) as TaskRow[]).map(toTaskResponse);
+  const allTasks = ((await listTaskRowsByUserAndWorkspace(userId, workspaceId)) as TaskRow[]).map(
+    toTaskResponse,
+  );
   const selectedIds = taskIds?.length ? taskIds : [];
-  const retrieval = await searchChunksHybrid(userId, query, {
-    taskIds: selectedIds.length ? selectedIds : undefined,
+  const allowedTaskIds = selectedIds.length
+    ? selectedIds.filter((id) => allTasks.some((task) => task.id === id))
+    : undefined;
+  if (selectedIds.length > 0 && (!allowedTaskIds || allowedTaskIds.length === 0)) {
+    throw new Error('No matching transcripts found.');
+  }
+  const retrieval = await searchChunksHybrid(userId, workspaceId, query, {
+    taskIds: allowedTaskIds,
     retrievalMode: userSettings.retrievalMode,
     maxChunks: userSettings.maxKnowledgeChunks,
     settings: userSettings,
@@ -76,7 +87,7 @@ export async function answerFromKnowledgeBase(
     throw new Error('No matching transcripts found.');
   }
 
-  const notebooks = await listNotebookRowsByUser(userId);
+  const notebooks = await listNotebookRowsByUserAndWorkspace(userId, workspaceId);
   const notebookMap = new Map(notebooks.map((item) => [item.id, item.name]));
   const answer = await answerAcrossKnowledgeBase(
     query,

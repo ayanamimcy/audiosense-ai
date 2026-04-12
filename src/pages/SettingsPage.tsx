@@ -16,7 +16,15 @@ export function SettingsPage({
   onUserUpdated: (user: AuthUser) => void;
   onSettingsSaved: () => void | Promise<void>;
 }) {
-  const { capabilities, userSettings, providerHealth } = useAppDataContext();
+  const {
+    capabilities,
+    userSettings,
+    providerHealth,
+    workspaces,
+    currentWorkspaceId,
+    selectWorkspace,
+    refreshAll,
+  } = useAppDataContext();
   const { currentUser } = useAuthContext();
   const [draft, setDraft] = useState<UserSettings | null>(userSettings);
   const [isSaving, setIsSaving] = useState(false);
@@ -29,6 +37,8 @@ export function SettingsPage({
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [llmModels, setLlmModels] = useState<string[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
+  const [newWorkspaceName, setNewWorkspaceName] = useState('');
+  const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
 
   const fetchLlmModels = useCallback(async () => {
     setIsLoadingModels(true);
@@ -145,6 +155,85 @@ export function SettingsPage({
     }
   };
 
+  const refreshWorkspaceData = async (preferredTaskId?: string | null) => {
+    await refreshAll(preferredTaskId);
+  };
+
+  const handleCreateWorkspace = async () => {
+    const name = newWorkspaceName.trim();
+    if (!name) {
+      alert('Workspace name is required.');
+      return;
+    }
+
+    setIsSavingWorkspace(true);
+    try {
+      await apiJson('/api/workspaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      setNewWorkspaceName('');
+      await refreshWorkspaceData();
+      alert('Workspace created successfully.');
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to create workspace.');
+    } finally {
+      setIsSavingWorkspace(false);
+    }
+  };
+
+  const handleRenameWorkspace = async (workspaceId: string, currentName: string) => {
+    const nextName = window.prompt('Rename workspace', currentName)?.trim();
+    if (!nextName || nextName === currentName) {
+      return;
+    }
+
+    setIsSavingWorkspace(true);
+    try {
+      await apiJson(`/api/workspaces/${workspaceId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: nextName }),
+      });
+      await refreshWorkspaceData();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to rename workspace.');
+    } finally {
+      setIsSavingWorkspace(false);
+    }
+  };
+
+  const handleDeleteWorkspace = async (workspaceId: string, workspaceName: string) => {
+    if (!window.confirm(`Delete workspace "${workspaceName}"? The workspace must be empty.`)) {
+      return;
+    }
+
+    setIsSavingWorkspace(true);
+    try {
+      await apiJson(`/api/workspaces/${workspaceId}`, {
+        method: 'DELETE',
+      });
+      await refreshWorkspaceData();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to delete workspace.');
+    } finally {
+      setIsSavingWorkspace(false);
+    }
+  };
+
+  const handleSwitchWorkspace = async (workspaceId: string) => {
+    setIsSavingWorkspace(true);
+    try {
+      await selectWorkspace(workspaceId);
+      await onSettingsSaved();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to switch workspace.');
+    } finally {
+      setIsSavingWorkspace(false);
+    }
+  };
+
   if (!draft) {
     return (
       <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm max-w-3xl">
@@ -159,6 +248,88 @@ export function SettingsPage({
       <h2 className="text-2xl font-bold text-slate-900 mb-6">Settings</h2>
 
       <div className="space-y-6">
+        <div className="rounded-2xl border border-slate-200 p-5 space-y-4">
+          <div>
+            <h3 className="text-base font-semibold text-slate-900">Workspaces</h3>
+            <p className="text-sm text-slate-500 mt-1">Choose the default workspace for browsing, search, and knowledge chat. Recordings and notebooks stay isolated inside their workspace.</p>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {workspaces.map((workspace) => {
+              const isCurrent = workspace.id === currentWorkspaceId;
+              return (
+                <div
+                  key={workspace.id}
+                  className={cn(
+                    'flex flex-col gap-3 rounded-2xl border p-4 md:flex-row md:items-center md:justify-between',
+                    isCurrent ? 'border-indigo-200 bg-indigo-50/60' : 'border-slate-200 bg-slate-50',
+                  )}
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-sm font-semibold text-slate-900">{workspace.name}</span>
+                      {isCurrent ? (
+                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
+                          Current
+                        </span>
+                      ) : null}
+                    </div>
+                    {workspace.description ? (
+                      <p className="mt-1 text-sm text-slate-500">{workspace.description}</p>
+                    ) : null}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {!isCurrent ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleSwitchWorkspace(workspace.id)}
+                        disabled={isSavingWorkspace}
+                        className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Use
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => void handleRenameWorkspace(workspace.id, workspace.name)}
+                      disabled={isSavingWorkspace}
+                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Rename
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteWorkspace(workspace.id, workspace.name)}
+                      disabled={isSavingWorkspace || workspaces.length <= 1}
+                      className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 md:flex-row md:items-center">
+            <input
+              type="text"
+              value={newWorkspaceName}
+              onChange={(event) => setNewWorkspaceName(event.target.value)}
+              placeholder="New workspace name"
+              className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <button
+              type="button"
+              onClick={() => void handleCreateWorkspace()}
+              disabled={isSavingWorkspace}
+              className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Add workspace
+            </button>
+          </div>
+        </div>
+
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-2">Parsing Language</label>
           <select

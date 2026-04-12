@@ -17,8 +17,32 @@ export async function listTaskRowsByUser(userId: string) {
   return (await db('tasks').where({ userId }).orderBy('createdAt', 'desc')) as TaskRow[];
 }
 
+export async function listTaskRowsByUserAndWorkspace(userId: string, workspaceId: string) {
+  return (await db('tasks')
+    .where({ userId, workspaceId })
+    .orderBy('createdAt', 'desc')) as TaskRow[];
+}
+
+export async function listTaskRowsByUserAndIds(userId: string, taskIds: string[]) {
+  return (await db('tasks')
+    .where({ userId })
+    .whereIn('id', taskIds)) as TaskRow[];
+}
+
+export async function listTaskRowsByUserAndNotebook(userId: string, notebookId: string) {
+  return (await db('tasks')
+    .where({ userId, notebookId })
+    .orderBy('createdAt', 'desc')) as TaskRow[];
+}
+
 export async function listTaskTagRowsByUser(userId: string) {
   return (await db('tasks').where({ userId }).select('tags')) as Pick<TaskRow, 'tags'>[];
+}
+
+export async function listTaskTagRowsByUserAndWorkspace(userId: string, workspaceId: string) {
+  return (await db('tasks')
+    .where({ userId, workspaceId })
+    .select('tags')) as Pick<TaskRow, 'tags'>[];
 }
 
 export async function insertTaskRow(row: TaskRow) {

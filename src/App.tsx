@@ -199,9 +199,10 @@ function AppRoot() {
   const { authLoading, currentUser, publicConfig, setCurrentUser, handleLogout: authLogout } = auth;
   const appData = useAppData(currentUser);
   const {
+    workspaces, currentWorkspaceId, currentWorkspace,
     tasks, notebooks, tags, summaryPrompts, capabilities, userSettings, providerHealth,
     selectedTaskId, selectTask, selectedTask, selectedTaskLoading,
-    fetchTasks, fetchNotebooks, fetchTags, fetchSummaryPrompts,
+    fetchWorkspaces, selectWorkspace, fetchTasks, fetchNotebooks, fetchTags, fetchSummaryPrompts,
     fetchCapabilities, fetchSettings, fetchProviderHealth,
     refreshTasksAndSelection, refreshAll, clearAll,
   } = appData;
@@ -242,11 +243,12 @@ function AppRoot() {
 
   const authContextValue = { currentUser, handleLogout, setCurrentUser };
   const appDataContextValue: AppDataContextValue = {
+    workspaces, currentWorkspaceId, currentWorkspace,
     tasks, notebooks, tags, summaryPrompts, capabilities, userSettings, providerHealth,
     selectedTaskId, selectTask, selectedTask, selectedTaskLoading,
-    fetchTasks, fetchTaskDetail: appData.fetchTaskDetail, fetchNotebooks, fetchTags,
+    fetchWorkspaces, selectWorkspace, fetchTasks, fetchTaskDetail: appData.fetchTaskDetail, fetchNotebooks, fetchTags,
     fetchSummaryPrompts, fetchCapabilities, fetchSettings, fetchProviderHealth,
-    refreshTasksAndSelection, refreshAll,
+    refreshTasksAndSelection, refreshAll, clearAll,
   };
 
   return (
