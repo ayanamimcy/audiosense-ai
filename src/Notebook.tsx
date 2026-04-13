@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Book, FileAudio, FolderKanban, Loader2, Plus, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Book, Check, FileAudio, FolderKanban, Loader2, Pencil, Plus, RefreshCw, Search, Tag, Trash2, X } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { cn } from './lib/utils';
 import { apiFetch, apiJson } from './api';
@@ -27,6 +27,8 @@ export default function NotebookView() {
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [mobileNotebookEdit, setMobileNotebookEdit] = useState(false);
   const [mobileNewNotebook, setMobileNewNotebook] = useState('');
+  const [mobileEditingNotebookId, setMobileEditingNotebookId] = useState<string | null>(null);
+  const [mobileEditingNotebookName, setMobileEditingNotebookName] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [isBatchMode, setIsBatchMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -77,6 +79,24 @@ export default function NotebookView() {
   useEffect(() => {
     setServerResults(null);
     setSearchError(false);
+  }, [currentWorkspaceId]);
+
+  useEffect(() => {
+    setSearchQuery('');
+    setStatsFilter(null);
+    setTagFilter(null);
+    setNotebookFilter(null);
+    setServerResults(null);
+    setSearchError(false);
+    setIsSearching(false);
+    setEditingTask(null);
+    setIsBatchMode(false);
+    setSelectedIds([]);
+    setBatchAction(null);
+    setBatchNotebookId('');
+    setBatchWorkspaceId('');
+    setBatchTags('');
+    setNotebookMoveTargetId('');
   }, [currentWorkspaceId]);
 
   useEffect(() => {
@@ -301,6 +321,36 @@ export default function NotebookView() {
     }
   };
 
+  const startMobileNotebookRename = (notebook: { id: string; name: string }) => {
+    setMobileEditingNotebookId(notebook.id);
+    setMobileEditingNotebookName(notebook.name);
+  };
+
+  const cancelMobileNotebookRename = () => {
+    setMobileEditingNotebookId(null);
+    setMobileEditingNotebookName('');
+  };
+
+  const handleMobileNotebookRename = async (notebook: { id: string; name: string }) => {
+    const name = mobileEditingNotebookName.trim();
+    if (!name || name === notebook.name) {
+      cancelMobileNotebookRename();
+      return;
+    }
+
+    try {
+      await apiJson(`/api/notebooks/${notebook.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      cancelMobileNotebookRename();
+      await fetchNotebooks();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to rename notebook.');
+    }
+  };
+
   return (
     <div className={cn(
       'relative flex flex-col h-full',
@@ -429,33 +479,89 @@ export default function NotebookView() {
                   All
                 </button>
                 {notebooks.map((nb) => (
-                  <button
-                    key={nb.id}
-                    type="button"
-                    onClick={() => mobileNotebookEdit ? undefined : handleSelectNotebook(nb.id)}
-                    className={cn(
-                      'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
-                      notebookFilter === nb.id ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-500 border-slate-200',
-                    )}
-                  >
-                    {nb.name}
-                    {mobileNotebookEdit && (
-                      <span
-                        role="button"
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (!confirm(`Delete "${nb.name}"?`)) return;
-                          await apiJson(`/api/notebooks/${nb.id}`, { method: 'DELETE' });
-                          if (notebookFilter === nb.id) setNotebookFilter(null);
-                          await fetchNotebooks();
-                          await fetchTasks();
+                  mobileEditingNotebookId === nb.id ? (
+                    <div
+                      key={nb.id}
+                      className="inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2 py-1"
+                    >
+                      <input
+                        type="text"
+                        value={mobileEditingNotebookName}
+                        onChange={(event) => setMobileEditingNotebookName(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            void handleMobileNotebookRename(nb);
+                          }
+                          if (event.key === 'Escape') {
+                            cancelMobileNotebookRename();
+                          }
                         }}
-                        className="text-red-400 hover:text-red-600 ml-0.5"
+                        onBlur={() => void handleMobileNotebookRename(nb)}
+                        className="w-24 bg-transparent text-[11px] font-medium text-indigo-700 focus:outline-none"
+                        autoFocus
+                      />
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => void handleMobileNotebookRename(nb)}
+                        className="text-indigo-600"
+                        title="Save notebook name"
+                      >
+                        <Check className="w-3 h-3" />
+                      </button>
+                      <button
+                        type="button"
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={cancelMobileNotebookRename}
+                        className="text-slate-400"
+                        title="Cancel rename"
                       >
                         <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      key={nb.id}
+                      type="button"
+                      onClick={() => mobileNotebookEdit ? undefined : handleSelectNotebook(nb.id)}
+                      className={cn(
+                        'inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors',
+                        notebookFilter === nb.id ? 'bg-indigo-50 text-indigo-700 border-indigo-200' : 'bg-white text-slate-500 border-slate-200',
+                      )}
+                    >
+                      <span>{nb.name}</span>
+                      <span
+                        role="button"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          startMobileNotebookRename(nb);
+                        }}
+                        className="ml-0.5 text-slate-400 hover:text-indigo-600"
+                        title="Rename notebook"
+                      >
+                        <Pencil className="w-3 h-3" />
                       </span>
-                    )}
-                  </button>
+                      {mobileNotebookEdit && (
+                        <span
+                          role="button"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!confirm(`Delete "${nb.name}"?`)) return;
+                            await apiJson(`/api/notebooks/${nb.id}`, { method: 'DELETE' });
+                            if (notebookFilter === nb.id) setNotebookFilter(null);
+                            if (mobileEditingNotebookId === nb.id) {
+                              cancelMobileNotebookRename();
+                            }
+                            await fetchNotebooks();
+                            await fetchTasks();
+                          }}
+                          className="text-red-400 hover:text-red-600 ml-0.5"
+                        >
+                          <X className="w-3 h-3" />
+                        </span>
+                      )}
+                    </button>
+                  )
                 ))}
                 {mobileNotebookEdit ? (
                   <div className="inline-flex items-center gap-1">

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Folder, Plus, Trash2 } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, Folder, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { apiJson } from '../../api';
 import { cn } from '../../lib/utils';
 import type { Notebook, TagStat, Task } from '../../types';
@@ -29,6 +29,9 @@ export function DashboardSidebar({
 }) {
   const [isCreating, setIsCreating] = useState(false);
   const [newName, setNewName] = useState('');
+  const [editingNotebookId, setEditingNotebookId] = useState<string | null>(null);
+  const [editingNotebookName, setEditingNotebookName] = useState('');
+  const editInputRef = useRef<HTMLInputElement | null>(null);
 
   const pendingTask = tasks.find((t) => t.status === 'pending' || t.status === 'processing' || t.status === 'blocked');
 
@@ -63,6 +66,48 @@ export function DashboardSidebar({
       await onNotebooksChanged();
     } catch (error) {
       alert(error instanceof Error ? error.message : 'Failed to delete notebook.');
+    }
+  };
+
+  useEffect(() => {
+    if (editingNotebookId) {
+      editInputRef.current?.focus();
+      editInputRef.current?.select();
+    }
+  }, [editingNotebookId]);
+
+  const startRename = (notebook: Notebook) => {
+    setEditingNotebookId(notebook.id);
+    setEditingNotebookName(notebook.name);
+  };
+
+  const cancelRename = () => {
+    setEditingNotebookId(null);
+    setEditingNotebookName('');
+  };
+
+  const handleRename = async (notebook: Notebook) => {
+    const name = editingNotebookName.trim();
+    if (!name) {
+      cancelRename();
+      return;
+    }
+
+    if (name === notebook.name) {
+      cancelRename();
+      return;
+    }
+
+    try {
+      await apiJson(`/api/notebooks/${notebook.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name }),
+      });
+      cancelRename();
+      await onNotebooksChanged();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : 'Failed to rename notebook.');
     }
   };
 
@@ -125,31 +170,83 @@ export function DashboardSidebar({
             <span className="text-[10px] text-slate-400 shrink-0">{tasks.length}</span>
           </button>
           {notebookStats.map((nb) => (
-            <div
-              key={nb.id}
-              className={cn(
-                'flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors group',
-                activeNotebookFilter === nb.id ? 'bg-indigo-50' : 'hover:bg-slate-50',
-              )}
-            >
-              <button
-                type="button"
-                onClick={() => onSelectNotebook(nb.id)}
-                className="flex items-center gap-2 flex-1 min-w-0 text-left"
+            editingNotebookId === nb.id ? (
+              <div
+                key={nb.id}
+                className="flex items-center gap-1 px-2 py-1.5 rounded-lg border border-indigo-200 bg-indigo-50"
               >
-                <Folder className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                <span className="flex-1 text-xs text-slate-700 truncate">{nb.name}</span>
-                <span className="text-[10px] text-slate-400 shrink-0">{nb.taskCount}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleDelete(nb.id)}
-                className="hidden group-hover:block shrink-0 p-0.5 text-slate-300 hover:text-red-500 transition-colors"
-                title="Delete notebook"
+                <input
+                  ref={editInputRef}
+                  type="text"
+                  value={editingNotebookName}
+                  onChange={(event) => setEditingNotebookName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      void handleRename(nb);
+                    }
+                    if (event.key === 'Escape') {
+                      cancelRename();
+                    }
+                  }}
+                  onBlur={() => void handleRename(nb)}
+                  className="flex-1 min-w-0 rounded-lg border border-indigo-200 bg-white px-2 py-1 text-xs text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => void handleRename(nb)}
+                  className="shrink-0 rounded p-1 text-indigo-600 transition-colors hover:bg-white"
+                  title="Save notebook name"
+                >
+                  <Check className="w-3 h-3" />
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={cancelRename}
+                  className="shrink-0 rounded p-1 text-slate-400 transition-colors hover:bg-white hover:text-slate-600"
+                  title="Cancel rename"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <div
+                key={nb.id}
+                className={cn(
+                  'flex items-center gap-2 px-2 py-1.5 rounded-lg transition-colors group',
+                  activeNotebookFilter === nb.id ? 'bg-indigo-50' : 'hover:bg-slate-50',
+                )}
               >
-                <Trash2 className="w-3 h-3" />
-              </button>
-            </div>
+                <button
+                  type="button"
+                  onClick={() => onSelectNotebook(nb.id)}
+                  className="flex items-center gap-2 flex-1 min-w-0 text-left"
+                >
+                  <Folder className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                  <span className="flex-1 text-xs text-slate-700 truncate">{nb.name}</span>
+                  <span className="text-[10px] text-slate-400 shrink-0">{nb.taskCount}</span>
+                </button>
+                <div className="hidden items-center gap-0.5 shrink-0 group-hover:flex">
+                  <button
+                    type="button"
+                    onClick={() => startRename(nb)}
+                    className="p-0.5 text-slate-300 hover:text-indigo-500 transition-colors"
+                    title="Rename notebook"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDelete(nb.id)}
+                    className="p-0.5 text-slate-300 hover:text-red-500 transition-colors"
+                    title="Delete notebook"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )
           ))}
           {notebookStats.length === 0 && !isCreating && (
             <p className="text-xs text-slate-400 py-1">No notebooks yet.</p>

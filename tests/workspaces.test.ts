@@ -15,6 +15,7 @@ const { db, runMigrations } = await import('../db.js');
 const workspaceMigration = await import('../database/migrations/202604120001_workspaces_scope.cjs');
 const { resolveCurrentWorkspaceForUser } = await import('../lib/workspaces.js');
 const { saveUserSettings, getUserSettings } = await import('../lib/settings.js');
+const { decryptStoredSettings, encryptStoredSettings } = await import('../lib/secure-settings.js');
 const { listTasksForUser, moveTasksToWorkspaceForUser, updateTaskForUser, UserTaskWorkspaceValidationError } =
   await import('../application/services/tasks-service.js');
 const { listNotebooksForUser, updateNotebookForUser } = await import('../application/services/notebooks-service.js');
@@ -293,6 +294,75 @@ test('current workspace resolver recovers invalid selection and scopes lists', a
   assert.deepEqual(notebooks.map((item) => item.id), ['notebook-a']);
   assert.deepEqual(prompts.map((item) => item.id), ['prompt-a']);
   assert.deepEqual(conversations.map((item) => item.id), ['conv-a']);
+});
+
+test('subtitle split runtime settings prefer environment variables over stored values', async () => {
+  await resetDb();
+
+  await db('users').insert({
+    id: 'user-subtitle-settings',
+    name: 'Env User',
+    email: 'env@example.com',
+    passwordHash: 'salt:hash',
+    createdAt: 29,
+  });
+
+  const previousEnv = {
+    enabled: process.env.SUBTITLE_SPLIT_ENABLED,
+    baseUrl: process.env.SUBTITLE_SPLIT_API_BASE_URL,
+    apiKey: process.env.SUBTITLE_SPLIT_API_KEY,
+    model: process.env.SUBTITLE_SPLIT_MODEL,
+  };
+
+  process.env.SUBTITLE_SPLIT_ENABLED = 'false';
+  process.env.SUBTITLE_SPLIT_API_BASE_URL = 'http://env-subtitle/v1';
+  process.env.SUBTITLE_SPLIT_API_KEY = 'env-subtitle-key';
+  process.env.SUBTITLE_SPLIT_MODEL = 'env-subtitle-model';
+
+  try {
+    const now = Date.now();
+    await db('user_settings').insert({
+      userId: 'user-subtitle-settings',
+      settings: encryptStoredSettings(JSON.stringify({
+        parseLanguage: 'en',
+        subtitleSplit: {
+          enabled: true,
+          baseUrl: 'http://stored-subtitle/v1',
+          apiKey: 'stored-subtitle-key',
+          model: 'stored-subtitle-model',
+          requestTimeoutMs: 15000,
+          maxRetries: 5,
+        },
+        subtitleLlm: {
+          baseUrl: 'http://legacy-subtitle/v1',
+          apiKey: 'legacy-subtitle-key',
+          model: 'legacy-subtitle-model',
+        },
+      })),
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const settings = await getUserSettings('user-subtitle-settings');
+    assert.equal(settings.subtitleSplit.enabled, false);
+    assert.equal(settings.subtitleSplit.baseUrl, 'http://env-subtitle/v1');
+    assert.equal(settings.subtitleSplit.apiKey, 'env-subtitle-key');
+    assert.equal(settings.subtitleSplit.model, 'env-subtitle-model');
+
+    await saveUserSettings('user-subtitle-settings', { parseLanguage: 'ja' });
+
+    const storedRow = await db('user_settings').where({ userId: 'user-subtitle-settings' }).first();
+    const storedPayload = JSON.parse(decryptStoredSettings(String(storedRow?.settings || '')).plaintext);
+
+    assert.equal(storedPayload.parseLanguage, 'ja');
+    assert.equal('subtitleSplit' in storedPayload, false);
+    assert.equal('subtitleLlm' in storedPayload, false);
+  } finally {
+    process.env.SUBTITLE_SPLIT_ENABLED = previousEnv.enabled;
+    process.env.SUBTITLE_SPLIT_API_BASE_URL = previousEnv.baseUrl;
+    process.env.SUBTITLE_SPLIT_API_KEY = previousEnv.apiKey;
+    process.env.SUBTITLE_SPLIT_MODEL = previousEnv.model;
+  }
 });
 
 test('task notebook assignment rejects notebooks from another workspace', async () => {

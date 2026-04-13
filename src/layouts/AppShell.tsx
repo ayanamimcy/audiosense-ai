@@ -86,7 +86,7 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const activeTab = useActiveTab();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isNewMenuOpen, setIsNewMenuOpen] = useState(false);
@@ -183,7 +183,14 @@ export function AppShell({
     }
 
     try {
+      const nextPathname = pathname.startsWith('/notebook/') ? '/notebook' : pathname;
+      if (nextPathname !== pathname || search) {
+        navigate({ pathname: nextPathname, search: '' }, { replace: true });
+      }
+
       await selectWorkspace(workspaceId);
+      setIsMobileMenuOpen(false);
+      setIsNewMenuOpen(false);
       setIsWorkspaceSheetOpen(false);
     } catch (error) {
       console.error('Failed to switch workspace:', error);

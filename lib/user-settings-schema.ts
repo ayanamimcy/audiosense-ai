@@ -62,10 +62,7 @@ export interface UserSettings {
   subtitleSplit: SubtitleSplitSettings;
 }
 
-export interface LegacySubtitleSplitSettingsInput extends Partial<LlmSettings> {}
-
 export interface StoredUserSettingsInput extends Partial<UserSettings> {
-  subtitleLlm?: LegacySubtitleSplitSettingsInput;
 }
 
 export type RuntimeUserSettings = UserSettings;
@@ -162,17 +159,15 @@ export function getDefaultSettings(): UserSettings {
       enabled: process.env.SUBTITLE_SPLIT_ENABLED !== 'false',
       baseUrl: (
         process.env.SUBTITLE_SPLIT_API_BASE_URL ||
-        process.env.SUBTITLE_LLM_API_BASE_URL ||
         process.env.LLM_API_BASE_URL ||
         'https://api.openai.com/v1'
       ).replace(/\/$/, ''),
       apiKey:
         process.env.SUBTITLE_SPLIT_API_KEY ||
-        process.env.SUBTITLE_LLM_API_KEY ||
         process.env.LLM_API_KEY ||
         process.env.OPENAI_API_KEY ||
         '',
-      model: process.env.SUBTITLE_SPLIT_MODEL || process.env.SUBTITLE_LLM_MODEL || 'gpt-4o-mini',
+      model: process.env.SUBTITLE_SPLIT_MODEL || 'gpt-4o-mini',
       requestTimeoutMs: Math.max(
         5_000,
         Number(process.env.SUBTITLE_SPLIT_REQUEST_TIMEOUT_MS || 60_000),
@@ -185,20 +180,10 @@ export function getDefaultSettings(): UserSettings {
   };
 }
 
-function readLegacySubtitleSplitSettings(input: StoredUserSettingsInput) {
-  return {
-    baseUrl: readString(input.subtitleLlm?.baseUrl, ''),
-    apiKey: readOptionalString(input.subtitleLlm?.apiKey),
-    model: readString(input.subtitleLlm?.model, ''),
-  };
-}
-
 export function mergeUserSettings(
   base: UserSettings,
   input: StoredUserSettingsInput,
 ): Partial<UserSettings> {
-  const legacySubtitleSplit = readLegacySubtitleSplitSettings(input);
-
   return {
     ...base,
     ...input,
@@ -216,9 +201,6 @@ export function mergeUserSettings(
     },
     subtitleSplit: {
       ...base.subtitleSplit,
-      ...(legacySubtitleSplit.baseUrl || legacySubtitleSplit.apiKey || legacySubtitleSplit.model
-        ? legacySubtitleSplit
-        : {}),
       ...(input.subtitleSplit || {}),
     },
   };

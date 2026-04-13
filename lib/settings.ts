@@ -30,6 +30,17 @@ export type {
   UserSettings,
 } from './user-settings-schema.js';
 
+function stripServerOnlySettings(input: StoredUserSettingsInput | null | undefined) {
+  if (!input) {
+    return null;
+  }
+
+  const sanitized = { ...input } as StoredUserSettingsInput & { subtitleLlm?: unknown };
+  delete sanitized.subtitleSplit;
+  delete sanitized.subtitleLlm;
+  return sanitized;
+}
+
 async function loadStoredUserSettingsInput(userId: string) {
   const row = await findStoredUserSettingsRow(userId);
   if (!row?.settings) {
@@ -46,7 +57,7 @@ async function loadStoredUserSettingsInput(userId: string) {
     });
   }
 
-  return JSON.parse(stored.plaintext) as StoredUserSettingsInput;
+  return stripServerOnlySettings(JSON.parse(stored.plaintext) as StoredUserSettingsInput);
 }
 
 export async function getUserSettings(userId: string) {
@@ -69,13 +80,15 @@ export async function getUserSettingsForClient(userId: string) {
 }
 
 export async function saveUserSettings(userId: string, input: StoredUserSettingsInput) {
+  const persistedInput = stripServerOnlySettings(input) || {};
   const currentSettings = await getUserSettings(userId);
-  const settings = sanitizeUserSettings(input, currentSettings);
+  const settings = sanitizeUserSettings(persistedInput, currentSettings);
+  const storedSettings = stripServerOnlySettings(settings) || {};
   const now = Date.now();
   const existing = await findStoredUserSettingsRow(userId);
   await upsertStoredUserSettingsRow({
     userId,
-    settings: encryptStoredSettings(JSON.stringify(settings)),
+    settings: encryptStoredSettings(JSON.stringify(storedSettings)),
     createdAt: Number(existing?.createdAt || now),
     updatedAt: now,
   });
