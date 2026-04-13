@@ -97,6 +97,7 @@ export function AppShell({
   const [isRefreshing, setIsRefreshing] = useState(false);
   const pullStartY = useRef(0);
   const isPulling = useRef(false);
+  const desktopNewMenuRef = useRef<HTMLDivElement | null>(null);
   const { refreshAll, workspaces, currentWorkspace, currentWorkspaceId, selectWorkspace } = useAppDataContext();
   const isMobileDetailChromeHidden =
     pathname.startsWith('/notebook/');
@@ -149,6 +150,27 @@ export function AppShell({
     el.addEventListener('scroll', handleMainScroll, { passive: true });
     return () => el.removeEventListener('scroll', handleMainScroll);
   }, [mainScrollRef, handleMainScroll]);
+
+  useEffect(() => {
+    if (!isNewMenuOpen || typeof window === 'undefined' || window.innerWidth < 1024) {
+      return;
+    }
+
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!(event.target instanceof Node)) {
+        return;
+      }
+
+      if (desktopNewMenuRef.current?.contains(event.target)) {
+        return;
+      }
+
+      setIsNewMenuOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isNewMenuOpen]);
 
   const goTo = (tab: Tab) => {
     navigate(TAB_TO_PATH[tab]);
@@ -247,7 +269,7 @@ export function AppShell({
           <SidebarButton collapsed={isSidebarCollapsed} active={activeTab === 'knowledge'} onClick={() => goTo('knowledge')} icon={<BrainCircuit className="w-5 h-5" />}>
             Knowledge
           </SidebarButton>
-          <div className="relative">
+          <div ref={desktopNewMenuRef} className="relative">
             <SidebarButton collapsed={isSidebarCollapsed} active={activeTab === 'upload' || activeTab === 'record'} onClick={() => setIsNewMenuOpen((v) => !v)} icon={<Plus className="w-5 h-5" />}>
               New
             </SidebarButton>

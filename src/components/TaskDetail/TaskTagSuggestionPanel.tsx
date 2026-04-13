@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Loader2, Plus, Sparkles, Wand2, X } from 'lucide-react';
 import { apiFetch } from '../../api';
 import { cn } from '../../lib/utils';
@@ -58,10 +59,13 @@ export function TaskTagSuggestionPanel({
   compact?: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [customTagInput, setCustomTagInput] = useState('');
   const [isOpen, setIsOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState<'generate' | 'apply' | 'dismiss' | null>(null);
+  const [desktopPopoverStyle, setDesktopPopoverStyle] = useState<React.CSSProperties | null>(null);
 
   const suggestionError = getTaskTagSuggestionError(task);
   const isGenerating = isTaskTagSuggestionGenerating(task);
@@ -97,17 +101,71 @@ export function TaskTagSuggestionPanel({
 
   useEffect(() => {
     if (mode !== 'desktop-popover' || !isOpen) {
+      setDesktopPopoverStyle(null);
       return undefined;
     }
 
+    const updateDesktopPopoverPosition = () => {
+      if (!triggerRef.current || typeof window === 'undefined') {
+        return;
+      }
+
+      const rect = triggerRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const viewportPadding = 16;
+      const preferredWidth = 416;
+      const minWidth = 280;
+      const width = Math.max(
+        minWidth,
+        Math.min(preferredWidth, viewportWidth - viewportPadding * 2),
+      );
+      const left = Math.min(
+        Math.max(rect.left, viewportPadding),
+        Math.max(viewportPadding, viewportWidth - width - viewportPadding),
+      );
+      const top = Math.min(
+        rect.bottom + 8,
+        Math.max(viewportPadding, viewportHeight - viewportPadding - 240),
+      );
+      const maxHeight = Math.max(220, viewportHeight - top - viewportPadding);
+
+      setDesktopPopoverStyle({
+        position: 'fixed',
+        top,
+        left,
+        width,
+        maxHeight,
+        zIndex: 60,
+      });
+    };
+
     const handlePointerDown = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (rootRef.current?.contains(target) || panelRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsOpen(false);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
         setIsOpen(false);
       }
     };
 
+    updateDesktopPopoverPosition();
     document.addEventListener('mousedown', handlePointerDown);
-    return () => document.removeEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+    document.addEventListener('scroll', updateDesktopPopoverPosition, true);
+    window.addEventListener('resize', updateDesktopPopoverPosition);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+      document.removeEventListener('scroll', updateDesktopPopoverPosition, true);
+      window.removeEventListener('resize', updateDesktopPopoverPosition);
+    };
   }, [isOpen, mode]);
 
   if (!canTaskGenerateTagSuggestions(task)) {
@@ -234,13 +292,18 @@ export function TaskTagSuggestionPanel({
       className={cn(
         'flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.12)]',
         mode === 'desktop-popover'
-          ? 'absolute left-0 top-full z-30 mt-2 w-[min(26rem,calc(100vw-3rem))] max-h-[min(32rem,calc(100dvh-7rem))]'
+          ? 'w-full max-h-full'
           : useFloatingMobilePanel
-            ? 'fixed inset-x-3 top-3 bottom-[calc(6.5rem+env(safe-area-inset-bottom))] z-50'
-          : 'w-full max-w-none max-h-[min(28rem,calc(100dvh-16rem))]',
+            ? 'fixed left-1/2 top-1/2 z-50 w-[min(26rem,calc(100vw-1.5rem))] max-h-[min(26rem,calc(100dvh-8rem))] -translate-x-1/2 -translate-y-1/2 rounded-[28px]'
+            : 'w-full max-w-none max-h-[min(28rem,calc(100dvh-16rem))]',
       )}
     >
-      <div className="space-y-4 overflow-y-auto p-4 custom-scrollbar">
+      {useFloatingMobilePanel ? (
+        <div className="pt-3">
+          <div className="mx-auto h-1.5 w-12 rounded-full bg-slate-200" />
+        </div>
+      ) : null}
+      <div className={cn('space-y-4 overflow-y-auto custom-scrollbar', useFloatingMobilePanel ? 'p-3.5 pt-3' : 'p-4')}>
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="flex items-center gap-2">
@@ -437,8 +500,9 @@ export function TaskTagSuggestionPanel({
 
   if (mode === 'desktop-popover') {
     return (
-      <div ref={rootRef} className="relative inline-flex max-w-full">
+      <div ref={rootRef} className="inline-flex max-w-full">
         <button
+          ref={triggerRef}
           type="button"
           onClick={() => {
             if (!isOpen && !hasPanelContent) {
@@ -468,7 +532,22 @@ export function TaskTagSuggestionPanel({
           <span className="truncate">{triggerLabel}</span>
         </button>
 
-        {isOpen ? panel : null}
+        {isOpen && desktopPopoverStyle && typeof document !== 'undefined'
+          ? createPortal(
+              <>
+                <button
+                  type="button"
+                  className="fixed inset-0 z-50 bg-transparent"
+                  aria-label="Close tag suggestions"
+                  onClick={() => setIsOpen(false)}
+                />
+                <div ref={panelRef} style={desktopPopoverStyle} className="pointer-events-auto">
+                  {panel}
+                </div>
+              </>,
+              document.body,
+            )
+          : null}
       </div>
     );
   }
