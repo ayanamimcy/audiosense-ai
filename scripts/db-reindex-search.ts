@@ -1,8 +1,8 @@
 import 'dotenv/config';
 
 import { db, ensureDatabaseReady } from '../db.js';
-import { reindexTask } from '../lib/search-index.js';
-import type { TaskRow } from '../lib/task-types.js';
+import { reindexTask } from '../lib/search/search-index.js';
+import type { TaskRow } from '../lib/tasks/task-types.js';
 
 async function main() {
   await ensureDatabaseReady();

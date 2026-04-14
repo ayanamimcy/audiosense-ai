@@ -7,8 +7,8 @@ import {
   listWorkspaceRowsByUser,
   updateWorkspaceRowByUserAndId,
 } from '../../database/repositories/workspaces-repository.js';
-import { saveUserSettings } from '../../lib/settings.js';
-import { resolveCurrentWorkspaceForUser, toWorkspaceResponse } from '../../lib/workspaces.js';
+import { saveUserSettings } from '../../lib/settings/settings.js';
+import { resolveCurrentWorkspaceForUser, toWorkspaceResponse } from '../../lib/workspaces/workspaces.js';
 
 export class WorkspaceNotFoundError extends Error {
   constructor() {

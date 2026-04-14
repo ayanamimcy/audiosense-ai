@@ -6,7 +6,7 @@ import { ensureLocalAudioRuntime, getLocalAudioRuntimeBaseUrl } from '../local-r
 import { createServiceError, createTaskError } from '../errors.js';
 import { BaseTranscriptionProvider } from './base.js';
 import type { ProviderTranscriptionPayload, TranscriptionJobInput } from '../types.js';
-import type { LocalRuntimeSettings } from '../../user-settings-schema.js';
+import type { LocalRuntimeSettings } from '../../settings/user-settings-schema.js';
 
 function readString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;

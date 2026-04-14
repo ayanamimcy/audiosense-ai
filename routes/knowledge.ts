@@ -10,7 +10,7 @@ import {
   MessageRequiredError,
   streamMessageForUser,
 } from '../application/services/knowledge-chat-service.js';
-import type { MentionRef } from '../lib/knowledge-chat-service.js';
+import type { MentionRef } from '../lib/search/knowledge-chat-service.js';
 import { asyncRoute, requireAuthUser } from './middleware.js';
 
 const router = express.Router();

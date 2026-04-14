@@ -4,8 +4,9 @@ import {
   updateProviderHealthRow,
 } from '../../database/repositories/user-settings-repository.js';
 import { getAvailableTranscriptionProviders } from './providers/index.js';
-import { getUserSettings } from '../settings.js';
-import type { UserSettings } from '../user-settings-schema.js';
+import { getUserSettings } from '../settings/settings.js';
+import type { UserSettings } from '../settings/user-settings-schema.js';
+import config from '../config.js';
 
 export function buildProviderChain(settings: UserSettings | null | undefined, primary?: string | null) {
   const configuredProviders = new Set(
@@ -15,7 +16,7 @@ export function buildProviderChain(settings: UserSettings | null | undefined, pr
   );
 
   const chain = [
-    primary || settings?.defaultProvider || process.env.TRANSCRIPTION_PROVIDER || 'local-python',
+    primary || settings?.defaultProvider || config.transcription.defaultProvider,
     ...(settings?.fallbackProviders || []),
   ]
     .map((item) => String(item).toLowerCase())

@@ -9,7 +9,7 @@ import {
   SummaryPromptNotFoundError,
   TaskNotFoundError,
   TranscriptNotReadyError,
-} from '../lib/chat-service.js';
+} from '../lib/tasks/chat-service.js';
 import { asyncRoute, requireAuthUser } from './middleware.js';
 
 const router = express.Router();

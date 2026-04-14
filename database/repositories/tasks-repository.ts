@@ -1,5 +1,5 @@
 import { db } from '../client.js';
-import type { TaskRow } from '../../lib/task-types.js';
+import type { TaskRow } from '../../lib/tasks/task-types.js';
 
 export async function findTaskRowById(taskId: string) {
   return (await db('tasks').where({ id: taskId }).first()) as TaskRow | undefined;

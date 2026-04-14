@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import config from '../../lib/config.js';
 import { db } from '../../database/client.js';
 import {
   deleteTaskJobRowsByTaskId,
@@ -10,35 +11,36 @@ import {
 } from '../../database/repositories/task-messages-repository.js';
 import {
   deleteTaskRowForUser,
+  findTaskRowByFilenameForUser,
   listTaskRowsByUserAndIds,
   listTaskRowsByUserAndNotebook,
   updateTaskRowById,
   updateTaskRowForUser,
 } from '../../database/repositories/tasks-repository.js';
-import { isLlmConfigured } from '../../lib/llm.js';
-import { clearTaskIndex, reindexTask, syncTaskWorkspaceScope } from '../../lib/search-index.js';
-import { getUserSettings } from '../../lib/settings.js';
-import { buildWebVttFromSegments } from '../../lib/subtitles.js';
+import { isLlmConfigured } from '../../lib/ai/llm.js';
+import { clearTaskIndex, reindexTask, syncTaskWorkspaceScope } from '../../lib/search/search-index.js';
+import { getUserSettings } from '../../lib/settings/settings.js';
+import { buildWebVttFromSegments } from '../../lib/tasks/subtitles.js';
 import {
   buildTagSuggestionMetadata,
   markTaskTagSuggestionsGenerating,
   persistTaskTagSuggestions,
   removeAppliedTagsFromSuggestions,
-} from '../../lib/task-tag-suggestions.js';
-import { resetTaskDerivedState } from '../../lib/task-derived-state.js';
+} from '../../lib/tasks/task-tag-suggestions.js';
+import { resetTaskDerivedState } from '../../lib/tasks/task-derived-state.js';
 import {
   findTaskForUser,
   NotebookWorkspaceValidationError,
   validateNotebookForWorkspace,
-} from '../../lib/task-helpers.js';
-import { repairPossiblyMojibakeText } from '../../lib/text-encoding.js';
-import { enqueueTaskJob } from '../../lib/task-queue.js';
-import { normalizeTags, parseJsonField, toTaskListResponse, toTaskResponse, type TaskRow } from '../../lib/task-types.js';
-import { createUploadTask, type UploadTaskInput } from '../../lib/upload-service.js';
+} from '../../lib/tasks/task-helpers.js';
+import { repairPossiblyMojibakeText } from '../../lib/shared/text-encoding.js';
+import { enqueueTaskJob } from '../../lib/tasks/task-queue.js';
+import { normalizeTags, parseJsonField, toTaskListResponse, toTaskResponse, type TaskRow } from '../../lib/tasks/task-types.js';
+import { createUploadTask, type UploadTaskInput } from '../../lib/tasks/upload-service.js';
 import {
   assertWorkspaceBelongsToUser,
   resolveCurrentWorkspaceForUser,
-} from '../../lib/workspaces.js';
+} from '../../lib/workspaces/workspaces.js';
 import { listTaskRowsByUserAndWorkspace } from '../../database/repositories/tasks-repository.js';
 
 export class UserTaskNotFoundError extends Error {
@@ -109,7 +111,7 @@ export async function reprocessTaskForUser(
   }
 
   const provider = String(
-    options?.provider || task.provider || process.env.TRANSCRIPTION_PROVIDER || 'local-python',
+    options?.provider || task.provider || config.transcription.defaultProvider,
   );
   const updates: Record<string, unknown> = {
     status: 'pending',
@@ -403,4 +405,8 @@ export async function buildTaskSubtitlesForUser(userId: string, taskId: string) 
 
   const segments = parseJsonField(task.segments, []);
   return buildWebVttFromSegments(segments);
+}
+
+export async function findTaskByFilenameForUser(userId: string, filename: string) {
+  return findTaskRowByFilenameForUser(userId, filename);
 }

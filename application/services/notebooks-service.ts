@@ -16,12 +16,12 @@ import {
   listSummaryPromptRowsByWorkspace,
   updateSummaryPromptRowByWorkspace,
 } from '../../database/repositories/summary-prompts-repository.js';
-import { syncTaskWorkspaceScope } from '../../lib/search-index.js';
-import { parseJsonField, type TaskRow } from '../../lib/task-types.js';
+import { syncTaskWorkspaceScope } from '../../lib/search/search-index.js';
+import { parseJsonField, type TaskRow } from '../../lib/tasks/task-types.js';
 import {
   assertWorkspaceBelongsToUser,
   resolveCurrentWorkspaceForUser,
-} from '../../lib/workspaces.js';
+} from '../../lib/workspaces/workspaces.js';
 
 export class UserNotebookNotFoundError extends Error {
   constructor() {

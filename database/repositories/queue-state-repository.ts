@@ -1,5 +1,5 @@
 import { db } from '../client.js';
-import type { QueueStateRow } from '../../lib/task-types.js';
+import type { QueueStateRow } from '../../lib/tasks/task-types.js';
 
 export async function findQueueStateRow(queueName: string) {
   return (await db('queue_state').where({ queueName }).first()) as QueueStateRow | undefined;

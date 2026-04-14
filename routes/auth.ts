@@ -1,11 +1,12 @@
 import express from 'express';
+import config from '../lib/config.js';
 import {
   authenticateUser,
   changeUserPassword,
   createSession,
   createUser,
   updateUserProfile,
-} from '../lib/auth.js';
+} from '../lib/auth/auth.js';
 import {
   asyncRoute,
   authenticateRequest,
@@ -17,16 +18,12 @@ import {
   getSessionCookieName,
   readCookie,
   destroySession,
-} from '../lib/auth.js';
+} from '../lib/auth/auth.js';
 
 const router = express.Router();
 
 router.post('/register', asyncRoute(async (req, res) => {
-  const allowRegistration = ['1', 'true', 'yes', 'on'].includes(
-    String(process.env.ALLOW_REGISTRATION || '').trim().toLowerCase(),
-  );
-
-  if (!allowRegistration) {
+  if (!config.server.allowRegistration) {
     return res.status(403).json({ error: 'Registration is disabled.' });
   }
 

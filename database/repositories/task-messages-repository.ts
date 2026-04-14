@@ -1,5 +1,5 @@
 import { db } from '../client.js';
-import type { TaskMessageRow } from '../../lib/task-types.js';
+import type { TaskMessageRow } from '../../lib/tasks/task-types.js';
 
 export async function listTaskMessageRows(taskId: string) {
   return (await db('task_messages')

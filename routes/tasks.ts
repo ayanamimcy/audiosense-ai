@@ -1,4 +1,5 @@
 import express from 'express';
+import logger from '../lib/shared/logger.js';
 import {
   applyTaskTagSuggestionsForUser,
   buildTaskSubtitlesForUser,
@@ -19,6 +20,8 @@ import {
 } from '../application/services/tasks-service.js';
 import { asyncRoute, requireAuthUser, upload, uploadDir } from './middleware.js';
 
+const log = logger.child('routes:tasks');
+
 const router = express.Router();
 
 router.post('/upload', upload.single('audio'), asyncRoute(async (req, res) => {
@@ -38,7 +41,7 @@ router.post('/upload', upload.single('audio'), asyncRoute(async (req, res) => {
     if (error instanceof UserTaskWorkspaceValidationError) {
       return res.status(400).json({ error: error.message });
     }
-    console.error('Failed to create task:', error);
+    log.error('Failed to create task', { error: error instanceof Error ? error.message : String(error) });
     return res.status(500).json({ error: 'Database error while creating task.' });
   }
 }));

@@ -2,6 +2,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import axios from 'axios';
+import config from '../config.js';
 
 const runtimeRoot = fileURLToPath(new URL('../../python-runtime', import.meta.url));
 const runtimeSourcePath = path.join(runtimeRoot, 'src');
@@ -15,8 +16,7 @@ function normalizeBaseUrl(url: string) {
 }
 
 function getDefaultRuntimeBaseUrl() {
-  const port = Number(process.env.LOCAL_AUDIO_ENGINE_PORT || 8765);
-  return normalizeBaseUrl(process.env.LOCAL_AUDIO_ENGINE_URL || `http://127.0.0.1:${port}`);
+  return config.localAudioEngine.baseUrl;
 }
 
 function getRuntimeBaseUrl(baseUrlOverride?: string) {
@@ -33,7 +33,7 @@ function buildPythonPath() {
 }
 
 function getStartupTimeoutMs() {
-  return Math.max(5_000, Number(process.env.LOCAL_AUDIO_ENGINE_STARTUP_TIMEOUT_MS || 120_000));
+  return config.localAudioEngine.startupTimeoutMs;
 }
 
 async function isRuntimeHealthy(baseUrlOverride?: string) {
@@ -133,7 +133,7 @@ export async function ensureLocalAudioRuntime(baseUrlOverride?: string) {
     throw new Error('Configured local audio runtime URL is unavailable. Start that runtime manually first.');
   }
 
-  if (process.env.LOCAL_AUDIO_ENGINE_AUTOSTART === 'false') {
+  if (!config.localAudioEngine.autostart) {
     throw new Error(
       'Local audio runtime is unavailable. Start python-runtime manually or enable LOCAL_AUDIO_ENGINE_AUTOSTART.',
     );

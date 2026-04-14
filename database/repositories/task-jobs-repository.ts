@@ -1,5 +1,5 @@
 import { db } from '../client.js';
-import type { TaskJobRow } from '../../lib/task-types.js';
+import type { TaskJobRow } from '../../lib/tasks/task-types.js';
 
 export async function insertTaskJobRow(job: TaskJobRow) {
   await db('task_jobs').insert(job);

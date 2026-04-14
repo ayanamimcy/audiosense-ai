@@ -11,21 +11,16 @@ import {
   serializeClearedSessionCookie,
   serializeSessionCookie,
   type AuthUser,
-} from '../lib/auth.js';
-import { matchesScope } from '../lib/api-token-scopes.js';
+} from '../lib/auth/auth.js';
+import { matchesScope } from '../lib/auth/api-token-scopes.js';
+import config from '../lib/config.js';
 
-const configuredUploadDir = process.env.UPLOAD_DIR?.trim();
-export const uploadDir = path.resolve(configuredUploadDir || path.join(process.cwd(), 'uploads'));
+export const uploadDir = config.upload.dir;
 if (!fs.existsSync(uploadDir)) {
   fs.mkdirSync(uploadDir, { recursive: true });
 }
 
-const DEFAULT_UPLOAD_MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
-const configuredUploadMaxFileSize = Number(process.env.UPLOAD_MAX_FILE_SIZE_BYTES || '');
-const uploadMaxFileSize =
-  Number.isFinite(configuredUploadMaxFileSize) && configuredUploadMaxFileSize > 0
-    ? configuredUploadMaxFileSize
-    : DEFAULT_UPLOAD_MAX_FILE_SIZE_BYTES;
+const uploadMaxFileSize = config.upload.maxFileSizeBytes;
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => {

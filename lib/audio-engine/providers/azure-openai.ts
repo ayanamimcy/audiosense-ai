@@ -1,6 +1,7 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import fs from 'fs';
+import config from '../../config.js';
 import { createServiceError, createTaskError } from '../errors.js';
 import { BaseTranscriptionProvider } from './base.js';
 import type { ProviderTranscriptionPayload, TranscriptionJobInput } from '../types.js';
@@ -16,10 +17,10 @@ export class AzureOpenAIProvider extends BaseTranscriptionProvider {
   } as const;
 
   async transcribe(input: TranscriptionJobInput): Promise<ProviderTranscriptionPayload> {
-    const endpoint = (process.env.AZURE_OPENAI_ENDPOINT || '').replace(/\/$/, '');
-    const deployment = process.env.AZURE_OPENAI_TRANSCRIPTION_DEPLOYMENT || '';
-    const apiVersion = process.env.AZURE_OPENAI_API_VERSION || '2024-10-21';
-    const apiKey = process.env.AZURE_OPENAI_API_KEY || '';
+    const endpoint = config.azureOpenai.endpoint;
+    const deployment = config.azureOpenai.transcriptionDeployment;
+    const apiVersion = config.azureOpenai.apiVersion;
+    const apiKey = config.azureOpenai.apiKey;
 
     if (!endpoint || !deployment || !apiKey) {
       throw createServiceError(

@@ -2,7 +2,7 @@ import express from 'express';
 import fs from 'fs';
 import path from 'path';
 import parseRange from 'range-parser';
-import { findTaskRowByFilenameForUser } from '../database/repositories/tasks-repository.js';
+import { findTaskByFilenameForUser } from '../application/services/tasks-service.js';
 import { requireAuthUser, uploadDir } from './middleware.js';
 
 const MIME_TYPES: Record<string, string> = {
@@ -46,7 +46,7 @@ router.get('/audio/:filename', (req, res, next) => {
   void (async () => {
     try {
       const user = requireAuthUser(req);
-      const task = await findTaskRowByFilenameForUser(user.id, req.params.filename);
+      const task = await findTaskByFilenameForUser(user.id, req.params.filename);
       if (!task) {
         return res.status(404).send('File not found');
       }

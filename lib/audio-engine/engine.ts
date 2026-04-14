@@ -9,7 +9,10 @@ import {
   recordProviderSuccess,
 } from './routing.js';
 import type { TranscriptionExecutionResult, TranscriptionJobInput } from './types.js';
-import { getUserSettings } from '../settings.js';
+import { getUserSettings } from '../settings/settings.js';
+import logger from '../shared/logger.js';
+
+const log = logger.child('audio-engine');
 
 export async function parseAudioWithFallback(
   userId: string | null | undefined,
@@ -21,7 +24,7 @@ export async function parseAudioWithFallback(
   const attemptedProviders: string[] = [];
   const skippedProviders: string[] = [];
   const errors: string[] = [];
-  console.log(`[transcribe] Starting transcription for "${input.fileName || input.filePath}"`);
+  log.info('Starting transcription', { file: input.fileName || input.filePath });
   const pipelineStart = Date.now();
   const inspectedFile = await inspectAudioFile(input.filePath, {
     mimeType: input.mimeType,
@@ -40,14 +43,14 @@ export async function parseAudioWithFallback(
 
     try {
       const provider = createTranscriptionProvider(providerName, userSettings || undefined);
-      console.log(`[transcribe] Sending to provider "${providerName}"...`);
+      log.info('Sending to provider', { provider: providerName });
       const providerStart = Date.now();
       const providerResponse = await provider.transcribe({
         ...input,
         wordTimestamps: input.wordTimestamps ?? false,
       });
-      console.log(`[transcribe] Provider "${providerName}" completed in ${((Date.now() - providerStart) / 1000).toFixed(1)}s`);
-      console.log(`[transcribe] Normalizing and splitting segments...`);
+      log.info('Provider completed', { provider: providerName, durationSec: ((Date.now() - providerStart) / 1000).toFixed(1) });
+      log.info('Normalizing and splitting segments');
       const normalizeStart = Date.now();
       const result = await buildTranscriptionResult({
         providerName: provider.name,
@@ -69,8 +72,8 @@ export async function parseAudioWithFallback(
           : undefined,
       });
 
-      console.log(`[transcribe] Normalization + splitting completed in ${((Date.now() - normalizeStart) / 1000).toFixed(1)}s (${result.segments.length} segments)`);
-      console.log(`[transcribe] Total pipeline: ${((Date.now() - pipelineStart) / 1000).toFixed(1)}s`);
+      log.info('Normalization + splitting completed', { durationSec: ((Date.now() - normalizeStart) / 1000).toFixed(1), segments: result.segments.length });
+      log.info('Total pipeline completed', { durationSec: ((Date.now() - pipelineStart) / 1000).toFixed(1) });
       await recordProviderSuccess(provider.name);
       return {
         providerName: provider.name,

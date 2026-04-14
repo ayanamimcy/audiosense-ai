@@ -1,5 +1,5 @@
 import { db } from '../client.js';
-import type { KnowledgeConversationRow, KnowledgeMessageRow } from '../../lib/task-types.js';
+import type { KnowledgeConversationRow, KnowledgeMessageRow } from '../../lib/tasks/task-types.js';
 
 export async function listConversationsByUser(userId: string) {
   return (await db('knowledge_conversations')

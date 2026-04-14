@@ -1,4 +1,4 @@
-import { getTranscriptionQueueState, runRecoveryCycle, runWorkerCycle } from '../../lib/task-queue.js';
+import { getTranscriptionQueueState, runRecoveryCycle, runWorkerCycle } from '../../lib/tasks/task-queue.js';
 
 export async function runWorkerLoop(workerId: string, idleMs: number) {
   while (true) {

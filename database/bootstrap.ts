@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { db } from './client.js';
+import config from '../lib/config.js';
 import {
   autoRunMigrationsRequested,
   getMigrationConfig,
@@ -99,7 +100,7 @@ export async function getMigrationStatus() {
 
 export async function ensureDatabaseReady() {
   if (autoRunMigrationsRequested) {
-    if (process.env.NODE_ENV === 'production') {
+    if (config.server.isProduction) {
       throw new Error(
         'AUTO_RUN_MIGRATIONS is disabled in production. Run `npm run db:migrate` during deployment instead.',
       );

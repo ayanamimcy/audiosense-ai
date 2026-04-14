@@ -1,82 +1,39 @@
-import axios from 'axios';
 import express from 'express';
-import { v4 as uuidv4 } from 'uuid';
 import {
-  clearDefaultSummaryPromptRowsByWorkspace,
-  deleteSummaryPromptRowByWorkspace,
-  insertSummaryPromptRow,
-  updateSummaryPromptRowByWorkspace,
-} from '../database/repositories/summary-prompts-repository.js';
-import {
-  authenticateUser,
   changeUserPassword,
   createSession,
   updateUserProfile,
-} from '../lib/auth.js';
-import { getEmbeddingsInfo } from '../lib/embeddings.js';
+} from '../lib/auth/auth.js';
 import {
-  getLlmInfo,
-} from '../lib/llm.js';
-import { resetProviderCircuit } from '../lib/provider-routing.js';
-import {
-  getProviderHealth,
-  getUserSettings,
-  getUserSettingsForClient,
-  saveUserSettings,
-} from '../lib/settings.js';
-import {
-  clearDefaultSummaryPrompts,
-  findSummaryPrompt,
-  listSummaryPrompts,
-} from '../lib/summary-prompts.js';
-import { getAvailableTranscriptionProviders } from '../lib/transcription.js';
-import { getLocalRuntimeCatalogSnapshot } from '../lib/user-settings-schema.js';
-import { getValidatedNotebookIdsForUser } from '../lib/task-helpers.js';
-import { getValidatedNotebookIdsForWorkspace } from '../lib/task-helpers.js';
-import { resolveCurrentWorkspaceForUser } from '../lib/workspaces.js';
+  getCapabilities,
+  getProviderHealthForUser,
+  getSettingsForUser,
+  updateSettingsForUser,
+  listSummaryPromptsForUser,
+  createSummaryPromptForUser,
+  updateSummaryPromptForUser,
+  deleteSummaryPromptForUser,
+  SummaryPromptNotFoundError,
+  resetProviderCircuitForUser,
+  listLlmModelsForUser,
+} from '../application/services/settings-service.js';
 import { asyncRoute, requireAuthUser, setSessionCookie } from './middleware.js';
 
 const router = express.Router();
 
 router.get('/capabilities', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const userSettings = await getUserSettings(user.id);
-
-  res.json({
-    auth: {
-      type: 'session-cookie',
-      userId: user.id,
-    },
-    transcription: {
-      activeProvider: userSettings.defaultProvider,
-      providers: getAvailableTranscriptionProviders(userSettings),
-      diarizationSupported: true,
-      localRuntime: getLocalRuntimeCatalogSnapshot(),
-    },
-    queue: {
-      workerMode: 'separate-process',
-      recommendedCommand: 'npm run worker',
-    },
-    llm: getLlmInfo(userSettings),
-    embeddings: getEmbeddingsInfo(),
-  });
+  res.json(await getCapabilities(user.id));
 }));
 
 router.get('/settings', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  await resolveCurrentWorkspaceForUser(user.id);
-  return res.json({
-    settings: await getUserSettingsForClient(user.id),
-  });
+  return res.json({ settings: await getSettingsForUser(user.id) });
 }));
 
 router.patch('/settings', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  await saveUserSettings(user.id, req.body || {});
-  await resolveCurrentWorkspaceForUser(user.id);
-  return res.json({
-    settings: await getUserSettingsForClient(user.id),
-  });
+  return res.json({ settings: await updateSettingsForUser(user.id, req.body || {}) });
 }));
 
 router.patch('/account/profile', asyncRoute(async (req, res) => {
@@ -126,19 +83,16 @@ router.post('/account/password', asyncRoute(async (req, res) => {
 
 router.get('/provider-health', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const userSettings = await getUserSettings(user.id);
-  return res.json(await getProviderHealth(userSettings));
+  return res.json(await getProviderHealthForUser(user.id));
 }));
 
 router.get('/summary-prompts', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(user.id);
-  return res.json(await listSummaryPrompts(user.id, currentWorkspaceId));
+  return res.json(await listSummaryPromptsForUser(user.id));
 }));
 
 router.post('/summary-prompts', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(user.id);
   const name = String(req.body.name || '').trim();
   const prompt = String(req.body.prompt || '').trim();
   if (!name) {
@@ -148,118 +102,61 @@ router.post('/summary-prompts', asyncRoute(async (req, res) => {
     return res.status(400).json({ error: 'Prompt content is required.' });
   }
 
-  const notebookIds = await getValidatedNotebookIdsForWorkspace(
-    user.id,
-    currentWorkspaceId,
-    req.body.notebookIds,
-  );
-  const isDefault = req.body.isDefault === true;
-  const now = Date.now();
-  const record = {
-    id: uuidv4(),
-    userId: user.id,
-    workspaceId: currentWorkspaceId,
+  return res.json(await createSummaryPromptForUser(user.id, {
     name,
     prompt,
-    notebookIds: JSON.stringify(notebookIds),
-    isDefault,
-    createdAt: now,
-    updatedAt: now,
-  };
-
-  if (isDefault) {
-    await clearDefaultSummaryPromptRowsByWorkspace(user.id, currentWorkspaceId);
-  }
-
-  await insertSummaryPromptRow(record);
-  return res.json(await findSummaryPrompt(user.id, record.id, currentWorkspaceId));
+    notebookIds: req.body.notebookIds,
+    isDefault: req.body.isDefault,
+  }));
 }));
 
 router.patch('/summary-prompts/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(user.id);
-  const current = await findSummaryPrompt(user.id, req.params.id, currentWorkspaceId);
-  if (!current) {
-    return res.status(404).json({ error: 'Summary prompt not found.' });
-  }
-
-  const nextName = req.body.name !== undefined ? String(req.body.name || '').trim() : current.name;
-  const nextPrompt = req.body.prompt !== undefined ? String(req.body.prompt || '').trim() : current.prompt;
-  if (!nextName) {
+  const nextName = req.body.name !== undefined ? String(req.body.name || '').trim() : undefined;
+  const nextPrompt = req.body.prompt !== undefined ? String(req.body.prompt || '').trim() : undefined;
+  if (nextName !== undefined && !nextName) {
     return res.status(400).json({ error: 'Prompt name is required.' });
   }
-  if (!nextPrompt) {
+  if (nextPrompt !== undefined && !nextPrompt) {
     return res.status(400).json({ error: 'Prompt content is required.' });
   }
 
-  const notebookIds =
-    req.body.notebookIds !== undefined
-      ? await getValidatedNotebookIdsForWorkspace(
-          user.id,
-          currentWorkspaceId,
-          req.body.notebookIds,
-        )
-      : current.notebookIds;
-  const isDefault = req.body.isDefault !== undefined ? req.body.isDefault === true : current.isDefault;
-  if (isDefault) {
-    await clearDefaultSummaryPromptRowsByWorkspace(user.id, currentWorkspaceId, current.id);
+  try {
+    return res.json(await updateSummaryPromptForUser(user.id, req.params.id, {
+      name: nextName,
+      prompt: nextPrompt,
+      notebookIds: req.body.notebookIds,
+      isDefault: req.body.isDefault,
+    }));
+  } catch (error: unknown) {
+    if (error instanceof SummaryPromptNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    throw error;
   }
-
-  await updateSummaryPromptRowByWorkspace(user.id, currentWorkspaceId, current.id, {
-    name: nextName,
-    prompt: nextPrompt,
-    notebookIds: JSON.stringify(notebookIds),
-    isDefault,
-    updatedAt: Date.now(),
-  });
-
-  return res.json(await findSummaryPrompt(user.id, current.id, currentWorkspaceId));
 }));
 
 router.delete('/summary-prompts/:id', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(user.id);
-  const deleted = await deleteSummaryPromptRowByWorkspace(user.id, currentWorkspaceId, req.params.id);
-  if (!deleted) {
-    return res.status(404).json({ error: 'Summary prompt not found.' });
+  try {
+    await deleteSummaryPromptForUser(user.id, req.params.id);
+    return res.json({ success: true });
+  } catch (error: unknown) {
+    if (error instanceof SummaryPromptNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    throw error;
   }
-
-  return res.json({ success: true });
 }));
 
 router.post('/provider-health/:provider/reset', asyncRoute(async (req, res) => {
-  await resetProviderCircuit(String(req.params.provider));
+  await resetProviderCircuitForUser(String(req.params.provider));
   return res.json({ success: true });
 }));
 
-
 router.get('/llm/models', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
-  const userSettings = await getUserSettings(user.id);
-  const config = userSettings.llm;
-  const info = getLlmInfo(userSettings);
-
-  if (!info.configured || !info.baseUrl) {
-    return res.json({ data: [] });
-  }
-
-  try {
-    const response = await axios.get(`${info.baseUrl}/models`, {
-      headers: {
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      timeout: 10_000,
-    });
-
-    const models = Array.isArray(response.data?.data)
-      ? response.data.data.map((m: { id?: string }) => ({ id: String(m.id || '') })).filter((m: { id: string }) => m.id)
-      : [];
-
-    return res.json({ data: models });
-  } catch (error) {
-    console.error('Failed to fetch llm models:', error instanceof Error ? error.message : error);
-    return res.json({ data: [] });
-  }
+  return res.json({ data: await listLlmModelsForUser(user.id) });
 }));
 
 export const settingsRouter = router;

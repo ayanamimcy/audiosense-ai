@@ -4,7 +4,7 @@ import fs from 'fs';
 import { createServiceError, createTaskError } from '../errors.js';
 import { BaseTranscriptionProvider } from './base.js';
 import type { ProviderTranscriptionPayload, TranscriptionJobInput } from '../types.js';
-import type { OpenAIWhisperSettings } from '../../user-settings-schema.js';
+import type { OpenAIWhisperSettings } from '../../settings/user-settings-schema.js';
 
 function normalizeBaseUrl(url: string) {
   return url.replace(/\/$/, '');

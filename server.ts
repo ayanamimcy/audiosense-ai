@@ -7,7 +7,11 @@ import rateLimit from 'express-rate-limit';
 import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { initDb } from './db.js';
-import type { AuthUser } from './lib/auth.js';
+import config from './lib/config.js';
+import logger from './lib/shared/logger.js';
+
+const log = logger.child('server');
+import type { AuthUser } from './lib/auth/auth.js';
 import { authenticateRequest } from './routes/middleware.js';
 import { asyncRoute } from './routes/middleware.js';
 import { authRouter } from './routes/auth.js';
@@ -34,34 +38,14 @@ declare global {
 }
 
 const app = express();
-const PORT = Number(process.env.PORT || 3000);
+const PORT = config.server.port;
 
-const configuredTrustProxy = process.env.TRUST_PROXY?.trim();
-const trustProxy =
-  configuredTrustProxy === undefined || configuredTrustProxy === ''
-    ? 1
-    : ['true', 'yes', 'on'].includes(configuredTrustProxy.toLowerCase())
-      ? true
-      : ['false', 'no', 'off'].includes(configuredTrustProxy.toLowerCase())
-        ? false
-        : Number.isFinite(Number(configuredTrustProxy))
-          ? Number(configuredTrustProxy)
-          : configuredTrustProxy;
-
-const allowRegistration = ['1', 'true', 'yes', 'on'].includes(
-  String(process.env.ALLOW_REGISTRATION || '').trim().toLowerCase(),
-);
-
-const allowedOrigins = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
-  : undefined;
-
-app.set('trust proxy', trustProxy);
+app.set('trust proxy', config.server.trustProxy);
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(
   cors(
-    allowedOrigins
-      ? { origin: allowedOrigins, credentials: true }
+    config.server.corsOrigin
+      ? { origin: config.server.corsOrigin, credentials: true }
       : undefined,
   ),
 );
@@ -84,7 +68,7 @@ app.get('/api/health', (_req, res) => {
 app.get('/api/public-config', (_req, res) => {
   res.json({
     auth: {
-      allowRegistration,
+      allowRegistration: config.server.allowRegistration,
     },
   });
 });
@@ -109,7 +93,7 @@ app.use('/api', protectedApi);
 
 // --- Error handler ---
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('Unhandled API error:', error);
+  log.error('Unhandled API error', { error: error instanceof Error ? error.message : String(error) });
 
   if (res.headersSent) {
     return;
@@ -117,7 +101,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 
   res.status(500).json({
     error:
-      process.env.NODE_ENV === 'production'
+      config.server.isProduction
         ? 'Internal server error.'
         : error instanceof Error
           ? error.message
@@ -129,7 +113,7 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 async function startServer() {
   await initDb();
 
-  if (process.env.NODE_ENV !== 'production') {
+  if (!config.server.isProduction) {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -144,11 +128,11 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    log.info('Server running', { url: `http://localhost:${PORT}` });
   });
 }
 
 startServer().catch((error) => {
-  console.error('Failed to start server:', error);
+  log.error('Failed to start server', { error: error instanceof Error ? error.message : String(error) });
   process.exit(1);
 });

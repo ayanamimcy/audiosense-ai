@@ -7,7 +7,8 @@ import {
   resolveLocalRuntimeSettings,
   resolveOpenAIWhisperSettings,
   type UserSettings,
-} from '../../user-settings-schema.js';
+} from '../../settings/user-settings-schema.js';
+import config from '../../config.js';
 
 type ProviderRegistryEntry = {
   create: (settings?: Partial<UserSettings>) => TranscriptionProvider;
@@ -27,9 +28,9 @@ const PROVIDERS: Record<string, ProviderRegistryEntry> = {
     create: () => new AzureOpenAIProvider(),
     configured: () =>
       Boolean(
-        process.env.AZURE_OPENAI_ENDPOINT &&
-          process.env.AZURE_OPENAI_TRANSCRIPTION_DEPLOYMENT &&
-          process.env.AZURE_OPENAI_API_KEY,
+        config.azureOpenai.endpoint &&
+          config.azureOpenai.transcriptionDeployment &&
+          config.azureOpenai.apiKey,
       ),
   },
   'local-python': {
@@ -43,7 +44,7 @@ const PROVIDERS: Record<string, ProviderRegistryEntry> = {
 };
 
 function getProviderName(input?: string) {
-  return (input || process.env.TRANSCRIPTION_PROVIDER || 'local-python').toLowerCase();
+  return (input || config.transcription.defaultProvider).toLowerCase();
 }
 
 export function createTranscriptionProvider(

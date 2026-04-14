@@ -5,8 +5,11 @@ import multer from 'multer';
 import path from 'path';
 import { pipeline } from 'stream/promises';
 import { v4 as uuidv4 } from 'uuid';
-import { createUploadTask, type UploadTaskInput } from '../lib/upload-service.js';
+import logger from '../lib/shared/logger.js';
+import { createUploadTask, type UploadTaskInput } from '../lib/tasks/upload-service.js';
 import { asyncRoute, requireAuthUser, uploadDir, uploadMaxFileSize } from './middleware.js';
+
+const log = logger.child('routes:chunked-upload');
 
 const chunksBaseDir = path.join(uploadDir, 'chunks');
 if (!fs.existsSync(chunksBaseDir)) {
@@ -333,7 +336,7 @@ router.post('/upload/merge', asyncRoute(async (req, res) => {
       meta.status = 'uploading';
       writeMeta(sessionDir, meta);
       releaseLock();
-      console.error('Failed to create task after merge:', error);
+      log.error('Failed to create task after merge', { error: error instanceof Error ? error.message : String(error) });
       return res.status(500).json({ error: 'Failed to create task.' });
     }
 

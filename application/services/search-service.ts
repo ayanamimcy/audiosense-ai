@@ -1,7 +1,8 @@
-import { answerFromKnowledgeBase, searchTasks } from '../../lib/knowledge-service.js';
-import { isLlmConfigured } from '../../lib/llm.js';
-import { getUserSettings } from '../../lib/settings.js';
-import { resolveCurrentWorkspaceForUser } from '../../lib/workspaces.js';
+import { answerFromKnowledgeBase, searchTasks } from '../../lib/search/knowledge-service.js';
+import { getRelatedTasks, computeTaskAssociations } from '../../lib/search/association-service.js';
+import { isLlmConfigured } from '../../lib/ai/llm.js';
+import { getUserSettings } from '../../lib/settings/settings.js';
+import { resolveCurrentWorkspaceForUser } from '../../lib/workspaces/workspaces.js';
 
 export class KnowledgeQueryRequiredError extends Error {
   constructor() {
@@ -55,4 +56,12 @@ export async function answerKnowledgeForUser(
     }
     throw error;
   }
+}
+
+export async function getRelatedTasksForUser(userId: string, taskId: string, limit = 5) {
+  return getRelatedTasks(userId, taskId, limit);
+}
+
+export async function computeTaskAssociationsForUser(userId: string) {
+  return computeTaskAssociations(userId);
 }

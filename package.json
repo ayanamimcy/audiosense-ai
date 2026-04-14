@@ -1,5 +1,5 @@
 {
-  "name": "react-example",
+  "name": "audiosense-ai",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -8,9 +8,9 @@
     "dev:api": "tsx server.ts",
     "dev:worker": "tsx worker.ts",
     "dev:local-engine": "cd python-runtime && PYTHONPATH=src python3 -m local_audio_runtime.server",
-    "start": "concurrently -k \"tsx server.ts\" \"tsx worker.ts\"",
-    "start:api": "tsx server.ts",
-    "worker": "tsx worker.ts",
+    "start": "concurrently -k \"node dist-server/server.js\" \"node dist-server/worker.js\"",
+    "start:api": "node dist-server/server.js",
+    "worker": "node dist-server/worker.js",
     "db:migrate": "tsx scripts/db-migrate.ts",
     "db:rollback": "tsx scripts/db-rollback.ts",
     "db:status": "tsx scripts/db-status.ts",
@@ -20,11 +20,13 @@
     "create:user": "tsx scripts/create-user.ts",
     "list:users": "tsx scripts/list-users.ts",
     "delete:user": "tsx scripts/delete-user.ts",
-    "build": "vite build",
+    "build:server": "tsc -p tsconfig.build.json",
+    "build:client": "vite build",
+    "build": "npm run build:server && npm run build:client",
     "preview": "vite preview",
-    "clean": "rm -rf dist",
+    "clean": "rm -rf dist dist-server",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts tests/unit/*.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
@@ -33,7 +35,6 @@
     "@vitejs/plugin-react": "^5.0.4",
     "axios": "^1.13.6",
     "clsx": "^2.1.1",
-    "concurrently": "^9.2.1",
     "cors": "^2.8.6",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
@@ -54,10 +55,10 @@
     "spark-md5": "^3.0.2",
     "sqlite3": "^6.0.1",
     "tailwind-merge": "^3.5.0",
-    "uuid": "^13.0.0",
-    "vite": "^6.2.0"
+    "uuid": "^13.0.0"
   },
   "devDependencies": {
+    "concurrently": "^9.2.1",
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.25",
     "@types/multer": "^2.1.0",

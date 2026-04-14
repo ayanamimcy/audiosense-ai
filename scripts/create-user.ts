@@ -1,6 +1,6 @@
 import 'dotenv/config';
 
-import { createUser } from '../lib/auth.js';
+import { createUser } from '../lib/auth/auth.js';
 import { db, initDb } from '../db.js';
 
 function printUsage() {

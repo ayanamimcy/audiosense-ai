@@ -7,12 +7,12 @@ import {
 } from '../../database/repositories/knowledge-conversations-repository.js';
 import { listNotebookRowsByUserAndWorkspace } from '../../database/repositories/notebooks-repository.js';
 import { listTaskRowsByUserAndWorkspace } from '../../database/repositories/tasks-repository.js';
-import { streamKnowledgeChatMessage, type MentionRef } from '../../lib/knowledge-chat-service.js';
-import { isLlmConfigured } from '../../lib/llm.js';
-import { getUserSettings } from '../../lib/settings.js';
-import type { TaskRow } from '../../lib/task-types.js';
-import { repairPossiblyMojibakeText } from '../../lib/text-encoding.js';
-import { resolveCurrentWorkspaceForUser } from '../../lib/workspaces.js';
+import { streamKnowledgeChatMessage, type MentionRef } from '../../lib/search/knowledge-chat-service.js';
+import { isLlmConfigured } from '../../lib/ai/llm.js';
+import { getUserSettings } from '../../lib/settings/settings.js';
+import type { TaskRow } from '../../lib/tasks/task-types.js';
+import { repairPossiblyMojibakeText } from '../../lib/shared/text-encoding.js';
+import { resolveCurrentWorkspaceForUser } from '../../lib/workspaces/workspaces.js';
 
 export class ConversationNotFoundError extends Error {
   constructor() { super('Conversation not found.'); }

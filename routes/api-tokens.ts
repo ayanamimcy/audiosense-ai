@@ -1,6 +1,6 @@
 import express from 'express';
-import { createApiToken } from '../lib/auth.js';
-import { validateScopes } from '../lib/api-token-scopes.js';
+import { createApiToken } from '../lib/auth/auth.js';
+import { validateScopes } from '../lib/auth/api-token-scopes.js';
 import {
   deleteApiTokenRowById,
   listApiTokenRowsByUserId,
