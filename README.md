@@ -67,22 +67,30 @@ Browser -> app(API) -> task_jobs queue -> worker -> audio-engine -> provider/loc
 
 ## Repository Layout
 
-- [server.ts](/Users/chenyangm/Documents/github-project/audiosense-ai/server.ts)
-  Main API entrypoint
-- [worker.ts](/Users/chenyangm/Documents/github-project/audiosense-ai/worker.ts)
-  Background transcription worker
-- [db.ts](/Users/chenyangm/Documents/github-project/audiosense-ai/db.ts)
-  Schema bootstrap and DB initialization
-- [lib/audio-engine](/Users/chenyangm/Documents/github-project/audiosense-ai/lib/audio-engine)
-  Provider abstraction, normalization, speaker merge, runtime catalog
-- [lib/task-queue.ts](/Users/chenyangm/Documents/github-project/audiosense-ai/lib/task-queue.ts)
-  Queue insert / claim / retry flow
-- [lib/task-processor.ts](/Users/chenyangm/Documents/github-project/audiosense-ai/lib/task-processor.ts)
-  Actual task execution pipeline
-- [src](/Users/chenyangm/Documents/github-project/audiosense-ai/src)
-  React UI
-- [python-runtime](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime)
-  Local inference runtime for WhisperX / diarization / live recording support
+```
+server.ts                   # Express API entrypoint
+worker.ts                   # Background transcription worker
+db.ts                       # Schema bootstrap and DB initialization
+
+lib/
+├── config.ts               # Centralized configuration (single source of truth for all env vars)
+├── ai/                     # LLM calls, embeddings, query enhancement, reranking
+├── auth/                   # User auth, sessions, API tokens, encrypted settings
+├── audio-engine/           # Provider abstraction, normalization, speaker merge, subtitle split
+├── search/                 # Full-text + vector search, knowledge base, associations
+├── settings/               # User settings schema, merge, and persistence
+├── tasks/                  # Task lifecycle: queue, processor, chat, uploads, subtitles
+├── workspaces/             # Workspace creation and resolution
+└── shared/                 # Logger, text encoding, cross-cutting utilities
+
+application/services/       # Application service layer (route handlers import from here)
+database/                   # Knex client, config, migrations, and repository modules
+routes/                     # Express route handlers (thin HTTP layer)
+src/                        # React frontend (Vite + Tailwind)
+python-runtime/             # Local WhisperX / diarization inference runtime
+scripts/                    # CLI utilities (user management, migrations, reindex)
+tests/                      # Node.js test runner tests
+```
 
 ## Quick Start
 
@@ -122,15 +130,21 @@ Run database migrations first:
 npm run db:migrate
 ```
 
-Then start the app and worker:
+Then start the app and worker in development mode:
 
 ```bash
 npm run dev
 ```
 
-Default URL:
+Default URL: `http://localhost:3000`
 
-- `http://localhost:3000`
+### Build for production
+
+```bash
+npm run build          # compiles server TypeScript + Vite frontend
+npm run start:api      # runs the pre-compiled API server
+npm run worker         # runs the pre-compiled worker
+```
 
 ### 4. Start the local Python runtime
 
