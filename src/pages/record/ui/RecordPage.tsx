@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Mic, Square } from 'lucide-react';
-import { apiFetch } from '../api';
-import { formatTime, LANGUAGE_OPTIONS } from '../lib/utils';
-import { useAppDataContext } from '../contexts/AppDataContext';
+import { apiFetch } from '@/api';
+import { formatTime, LANGUAGE_OPTIONS } from '@/lib/utils';
+import { useAppDataContext } from '@/contexts/AppDataContext';
 
 export function RecordPage({
   onUploadSuccess,

@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Loader2, Upload } from 'lucide-react';
-import { cn, LANGUAGE_OPTIONS } from '../lib/utils';
-import { isLargeFile, chunkedUpload, directUploadWithProgress, type UploadProgress } from '../lib/chunked-upload';
-import { useAppDataContext } from '../contexts/AppDataContext';
+import { cn, LANGUAGE_OPTIONS } from '@/lib/utils';
+import { isLargeFile, chunkedUpload, directUploadWithProgress, type UploadProgress } from '@/lib/chunked-upload';
+import { useAppDataContext } from '@/contexts/AppDataContext';
 
 const MEDIA_FILE_ACCEPT = 'audio/*,video/*,.m4a,.mp3,.wav,.ogg,.webm,.aac,.mp4,.m4v,.mov,.flac';
 const MEDIA_FILE_EXTENSIONS = ['.m4a', '.mp3', '.wav', '.ogg', '.webm', '.aac', '.mp4', '.m4v', '.mov', '.flac'];

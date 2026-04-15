@@ -80,9 +80,11 @@ function MobileControlButton({
 export function TaskDetail({
   task,
   onUpdateTask,
+  onDeleteTask: onDeleteTaskProp,
 }: {
   task: Task;
   onUpdateTask: () => void | Promise<void>;
+  onDeleteTask?: () => void | Promise<void>;
 }) {
   const [activePanel, setActivePanel] = useState<Panel>('summary');
   const [summaryInstructions, setSummaryInstructions] = useState('');
@@ -565,7 +567,11 @@ export function TaskDetail({
         throw new Error('Failed to delete task.');
       }
 
-      await onUpdateTask();
+      if (onDeleteTaskProp) {
+        await onDeleteTaskProp();
+      } else {
+        await onUpdateTask();
+      }
     } catch (error) {
       console.error('Failed to delete task:', error);
       alert('Failed to delete task.');

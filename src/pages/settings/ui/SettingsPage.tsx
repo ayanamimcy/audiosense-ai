@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronDown, LogOut, RefreshCw } from 'lucide-react';
-import { apiJson } from '../api';
-import { cn, LANGUAGE_OPTIONS } from '../lib/utils';
-import { useAppDataContext } from '../contexts/AppDataContext';
-import { useAuthContext } from '../contexts/AuthContext';
-import { ApiTokensSection } from '../components/ApiTokensSection';
-import type { AuthUser, UserSettings } from '../types';
+import { apiJson } from '@/api';
+import { cn, LANGUAGE_OPTIONS } from '@/lib/utils';
+import { useAppDataContext } from '@/contexts/AppDataContext';
+import { useAuthContext } from '@/contexts/AuthContext';
+import { ApiTokensSection } from '@/components/ApiTokensSection';
+import type { AuthUser, UserSettings } from '@/types';
 
 export function SettingsPage({
   onLogout,
