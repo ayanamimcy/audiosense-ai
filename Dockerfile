@@ -25,6 +25,7 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/dist-server ./dist-server
 COPY package.json package-lock.json ./
 COPY database/migrations ./database/migrations
+COPY scripts ./scripts
 
 RUN mkdir -p /app/uploads /app/runtime-data
 
