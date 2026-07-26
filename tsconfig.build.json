@@ -23,12 +23,12 @@
     "lib/**/*.ts",
     "database/**/*.ts",
     "routes/**/*.ts",
-    "application/**/*.ts"
+    "application/**/*.ts",
+    "scripts/**/*.ts"
   ],
   "exclude": [
     "src/**",
     "tests/**",
-    "scripts/**",
     "node_modules/**"
   ]
 }
