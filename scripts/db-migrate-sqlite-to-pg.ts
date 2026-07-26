@@ -66,6 +66,23 @@ async function insertInBatches(
   }
 }
 
+async function backfillPgvectorEmbeddings(target: ReturnType<typeof knex>) {
+  const hasVectorColumn = await target.schema.hasColumn('task_chunks', 'embeddingVector');
+  if (!hasVectorColumn) {
+    return;
+  }
+
+  await target.raw(`
+    UPDATE task_chunks
+    SET "embeddingVector" = embedding::halfvec
+    WHERE embedding IS NOT NULL
+      AND "embeddingVector" IS NULL
+  `);
+  await target('task_chunks')
+    .whereNotNull('embeddingVector')
+    .update({ embedding: null });
+}
+
 async function ensureTargetReady(target: ReturnType<typeof knex>) {
   const hasMigrationsTable = await target.schema.hasTable('knex_migrations');
   const hasLockTable = await target.schema.hasTable('knex_migrations_lock');
@@ -124,6 +141,8 @@ async function main() {
         await insertInBatches(trx as unknown as ReturnType<typeof knex>, tableName, rows);
         console.log(`Imported ${rows.length} rows into ${tableName}.`);
       }
+
+      await backfillPgvectorEmbeddings(trx as unknown as ReturnType<typeof knex>);
     });
 
     console.log('SQLite -> PostgreSQL import completed.');

@@ -1,11 +1,21 @@
 import { v4 as uuidv4 } from 'uuid';
-import { db } from '../../db.js';
+import { db, isSqliteDb } from '../../db.js';
 import { listTaskRowsByUser } from '../../database/repositories/tasks-repository.js';
 import { cosineSimilarity } from '../ai/embeddings.js';
 import { parseJsonField, type TaskRow } from '../tasks/task-types.js';
 import { repairPossiblyMojibakeText } from '../shared/text-encoding.js';
 
 const SIMILARITY_THRESHOLD = 0.65;
+
+function selectStoredEmbedding() {
+  return isSqliteDb()
+    ? 'embedding'
+    : db.raw('"embeddingVector"::text AS embedding');
+}
+
+function storedEmbeddingColumn() {
+  return isSqliteDb() ? 'embedding' : 'embeddingVector';
+}
 
 /** Canonical pair: always store smaller ID as taskIdA */
 function canonicalPair(a: string, b: string): [string, string] {
@@ -15,8 +25,8 @@ function canonicalPair(a: string, b: string): [string, string] {
 async function getTaskAverageEmbedding(taskId: string): Promise<number[] | null> {
   const chunks = await db('task_chunks')
     .where({ taskId })
-    .whereNotNull('embedding')
-    .select('embedding');
+    .whereNotNull(storedEmbeddingColumn())
+    .select(selectStoredEmbedding());
 
   if (chunks.length === 0) return null;
 
@@ -81,8 +91,8 @@ export async function computeAssociationsForTask(userId: string, taskId: string)
   const otherChunks = await db('task_chunks')
     .where({ userId })
     .whereNot({ taskId })
-    .whereNotNull('embedding')
-    .select('taskId', 'embedding');
+    .whereNotNull(storedEmbeddingColumn())
+    .select('taskId', selectStoredEmbedding());
 
   const taskVectors = new Map<string, number[][]>();
   for (const row of otherChunks) {

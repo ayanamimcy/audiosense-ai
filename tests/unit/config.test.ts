@@ -30,6 +30,8 @@ test('config module', async (t) => {
     assert.equal(typeof config.llm.model, 'string');
     assert.equal(typeof config.embeddings.baseUrl, 'string');
     assert.equal(typeof config.embeddings.model, 'string');
+    assert.equal(typeof config.embeddings.dimensions, 'number');
+    assert.ok(config.embeddings.dimensions > 0 && config.embeddings.dimensions <= 4000);
     assert.equal(typeof config.transcription.defaultProvider, 'string');
     assert.equal(typeof config.localAudioEngine.baseUrl, 'string');
     assert.equal(typeof config.subtitleSplit.enabled, 'boolean');

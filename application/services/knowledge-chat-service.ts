@@ -6,7 +6,7 @@ import {
   listMessagesByConversation,
 } from '../../database/repositories/knowledge-conversations-repository.js';
 import { listNotebookRowsByUserAndWorkspace } from '../../database/repositories/notebooks-repository.js';
-import { listTaskRowsByUserAndWorkspace } from '../../database/repositories/tasks-repository.js';
+import { listTaskSummaryRowsByUserAndWorkspace } from '../../database/repositories/tasks-repository.js';
 import { streamKnowledgeChatMessage, type MentionRef } from '../../lib/search/knowledge-chat-service.js';
 import { isLlmConfigured } from '../../lib/ai/llm.js';
 import { getUserSettings } from '../../lib/settings/settings.js';
@@ -114,7 +114,7 @@ export async function getMentionCandidates(userId: string, query?: string) {
   const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(userId);
   const [notebooks, taskRows] = await Promise.all([
     listNotebookRowsByUserAndWorkspace(userId, currentWorkspaceId),
-    listTaskRowsByUserAndWorkspace(userId, currentWorkspaceId) as Promise<TaskRow[]>,
+    listTaskSummaryRowsByUserAndWorkspace(userId, currentWorkspaceId) as Promise<TaskRow[]>,
   ]);
 
   const lowerQuery = query?.toLowerCase().trim() || '';

@@ -13,6 +13,10 @@ function getEmbeddingsModel() {
   return config.embeddings.model;
 }
 
+export function getEmbeddingDimensions() {
+  return config.embeddings.dimensions;
+}
+
 export function isEmbeddingsConfigured() {
   return Boolean(getEmbeddingsApiKey());
 }
@@ -21,6 +25,7 @@ export function getEmbeddingsInfo() {
   return {
     configured: isEmbeddingsConfigured(),
     model: getEmbeddingsModel(),
+    dimensions: getEmbeddingDimensions(),
     baseUrl: getEmbeddingsBaseUrl(),
   };
 }
@@ -49,6 +54,11 @@ export async function createEmbedding(input: string) {
   const embedding = response.data?.data?.[0]?.embedding;
   if (!Array.isArray(embedding)) {
     throw new Error('Embedding API did not return a vector.');
+  }
+  if (embedding.length !== getEmbeddingDimensions()) {
+    throw new Error(
+      `Embedding dimension mismatch: configured ${getEmbeddingDimensions()}, received ${embedding.length}.`,
+    );
   }
 
   return {

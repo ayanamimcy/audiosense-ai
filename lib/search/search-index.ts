@@ -20,6 +20,7 @@ type SearchChunk = {
   chunkIndex: number;
   content: string;
   embedding?: string | null;
+  embeddingVector?: string | null;
   embeddingModel?: string | null;
   startTime?: number | null;
   endTime?: number | null;
@@ -29,6 +30,13 @@ type SearchChunk = {
 };
 
 const EMBEDDING_TAG_LIMIT = 5;
+
+function serializeEmbedding(vector: number[]) {
+  const serialized = JSON.stringify(vector);
+  return isSqliteDb()
+    ? { embedding: serialized }
+    : { embedding: null, embeddingVector: db.raw('?::halfvec', [serialized]) };
+}
 
 function toSqliteFtsQuery(query: string) {
   const tokens = query.match(/[\p{L}\p{N}]+/gu) || [];
@@ -250,7 +258,7 @@ export async function reindexTask(task: TaskRow) {
 
     // 1. Insert parent chunk (no embedding — used for LLM context)
     const parentId = uuidv4();
-    await db('task_chunks').insert({
+    const chunkRows: Array<Record<string, unknown>> = [{
       id: parentId,
       taskId: task.id,
       userId,
@@ -264,15 +272,7 @@ export async function reindexTask(task: TaskRow) {
       endTime: endTime ?? null,
       createdAt: now,
       updatedAt: now,
-    });
-
-    // FTS index on parent chunk (keyword search operates on full content)
-    if (isSqliteDb()) {
-      await db.raw(
-        'INSERT INTO task_chunk_fts (taskChunkId, taskId, userId, workspaceId, title, summary, tags, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [parentId, task.id, userId, workspaceId, title, summary, ftsTags, parentContent],
-      );
-    }
+    }];
 
     // 2. Split parent into child chunks and embed each (for vector search)
     if (isEmbeddingsConfigured()) {
@@ -291,14 +291,14 @@ export async function reindexTask(task: TaskRow) {
 
           const result = await createEmbedding(contextParts.join('\n\n'));
 
-          await db('task_chunks').insert({
+          chunkRows.push({
             id: uuidv4(),
             taskId: task.id,
             userId,
             workspaceId,
             chunkIndex: index * 100 + ci,
             content: childContent,
-            embedding: JSON.stringify(result.vector),
+            ...serializeEmbedding(result.vector),
             embeddingModel: result.model,
             parentId,
             startTime: startTime ?? null,
@@ -310,6 +310,17 @@ export async function reindexTask(task: TaskRow) {
           log.error('Failed to embed child chunk', { taskId: task.id, chunk: `${index}.${ci}`, error: error instanceof Error ? error.message : String(error) });
         }
       }
+    }
+
+    // Insert the parent and all successfully embedded children in one statement.
+    await db('task_chunks').insert(chunkRows);
+
+    // FTS index on parent chunk (keyword search operates on full content)
+    if (isSqliteDb()) {
+      await db.raw(
+        'INSERT INTO task_chunk_fts (taskChunkId, taskId, userId, workspaceId, title, summary, tags, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [parentId, task.id, userId, workspaceId, title, summary, ftsTags, parentContent],
+      );
     }
   }
 
@@ -444,25 +455,44 @@ export async function searchChunksHybrid(
     // Use HyDE embedding if available, fall back to direct query embedding
     const queryEmbedding = hydeResult || await createEmbedding(query);
 
-    // Query only child chunks (those with embeddings) for vector search
-    let chunkRowsQuery = db('task_chunks')
-      .where({ userId, workspaceId })
-      .whereNotNull('embedding')
-      .select('id', 'taskId', 'content', 'embedding', 'startTime', 'endTime', 'parentId');
-
-    if (allowedTaskIds?.length) {
-      chunkRowsQuery = chunkRowsQuery.whereIn('taskId', allowedTaskIds);
-    }
-
-    const chunkRows = (await chunkRowsQuery) as Array<{
+    let chunkRows: Array<{
       id: string;
       taskId: string;
       content: string;
       embedding?: string | null;
+      score?: number;
       startTime?: number | null;
       endTime?: number | null;
       parentId?: string | null;
     }>;
+
+    if (isSqliteDb()) {
+      // SQLite has no native vector type, so retain the in-process fallback.
+      let chunkRowsQuery = db('task_chunks')
+        .where({ userId, workspaceId })
+        .whereNotNull('embedding')
+        .select('id', 'taskId', 'content', 'embedding', 'startTime', 'endTime', 'parentId');
+
+      if (allowedTaskIds?.length) {
+        chunkRowsQuery = chunkRowsQuery.whereIn('taskId', allowedTaskIds);
+      }
+      chunkRows = await chunkRowsQuery;
+    } else {
+      // PostgreSQL/pgvector performs filtering, scoring, ordering, and limiting in the database.
+      const serializedQuery = JSON.stringify(queryEmbedding.vector);
+      let chunkRowsQuery = db('task_chunks')
+        .where({ userId, workspaceId, embeddingModel: queryEmbedding.model })
+        .whereNotNull('embeddingVector')
+        .select('id', 'taskId', 'content', 'startTime', 'endTime', 'parentId')
+        .select(db.raw('1 - ("embeddingVector" <=> ?::halfvec) AS score', [serializedQuery]))
+        .orderByRaw('"embeddingVector" <=> ?::halfvec ASC', [serializedQuery])
+        .limit(maxChunks * 2);
+
+      if (allowedTaskIds?.length) {
+        chunkRowsQuery = chunkRowsQuery.whereIn('taskId', allowedTaskIds);
+      }
+      chunkRows = await chunkRowsQuery;
+    }
 
     // Score child chunks by vector similarity
     const scoredChildren = chunkRows
@@ -470,7 +500,9 @@ export async function searchChunksHybrid(
         taskId: row.taskId,
         chunkId: row.id,
         content: row.content,
-        score: cosineSimilarity(queryEmbedding.vector, parseJsonField<number[]>(row.embedding, [])),
+        score: row.score === undefined
+          ? cosineSimilarity(queryEmbedding.vector, parseJsonField<number[]>(row.embedding, []))
+          : Number(row.score),
         startTime: row.startTime ?? null,
         endTime: row.endTime ?? null,
         parentId: row.parentId || null,

@@ -118,6 +118,7 @@ const embeddings = Object.freeze({
   ),
   apiKey: str(process.env.EMBEDDING_API_KEY, '') || llm.apiKey,
   model: str(process.env.EMBEDDING_MODEL, 'text-embedding-3-small'),
+  dimensions: Math.min(4000, Math.max(1, num(process.env.EMBEDDING_DIMENSIONS, 1536))),
 });
 
 // ---------------------------------------------------------------------------

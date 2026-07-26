@@ -41,7 +41,9 @@ import {
   assertWorkspaceBelongsToUser,
   resolveCurrentWorkspaceForUser,
 } from '../../lib/workspaces/workspaces.js';
-import { listTaskRowsByUserAndWorkspace } from '../../database/repositories/tasks-repository.js';
+import {
+  listTaskSummaryRowsByUserAndWorkspace,
+} from '../../database/repositories/tasks-repository.js';
 
 export class UserTaskNotFoundError extends Error {
   constructor() {
@@ -129,7 +131,7 @@ export async function reprocessTaskForUser(
 
 export async function listTasksForUser(userId: string) {
   const { currentWorkspaceId } = await resolveCurrentWorkspaceForUser(userId);
-  return (await listTaskRowsByUserAndWorkspace(userId, currentWorkspaceId)).map(toTaskListResponse);
+  return (await listTaskSummaryRowsByUserAndWorkspace(userId, currentWorkspaceId)).map(toTaskListResponse);
 }
 
 export async function getTaskDetailForUser(userId: string, taskId: string) {

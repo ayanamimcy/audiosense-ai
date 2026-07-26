@@ -121,6 +121,7 @@ Common optional settings:
 - `SQLITE_FILENAME`
 - `UPLOAD_DIR`
 - `EMBEDDING_API_KEY`
+- `EMBEDDING_DIMENSIONS` (must match the configured embedding model; `1536` by default)
 
 ### 3. Start the web app and worker
 

@@ -1,6 +1,27 @@
 import { db } from '../client.js';
 import type { TaskRow } from '../../lib/tasks/task-types.js';
 
+const TASK_LIST_COLUMNS = [
+  'id',
+  'userId',
+  'workspaceId',
+  'filename',
+  'originalName',
+  'status',
+  'summary',
+  'createdAt',
+  'notebookId',
+  'eventDate',
+  'tags',
+  'language',
+  'provider',
+  'sourceType',
+  'durationSeconds',
+  'startedAt',
+  'completedAt',
+  'updatedAt',
+] as const;
+
 export async function findTaskRowById(taskId: string) {
   return (await db('tasks').where({ id: taskId }).first()) as TaskRow | undefined;
 }
@@ -20,6 +41,13 @@ export async function listTaskRowsByUser(userId: string) {
 export async function listTaskRowsByUserAndWorkspace(userId: string, workspaceId: string) {
   return (await db('tasks')
     .where({ userId, workspaceId })
+    .orderBy('createdAt', 'desc')) as TaskRow[];
+}
+
+export async function listTaskSummaryRowsByUserAndWorkspace(userId: string, workspaceId: string) {
+  return (await db('tasks')
+    .where({ userId, workspaceId })
+    .select(...TASK_LIST_COLUMNS)
     .orderBy('createdAt', 'desc')) as TaskRow[];
 }
 
