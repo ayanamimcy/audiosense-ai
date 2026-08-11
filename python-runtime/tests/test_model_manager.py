@@ -78,12 +78,14 @@ def build_runtime_config() -> RuntimeConfig:
         beam_size=5,
         batch_size=16,
         vad_filter=True,
+        whisperx_alignment=False,
         diarization_model="fake-diarization",
         hf_token=None,
         download_root=None,
         preload=False,
         diarization_strategy="auto",
         prefer_integrated_diarization=True,
+        exclusive_diarization=True,
         sequential_unload_between_stages=False,
         translation_target_language="en",
         normalize_audio=False,
@@ -160,6 +162,37 @@ class ModelManagerIdleUnloadTests(unittest.TestCase):
         self.assertTrue(self.timer_instances[1].started)
         self.assertTrue(self.timer_instances[2].started)
 
+    def test_optional_alignment_failure_preserves_authoritative_transcript(self) -> None:
+        self.manager._config.whisperx_alignment = True
+        self.backend.backend_name = "faster-whisper"
+        self.backend.transcribe_result = {
+            "text": "AIエンジニアリングです",
+            "language": "ja",
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 2.0,
+                    "text": "AIエンジニアリングです",
+                    "words": [],
+                }
+            ],
+            "words": [],
+        }
+        alignment_engine = Mock()
+        alignment_engine.align.side_effect = RuntimeError("alignment unavailable")
+        self.manager._alignment_engine = alignment_engine
+
+        result = self.manager.transcribe_audio(
+            audio_data=np.zeros(160, dtype=np.float32),
+            sample_rate=16000,
+            diarization=False,
+            word_timestamps=True,
+        )
+
+        self.assertEqual(result["text"], "AIエンジニアリングです")
+        self.assertEqual(result["segments"][0]["text"], "AIエンジニアリングです")
+        self.assertTrue(any("raw ASR output was preserved" in warning for warning in result["warnings"]))
+
     def test_integrated_diarization_path_rearms_timer(self) -> None:
         self.backend.supports_integrated = True
         self.manager.preload()
@@ -175,6 +208,36 @@ class ModelManagerIdleUnloadTests(unittest.TestCase):
         self.assertEqual(len(self.timer_instances), 2)
         self.assertTrue(self.timer_instances[0].cancelled)
         self.assertTrue(self.timer_instances[1].started)
+
+    def test_auto_diarization_is_sequential_when_optional_alignment_is_enabled(self) -> None:
+        self.manager._config.whisperx_alignment = True
+        self.backend.backend_name = "faster-whisper"
+        self.backend.transcribe_result = {
+            "text": "complete transcript",
+            "language": "en",
+            "segments": [{"start": 0.0, "end": 1.0, "text": "complete transcript"}],
+            "words": [{"word": "complete", "start": 0.0, "end": 0.5}],
+        }
+        self.manager._diarization_engine = Mock()
+        self.manager._alignment_engine = Mock()
+        self.manager._alignment_engine.align.side_effect = lambda result, *_args, **_kwargs: dict(result)
+
+        with (
+            patch(
+                "local_audio_runtime.model_manager.transcribe_then_diarize",
+                return_value=(dict(self.backend.transcribe_result), []),
+            ) as sequential,
+            patch("local_audio_runtime.model_manager.transcribe_and_diarize") as parallel,
+        ):
+            result = self.manager.transcribe_audio(
+                audio_data=np.zeros(160, dtype=np.float32),
+                sample_rate=16000,
+                diarization=True,
+            )
+
+        sequential.assert_called_once()
+        parallel.assert_not_called()
+        self.assertEqual(result["text"], "complete transcript")
 
     def test_exception_path_rearms_timer(self) -> None:
         self.backend.raise_on_transcribe = True
@@ -194,7 +257,9 @@ class ModelManagerIdleUnloadTests(unittest.TestCase):
     def test_idle_unload_clears_backend_and_diarization_engine(self) -> None:
         self.manager.preload()
         diarization_engine = Mock()
+        alignment_engine = Mock()
         self.manager._diarization_engine = diarization_engine
+        self.manager._alignment_engine = alignment_engine
 
         self.manager._idle_unload()
 
@@ -202,6 +267,8 @@ class ModelManagerIdleUnloadTests(unittest.TestCase):
         self.assertEqual(self.backend.unload_calls, 1)
         diarization_engine.unload.assert_called_once_with()
         self.assertIsNone(self.manager._diarization_engine)
+        alignment_engine.unload.assert_called_once_with()
+        self.assertIsNone(self.manager._alignment_engine)
 
     def test_idle_unload_waits_for_active_transcription(self) -> None:
         started_event = threading.Event()

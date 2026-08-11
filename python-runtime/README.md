@@ -4,7 +4,10 @@
 
 默认能力：
 
-- 本地 `faster-whisper` / `whisperx` 模型加载
+- 默认以 `faster-whisper` 生成不可被后处理覆盖的权威文本
+- 文件转写默认关闭 VAD，避免在进入 ASR 前丢弃有效语音
+- 可选使用 WhisperX 细化词级时间戳；失败或漏字时保留原始时间戳
+- 仍可显式选择完整的 WhisperX 转写后端以兼容旧部署
 - 本地文件转写
 - 可选 `pyannote.audio` 说话人分离
 - WhisperX 集成单次 diarization
@@ -43,6 +46,17 @@ PYTHONPATH=src python3 -m local_audio_runtime.server
 ```
 
 默认监听 `127.0.0.1:8765`。
+
+完整性优先的默认配置：
+
+```bash
+LOCAL_AUDIO_ENGINE_BACKEND=faster-whisper
+LOCAL_AUDIO_ENGINE_VAD_FILTER=false
+LOCAL_AUDIO_ENGINE_WHISPERX_ALIGNMENT=false
+```
+
+需要 WhisperX forced alignment 时，可将最后一项设为 `true`。该增强只更新时间戳，
+不会替换 faster-whisper 的文本；使用 `auto` diarization 策略时会自动采用串行加载以降低显存占用。
 
 ## 主要接口
 

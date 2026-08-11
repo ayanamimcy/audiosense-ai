@@ -1,6 +1,7 @@
 import {
   buildSegmentsFromWords,
   buildSpeakerSegments,
+  labelTranscriptWithSpeakers,
   type DiarizationSegment,
 } from './speaker-merge.js';
 import { splitLongSegments } from './subtitle-split-pipeline.js';
@@ -287,7 +288,10 @@ export async function buildTranscriptionResult(input: {
   if (segments.some((segment) => Boolean(segment.speaker))) {
     analysisMode = 'integrated';
   } else if (input.request.diarization && words.length > 0 && fallbackDiarizationSegments.length > 0) {
-    const merged = buildSpeakerSegments(words, fallbackDiarizationSegments);
+    const merged =
+      segments.length > 0
+        ? labelTranscriptWithSpeakers(segments, words, fallbackDiarizationSegments)
+        : buildSpeakerSegments(words, fallbackDiarizationSegments);
     if (merged.segments.length > 0) {
       words = merged.words;
       segments = merged.segments;

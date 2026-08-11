@@ -2,14 +2,14 @@
 
 AudioSense AI is an open audio workspace for teams that need to capture, transcribe, organize, search, and discuss spoken content.
 
-It combines a React workspace, an API server, a background worker, and an optional local Python runtime for WhisperX / diarization workloads.
+It combines a React workspace, an API server, a background worker, and an optional local Python runtime for Faster Whisper, optional WhisperX alignment, and diarization workloads.
 
 ## Highlights
 
 - Upload audio files and queue long-running transcription jobs
 - Record audio directly in the browser and send it into the same processing pipeline
 - Organize recordings with notebooks, tags, dates, and task metadata
-- Run local WhisperX-based transcription with diarization through `python-runtime`
+- Run complete-first local Faster Whisper transcription with optional WhisperX alignment and diarization through `python-runtime`
 - Generate summaries, chat with a single transcript, and ask questions across recordings
 - Use provider routing, fallback chains, and circuit breaker controls
 - Support both SQLite-by-default and PostgreSQL-based deployments
@@ -24,7 +24,7 @@ AudioSense AI is split into a few clear responsibilities:
 - `worker`
   Background job runner. Claims queued transcription jobs and writes results back to storage.
 - `local-audio-runtime`
-  Optional Python sidecar for local WhisperX / diarization inference, especially useful on a GPU host.
+  Optional Python sidecar for local Faster Whisper inference, optional WhisperX timestamp alignment, and diarization, especially useful on a GPU host.
 - `database`
   SQLite by default. Stores users, tasks, notebooks, messages, chunks, provider state, and the job queue.
 
@@ -116,6 +116,8 @@ Recommended minimum settings:
 Common optional settings:
 
 - `LOCAL_AUDIO_ENGINE_MODEL`
+- `LOCAL_AUDIO_ENGINE_VAD_FILTER=false` keeps the full waveform in the authoritative Faster Whisper pass
+- `LOCAL_AUDIO_ENGINE_WHISPERX_ALIGNMENT=true` optionally refines word timestamps without replacing ASR text
 - `LOCAL_AUDIO_ENGINE_DIARIZATION_STRATEGY=auto|parallel|sequential`
 - `LOCAL_AUDIO_ENGINE_HF_TOKEN`
 - `SQLITE_FILENAME`

@@ -13,6 +13,7 @@ test('config module', async (t) => {
     delete process.env.LLM_API_KEY;
     delete process.env.OPENAI_API_KEY;
     delete process.env.EMBEDDING_API_KEY;
+    delete process.env.LOCAL_AUDIO_ENGINE_BACKEND;
 
     // Dynamic import to get fresh config
     const configModule = await import('../../lib/config.js');
@@ -33,6 +34,7 @@ test('config module', async (t) => {
     assert.equal(typeof config.embeddings.dimensions, 'number');
     assert.ok(config.embeddings.dimensions > 0 && config.embeddings.dimensions <= 4000);
     assert.equal(typeof config.transcription.defaultProvider, 'string');
+    assert.equal(config.localAudioEngine.backend, 'faster-whisper');
     assert.equal(typeof config.localAudioEngine.baseUrl, 'string');
     assert.equal(typeof config.subtitleSplit.enabled, 'boolean');
 

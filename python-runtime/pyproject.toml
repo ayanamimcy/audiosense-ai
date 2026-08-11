@@ -24,7 +24,7 @@ whisper = [
 ]
 whisperx = [
     "ctranslate2==4.7.1",
-    "whisperx==3.8.2",
+    "whisperx==3.8.6",
     "torch==2.8.0",
     "torchaudio==2.8.0",
     "torchvision==0.23.0",
@@ -43,7 +43,7 @@ live = [
 full = [
     "ctranslate2==4.7.1",
     "faster-whisper==1.2.1",
-    "whisperx==3.8.2",
+    "whisperx==3.8.6",
     "torch==2.8.0",
     "torchaudio==2.8.0",
     "torchvision==0.23.0",

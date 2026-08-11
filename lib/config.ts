@@ -162,7 +162,7 @@ const localAudioEngine = Object.freeze({
   port: localAudioEnginePort,
   autostart: process.env.LOCAL_AUDIO_ENGINE_AUTOSTART !== 'false',
   startupTimeoutMs: Math.max(5_000, num(process.env.LOCAL_AUDIO_ENGINE_STARTUP_TIMEOUT_MS, 120_000)),
-  backend: str(process.env.LOCAL_AUDIO_ENGINE_BACKEND, 'whisperx'),
+  backend: str(process.env.LOCAL_AUDIO_ENGINE_BACKEND, 'faster-whisper'),
   model: str(process.env.LOCAL_AUDIO_ENGINE_MODEL, 'small'),
   diarizationStrategy: (['auto', 'parallel', 'sequential'].includes(
     str(process.env.LOCAL_AUDIO_ENGINE_DIARIZATION_STRATEGY, '').toLowerCase(),
