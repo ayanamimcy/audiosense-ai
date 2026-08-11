@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 
 from .audio_utils import get_audio_duration_seconds, load_audio, normalize_audio_peak
+from .alignment import WhisperXAlignmentEngine
 from .backends import BackendLoadSpec, BaseBackend, create_backend, release_accelerator_memory
 from .config import RuntimeConfig
 from .diarization import DiarizationEngine
@@ -28,6 +29,7 @@ class ModelManager:
         self._backend: BaseBackend | None = None
         self._backend_spec: BackendLoadSpec | None = None
         self._diarization_engine: DiarizationEngine | None = None
+        self._alignment_engine: WhisperXAlignmentEngine | None = None
         self._lock = threading.RLock()
         self._transcription_lock = threading.RLock()
         self._idle_timer: threading.Timer | None = None
@@ -55,6 +57,9 @@ class ModelManager:
                 if self._diarization_engine is not None:
                     self._diarization_engine.unload()
                     self._diarization_engine = None
+                if self._alignment_engine is not None:
+                    self._alignment_engine.unload()
+                    self._alignment_engine = None
             release_accelerator_memory()
 
     def _resolve_backend_spec(
@@ -95,6 +100,12 @@ class ModelManager:
                 self._diarization_engine = DiarizationEngine(self._config)
             return self._diarization_engine
 
+    def _ensure_alignment_engine(self) -> WhisperXAlignmentEngine:
+        with self._lock:
+            if self._alignment_engine is None:
+                self._alignment_engine = WhisperXAlignmentEngine(self._config)
+            return self._alignment_engine
+
     def preload(self) -> None:
         self._ensure_backend()
         self._reset_idle_timer()
@@ -107,6 +118,54 @@ class ModelManager:
             self._backend = None
             self._backend_spec = None
         release_accelerator_memory()
+
+    def unload_alignment(self) -> None:
+        with self._lock:
+            if self._alignment_engine is None:
+                return
+            self._alignment_engine.unload()
+            self._alignment_engine = None
+
+    def _unload_transcription_stage(self) -> None:
+        self.unload_backend()
+        self.unload_alignment()
+
+    def _apply_optional_alignment(
+        self,
+        result: dict[str, Any],
+        audio_data: np.ndarray,
+        *,
+        runtime_backend: BaseBackend,
+        task: str,
+        language: str | None,
+    ) -> dict[str, Any]:
+        if (
+            not self._config.whisperx_alignment
+            or runtime_backend.backend_name != "faster-whisper"
+            or task == "translate"
+            or not result.get("segments")
+        ):
+            return result
+
+        language_code = str(result.get("language") or language or "").strip()
+        if not language_code:
+            warnings = list(result.get("warnings", []))
+            warnings.append("WhisperX alignment skipped because the transcription language is unknown.")
+            result["warnings"] = warnings
+            return result
+
+        try:
+            return self._ensure_alignment_engine().align(
+                result,
+                audio_data,
+                language_code=language_code,
+            )
+        except Exception as exc:
+            logger.warning("Optional WhisperX alignment failed; preserving raw ASR output: %s", exc)
+            warnings = list(result.get("warnings", []))
+            warnings.append("Optional WhisperX alignment failed; raw ASR output was preserved.")
+            result["warnings"] = warnings
+            return result
 
     def _transcribe_audio_with_backend(
         self,
@@ -205,6 +264,13 @@ class ModelManager:
                     model_name=model_name,
                     backend_instance=runtime_backend,
                 )
+                result = self._apply_optional_alignment(
+                    result,
+                    audio_data,
+                    runtime_backend=runtime_backend,
+                    task=effective_task,
+                    language=language,
+                )
                 result["duration"] = get_audio_duration_seconds(audio_data, sample_rate)
                 result["backend"] = runtime_backend.backend_name
                 result["model_name"] = runtime_backend.model_name
@@ -219,7 +285,7 @@ class ModelManager:
             backend_spec = self._resolve_backend_spec(backend=backend, model_name=model_name)
 
             def transcribe_fn() -> dict[str, Any]:
-                return self._transcribe_audio_with_backend(
+                raw_result = self._transcribe_audio_with_backend(
                     audio_data,
                     sample_rate=sample_rate,
                     language=language,
@@ -231,6 +297,13 @@ class ModelManager:
                     backend=backend_spec.backend,
                     model_name=backend_spec.model_name,
                 )
+                return self._apply_optional_alignment(
+                    raw_result,
+                    audio_data,
+                    runtime_backend=runtime_backend,
+                    task=effective_task,
+                    language=language,
+                )
 
             def diarize_fn() -> list[dict[str, Any]]:
                 return diarization_engine.diarize(
@@ -241,7 +314,13 @@ class ModelManager:
                     exclusive=self._config.exclusive_diarization,
                 )
 
-            if strategy == "parallel" or strategy == "auto":
+            # Optional alignment adds a second GPU model. In auto mode, finish
+            # and unload the transcription/alignment stage before diarization
+            # to avoid keeping all three model families resident together.
+            use_parallel = strategy == "parallel" or (
+                strategy == "auto" and not self._config.whisperx_alignment
+            )
+            if use_parallel:
                 result, diarization_segments = transcribe_and_diarize(
                     transcribe_fn=transcribe_fn,
                     diarize_fn=diarize_fn,
@@ -250,7 +329,7 @@ class ModelManager:
                 result, diarization_segments = transcribe_then_diarize(
                     transcribe_fn=transcribe_fn,
                     diarize_fn=diarize_fn,
-                    unload_transcription_model=self.unload_backend
+                    unload_transcription_model=self._unload_transcription_stage
                     if self._config.sequential_unload_between_stages
                     else None,
                     reload_transcription_model=lambda: self._ensure_backend(
@@ -320,5 +399,6 @@ class ModelManager:
             "model_name": self._backend.model_name if self._backend is not None else None,
             "device": self._backend.device if self._backend is not None else None,
             "diarization_loaded": self._diarization_engine is not None and self._diarization_engine._pipeline is not None,
+            "alignment_loaded": self._alignment_engine is not None and self._alignment_engine._model is not None,
             "config": config,
         }

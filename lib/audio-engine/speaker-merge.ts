@@ -27,6 +27,17 @@ function normalizeWordSpeaker(word: TranscriptWord) {
   return word.speaker?.trim() || 'UNKNOWN';
 }
 
+function normalizeComparableText(value: string) {
+  return value.normalize('NFKC').toLocaleLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
+function wordsCoverAuthoritativeText(words: TranscriptWord[], text: string) {
+  if (words.length === 0) {
+    return false;
+  }
+  return normalizeComparableText(words.map((word) => word.text).join('')) === normalizeComparableText(text);
+}
+
 export function assignSpeakersToWords(
   words: TranscriptWord[],
   diarizationSegments: DiarizationSegment[],
@@ -163,6 +174,69 @@ export function smoothMicroTurns(
   );
 }
 
+/**
+ * Adds speaker metadata without rebuilding ASR segments from word tokens.
+ * Segment text is authoritative provider output and must survive diarization
+ * even when alignment omits an unalignable token.
+ */
+export function labelTranscriptWithSpeakers(
+  segments: TranscriptSegment[],
+  words: TranscriptWord[],
+  diarizationSegments: DiarizationSegment[],
+  options: {
+    smooth?: boolean;
+    wordPaddingSeconds?: number;
+    nearestTurnToleranceSeconds?: number;
+  } = {},
+) {
+  const assignedWords = assignSpeakersToWords(words, diarizationSegments, {
+    wordPaddingSeconds: options.wordPaddingSeconds,
+    nearestTurnToleranceSeconds: options.nearestTurnToleranceSeconds,
+  });
+  const finalWords = options.smooth === false ? assignedWords : smoothMicroTurns(assignedWords);
+  const speakers = new Set<string>();
+
+  const labelledSegments = segments.map((segment, segmentIndex) => {
+    const isLastSegment = segmentIndex === segments.length - 1;
+    const segmentWords = finalWords.filter((word) => {
+      const midpoint = (word.start + word.end) / 2;
+      return midpoint >= segment.start && (midpoint < segment.end || (isLastSegment && midpoint <= segment.end));
+    });
+    const speakerWeights = new Map<string, number>();
+
+    for (const word of segmentWords) {
+      const speaker = normalizeWordSpeaker(word);
+      if (speaker === 'UNKNOWN') {
+        continue;
+      }
+      const weight = Math.max(0.01, word.end - word.start);
+      speakerWeights.set(speaker, (speakerWeights.get(speaker) || 0) + weight);
+    }
+
+    const speaker = [...speakerWeights.entries()].sort((left, right) => right[1] - left[1])[0]?.[0];
+    if (speaker) {
+      speakers.add(speaker);
+    }
+
+    return {
+      ...segment,
+      // Preserve the provider's exact text and boundaries. Speaker assignment
+      // is metadata enrichment, not another transcription pass.
+      text: segment.text,
+      speaker: speaker || segment.speaker,
+      // Incomplete aligned words must not become the source for subtitle
+      // splitting, which would silently drop unmatched Latin text or digits.
+      words: wordsCoverAuthoritativeText(segmentWords, segment.text) ? segmentWords : segment.words,
+    } satisfies TranscriptSegment;
+  });
+
+  return {
+    words: finalWords,
+    segments: labelledSegments,
+    numSpeakers: speakers.size,
+  };
+}
+
 function joinWordTexts(words: TranscriptWord[]) {
   return words
     .map((word) => word.text.trim())
@@ -244,4 +318,3 @@ export function buildSpeakerSegments(
     numSpeakers,
   };
 }
-

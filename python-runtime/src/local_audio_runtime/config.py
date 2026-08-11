@@ -42,6 +42,7 @@ class RuntimeConfig:
     beam_size: int
     batch_size: int
     vad_filter: bool
+    whisperx_alignment: bool
     diarization_model: str
     hf_token: str | None
     download_root: str | None
@@ -81,7 +82,11 @@ def load_config() -> RuntimeConfig:
         compute_type=os.getenv("LOCAL_AUDIO_ENGINE_COMPUTE_TYPE", "default"),
         beam_size=_read_int("LOCAL_AUDIO_ENGINE_BEAM_SIZE", 5),
         batch_size=_read_int("LOCAL_AUDIO_ENGINE_BATCH_SIZE", 16),
-        vad_filter=_read_bool("LOCAL_AUDIO_ENGINE_VAD_FILTER", True),
+        # File transcription defaults to completeness. VAD remains available
+        # as an opt-in acceleration, but must not discard speech unless the
+        # operator explicitly enables it.
+        vad_filter=_read_bool("LOCAL_AUDIO_ENGINE_VAD_FILTER", False),
+        whisperx_alignment=_read_bool("LOCAL_AUDIO_ENGINE_WHISPERX_ALIGNMENT", False),
         diarization_model=os.getenv(
             "LOCAL_AUDIO_ENGINE_DIARIZATION_MODEL",
             "pyannote/speaker-diarization-community-1",

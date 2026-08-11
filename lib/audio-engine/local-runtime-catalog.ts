@@ -50,7 +50,7 @@ const fallbackCatalog: LocalRuntimeCatalog = {
     {
       id: 'faster-whisper',
       label: 'Faster Whisper',
-      description: 'Lower-overhead local Whisper runtime with word timestamps.',
+      description: 'Recommended complete-first transcription backend with word timestamps.',
       supportsDiarization: true,
       supportsIntegratedDiarization: false,
       supportsTranslation: true,
