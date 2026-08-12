@@ -116,6 +116,7 @@ class BaseBackend:
         vad_filter: bool,
         translation_target_language: str | None,
         progress_callback: Callable[[int, int], None] | None = None,
+        cancellation_check: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         raise NotImplementedError
 
@@ -133,6 +134,7 @@ class BaseBackend:
         num_speakers: int | None = None,
         hf_token: str | None = None,
         progress_callback: Callable[[int, int], None] | None = None,
+        cancellation_check: Callable[[], None] | None = None,
     ) -> dict[str, Any] | None:
         del (
             audio,
@@ -146,6 +148,7 @@ class BaseBackend:
             num_speakers,
             hf_token,
             progress_callback,
+            cancellation_check,
         )
         return None
 
@@ -192,6 +195,7 @@ class FasterWhisperBackend(BaseBackend):
         vad_filter: bool,
         translation_target_language: str | None,
         progress_callback: Callable[[int, int], None] | None = None,
+        cancellation_check: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         del audio_sample_rate, progress_callback
         if self._model is None:
@@ -199,6 +203,9 @@ class FasterWhisperBackend(BaseBackend):
 
         if task == "translate" and translation_target_language not in {None, "", "en"}:
             raise ValueError("Local faster-whisper translation currently supports only English output.")
+
+        if cancellation_check is not None:
+            cancellation_check()
 
         segments_iter, info = self._model.transcribe(
             audio,
@@ -217,6 +224,8 @@ class FasterWhisperBackend(BaseBackend):
         text_parts: list[str] = []
 
         for index, segment in enumerate(segments_iter, start=1):
+            if cancellation_check is not None:
+                cancellation_check()
             segment_words = []
             if word_timestamps and getattr(segment, "words", None):
                 for word_index, word in enumerate(segment.words, start=1):
@@ -444,10 +453,14 @@ class WhisperXBackend(BaseBackend):
         vad_filter: bool,
         translation_target_language: str | None,
         progress_callback: Callable[[int, int], None] | None = None,
+        cancellation_check: Callable[[], None] | None = None,
     ) -> dict[str, Any]:
         del audio_sample_rate, vad_filter, translation_target_language, progress_callback
         if self._model is None:
             raise RuntimeError("whisperx model is not loaded")
+
+        if cancellation_check is not None:
+            cancellation_check()
 
         wx_result = self._whisperx_transcribe(
             audio,
@@ -458,12 +471,17 @@ class WhisperXBackend(BaseBackend):
             suppress_tokens=suppress_tokens,
         )
         detected_language = wx_result.get("language") or language
+        if cancellation_check is not None:
+            cancellation_check()
 
         if word_timestamps and wx_result.get("segments"):
             try:
                 wx_result = self._align(wx_result, audio, str(detected_language) if detected_language else None)
             except Exception as exc:
                 logger.warning("WhisperX alignment failed: %s", exc)
+
+        if cancellation_check is not None:
+            cancellation_check()
 
         return self._normalize_whisperx_output(wx_result, detected_language)
 
@@ -481,6 +499,7 @@ class WhisperXBackend(BaseBackend):
         num_speakers: int | None = None,
         hf_token: str | None = None,
         progress_callback: Callable[[int, int], None] | None = None,
+        cancellation_check: Callable[[], None] | None = None,
     ) -> dict[str, Any] | None:
         del audio_sample_rate, translation_target_language, progress_callback
         whisperx, diarize_module = _import_whisperx_modules(include_diarize=True)
@@ -489,6 +508,9 @@ class WhisperXBackend(BaseBackend):
 
         if self._model is None:
             raise RuntimeError("whisperx model is not loaded")
+
+        if cancellation_check is not None:
+            cancellation_check()
 
         token = hf_token or os.environ.get("HUGGINGFACE_TOKEN") or os.environ.get("HF_TOKEN")
         if not token:
@@ -506,12 +528,17 @@ class WhisperXBackend(BaseBackend):
             suppress_tokens=suppress_tokens,
         )
         detected_language = wx_result.get("language") or language
+        if cancellation_check is not None:
+            cancellation_check()
 
         if wx_result.get("segments"):
             try:
                 wx_result = self._align(wx_result, audio, str(detected_language) if detected_language else None)
             except Exception as exc:
                 logger.warning("WhisperX alignment failed during integrated diarization: %s", exc)
+
+        if cancellation_check is not None:
+            cancellation_check()
 
         diarization_kwargs = _build_whisperx_diarization_kwargs(
             diarize_module.DiarizationPipeline,
@@ -525,6 +552,8 @@ class WhisperXBackend(BaseBackend):
             diarize_kwargs["max_speakers"] = num_speakers
 
         diarize_segments = diarization_pipeline(audio, **diarize_kwargs)
+        if cancellation_check is not None:
+            cancellation_check()
         wx_result = whisperx.assign_word_speakers(diarize_segments, wx_result)
         normalized = self._normalize_whisperx_output(wx_result, detected_language, include_speakers=True)
         normalized["num_speakers"] = len({segment.get("speaker") for segment in normalized["segments"] if segment.get("speaker")})

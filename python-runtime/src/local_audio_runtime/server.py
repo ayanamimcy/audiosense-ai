@@ -6,12 +6,14 @@ import logging
 from pathlib import Path
 import struct
 import tempfile
+import threading
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 import uvicorn
 
 from .catalog import get_backend_catalog
+from .cancellation import CancellationRegistry, TranscriptionCancelledError
 from .config import load_config
 from .live_engine import LiveModeConfig, LiveModeEngine, LiveModeState
 from .model_manager import ModelManager
@@ -28,6 +30,7 @@ manager = ModelManager(config)
 app = FastAPI(title="AudioSense Local Audio Runtime")
 _active_live_session: LiveModeSession | None = None
 _session_lock = asyncio.Lock()
+_cancellations = CancellationRegistry()
 
 
 def _run_transcription(
@@ -43,11 +46,17 @@ def _run_transcription(
     model_name: str | None = None,
     diarization_strategy: str | None = None,
     hf_token: str | None = None,
+    request_id: str | None = None,
+    cancellation_event: threading.Event | None = None,
 ) -> TranscriptionResponse:
     if not Path(file_path).exists():
         raise HTTPException(status_code=404, detail="Audio file not found")
 
+    event = cancellation_event or _cancellations.begin(request_id)
+    owns_event = cancellation_event is None
+
     try:
+        _cancellations.raise_if_cancelled(event)
         result = manager.transcribe_file(
             file_path=file_path,
             language=language,
@@ -60,13 +69,20 @@ def _run_transcription(
             model_name=model_name,
             diarization_strategy=diarization_strategy,
             hf_token=hf_token,
+            cancellation_check=lambda: _cancellations.raise_if_cancelled(event),
         )
+        _cancellations.raise_if_cancelled(event)
         return TranscriptionResponse(**result)
+    except TranscriptionCancelledError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except HTTPException:
         raise
     except Exception as exc:
         logger.exception("Local transcription failed")
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+    finally:
+        if owns_event:
+            _cancellations.finish(request_id, event)
 
 
 @app.on_event("startup")
@@ -111,7 +127,13 @@ def transcribe(payload: TranscriptionRequest) -> TranscriptionResponse:
         model_name=payload.model_name,
         diarization_strategy=payload.diarization_strategy,
         hf_token=payload.hf_token,
+        request_id=payload.request_id,
     )
+
+
+@app.post("/transcriptions/{request_id}/cancel")
+def cancel_transcription(request_id: str) -> dict[str, bool]:
+    return {"cancelled": _cancellations.cancel(request_id)}
 
 
 @app.post("/transcribe-file", response_model=TranscriptionResponse)
@@ -127,20 +149,26 @@ async def transcribe_file(
     model_name: str | None = Form(default=None),
     diarization_strategy: str | None = Form(default=None),
     hf_token: str | None = Form(default=None),
+    request_id: str | None = Form(default=None),
 ) -> TranscriptionResponse:
     suffix = Path(file.filename or "").suffix
     temp_path: str | None = None
+    event = _cancellations.begin(request_id)
 
     try:
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
             temp_path = temp_file.name
             while True:
+                _cancellations.raise_if_cancelled(event)
                 chunk = await file.read(1024 * 1024)
                 if not chunk:
                     break
                 temp_file.write(chunk)
 
-        return _run_transcription(
+        _cancellations.raise_if_cancelled(event)
+
+        return await asyncio.to_thread(
+            _run_transcription,
             file_path=temp_path,
             language=(language or None),
             diarization=diarization,
@@ -152,8 +180,13 @@ async def transcribe_file(
             model_name=(model_name or None),
             diarization_strategy=(diarization_strategy or None),
             hf_token=(hf_token or None),
+            request_id=request_id,
+            cancellation_event=event,
         )
+    except TranscriptionCancelledError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     finally:
+        _cancellations.finish(request_id, event)
         await file.close()
         if temp_path:
             Path(temp_path).unlink(missing_ok=True)

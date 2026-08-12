@@ -81,6 +81,8 @@ export interface TranscriptionResult {
 }
 
 export interface TranscriptionJobInput {
+  requestId?: string;
+  signal?: AbortSignal;
   filePath: string;
   fileName?: string;
   mimeType?: string;

@@ -8,13 +8,18 @@ import {
 
 const log = logger.child('task-queue');
 import {
+  findActiveTaskJobRowByTaskId,
   findTaskJobRowById,
   findNextQueuedTaskJob,
   insertTaskJobRow,
   markTaskJobProcessing,
-  updateTaskJobRowById,
+  updateTaskJobRowByIdWhereStatus,
 } from '../../database/repositories/task-jobs-repository.js';
-import { findTaskRowById, updateTaskRowById } from '../../database/repositories/tasks-repository.js';
+import {
+  findTaskRowById,
+  updateTaskRowById,
+  updateTaskRowByIdWhereStatus,
+} from '../../database/repositories/tasks-repository.js';
 import { asProcessingError, type ProcessingError } from '../audio-engine/errors.js';
 import { checkTranscriptionProviderHealth } from '../audio-engine/providers/index.js';
 import { isProviderCircuitOpen, resetProviderCircuit } from '../audio-engine/routing.js';
@@ -22,6 +27,7 @@ import { processQueuedJob } from './task-processor.js';
 import { getUserSettings } from '../settings/settings.js';
 import { parseJsonField, type QueueStateRow, type TaskJobRow } from './task-types.js';
 import config from '../config.js';
+import { isTranscriptionCancelledError } from '../audio-engine/cancellation.js';
 
 const DEFAULT_PROVIDER = config.transcription.defaultProvider;
 const DEFAULT_QUEUE_NAME = 'transcription';
@@ -97,7 +103,7 @@ async function clearQueuePause(jobId?: string) {
 
 async function markTaskBlocked(job: TaskJobRow, message: string, now: number) {
   const task = await findTaskRowById(job.taskId);
-  await updateTaskRowById(job.taskId, {
+  await updateTaskRowByIdWhereStatus(job.taskId, ['pending', 'processing', 'blocked'], {
     status: 'blocked',
     result: message,
     updatedAt: now,
@@ -112,7 +118,7 @@ async function markTaskBlocked(job: TaskJobRow, message: string, now: number) {
 
 async function markTaskFailed(job: TaskJobRow, message: string, now: number) {
   const task = await findTaskRowById(job.taskId);
-  await updateTaskRowById(job.taskId, {
+  await updateTaskRowByIdWhereStatus(job.taskId, ['pending', 'processing', 'blocked'], {
     status: 'failed',
     result: message,
     updatedAt: now,
@@ -131,7 +137,7 @@ async function markTaskQueued(job: TaskJobRow, message: string | null, now: numb
   delete metadata.blockedReason;
   delete metadata.blockedProvider;
 
-  await updateTaskRowById(job.taskId, {
+  await updateTaskRowByIdWhereStatus(job.taskId, ['pending', 'processing', 'blocked'], {
     status: 'pending',
     result: message,
     updatedAt: now,
@@ -209,12 +215,50 @@ export async function claimNextJob(workerId: string) {
 }
 
 export async function completeJob(job: TaskJobRow) {
-  await updateTaskJobRowById(job.id, {
+  await updateTaskJobRowByIdWhereStatus(job.id, ['processing'], {
     status: 'completed',
     updatedAt: Date.now(),
   });
 
   await clearQueuePause(job.id);
+}
+
+export async function cancelTaskJob(taskId: string) {
+  const job = await findActiveTaskJobRowByTaskId(taskId);
+  const task = await findTaskRowById(taskId);
+  const now = Date.now();
+  const metadata = parseJsonField<Record<string, unknown>>(task?.metadata, {});
+
+  const cancelled = await updateTaskRowByIdWhereStatus(
+    taskId,
+    ['pending', 'processing', 'blocked'],
+    {
+      status: 'cancelled',
+      result: 'Transcription was cancelled.',
+      updatedAt: now,
+      metadata: JSON.stringify({
+        ...metadata,
+        cancellationRequestedAt: now,
+        cancelledAt: now,
+      }),
+    },
+  );
+
+  const taskIsCancelled =
+    cancelled > 0 || (await findTaskRowById(taskId))?.status === 'cancelled';
+
+  if (taskIsCancelled && job) {
+    await updateTaskJobRowByIdWhereStatus(job.id, ['queued', 'processing', 'blocked'], {
+      status: 'cancelled',
+      lastError: 'Transcription was cancelled.',
+      lockedAt: null,
+      workerId: null,
+      updatedAt: now,
+    });
+    await clearQueuePause(job.id);
+  }
+
+  return { cancelled: taskIsCancelled, job };
 }
 
 export async function failJob(job: TaskJobRow, error: unknown) {
@@ -226,14 +270,7 @@ export async function failJob(job: TaskJobRow, error: unknown) {
 
   if (normalized.category === 'service') {
     const retryAt = now + nextAttemptCount * RETRY_DELAY_MS;
-    await pauseQueueForJob(
-      job,
-      message,
-      shouldRetry ? 'service_retry' : 'waiting_for_recovery',
-      shouldRetry ? null : now + QUEUE_RECOVERY_POLL_MS,
-    );
-
-    await updateTaskJobRowById(job.id, {
+    const updated = await updateTaskJobRowByIdWhereStatus(job.id, ['processing'], {
       status: shouldRetry ? 'queued' : 'blocked',
       attemptCount: nextAttemptCount,
       lastError: message,
@@ -242,6 +279,17 @@ export async function failJob(job: TaskJobRow, error: unknown) {
       runAfter: shouldRetry ? retryAt : job.runAfter,
       updatedAt: now,
     });
+
+    if (!updated) {
+      return;
+    }
+
+    await pauseQueueForJob(
+      job,
+      message,
+      shouldRetry ? 'service_retry' : 'waiting_for_recovery',
+      shouldRetry ? null : now + QUEUE_RECOVERY_POLL_MS,
+    );
 
     if (shouldRetry) {
       await markTaskQueued(job, message, now);
@@ -253,7 +301,7 @@ export async function failJob(job: TaskJobRow, error: unknown) {
 
   await clearQueuePause(job.id);
 
-  await updateTaskJobRowById(job.id, {
+  const updated = await updateTaskJobRowByIdWhereStatus(job.id, ['processing'], {
     status: shouldRetry ? 'queued' : 'failed',
     attemptCount: nextAttemptCount,
     lastError: message,
@@ -262,6 +310,10 @@ export async function failJob(job: TaskJobRow, error: unknown) {
     runAfter: shouldRetry ? now + nextAttemptCount * RETRY_DELAY_MS : job.runAfter,
     updatedAt: now,
   });
+
+  if (!updated) {
+    return;
+  }
 
   if (shouldRetry) {
     await markTaskQueued(job, message, now);
@@ -308,7 +360,7 @@ async function maybeRequeueBlockedJob(queueState: QueueStateRow) {
   await resetProviderCircuit(provider);
 
   const now = Date.now();
-  await updateTaskJobRowById(blockedJob.id, {
+  const updated = await updateTaskJobRowByIdWhereStatus(blockedJob.id, ['blocked'], {
     status: 'queued',
     attemptCount: 0,
     lastError: null,
@@ -317,6 +369,9 @@ async function maybeRequeueBlockedJob(queueState: QueueStateRow) {
     runAfter: now,
     updatedAt: now,
   });
+  if (!updated) {
+    return false;
+  }
   await markTaskQueued(blockedJob, null, now);
   await updateQueueStateRow(DEFAULT_QUEUE_NAME, {
     reason: 'replaying_blocked_job',
@@ -379,6 +434,11 @@ export async function runWorkerCycle(workerId: string) {
     await processQueuedJob(job);
     await completeJob(job);
   } catch (error) {
+    if (isTranscriptionCancelledError(error)) {
+      log.info('Worker stopped cancelled job', { workerId, jobId: job.id });
+      await cancelTaskJob(job.taskId);
+      return true;
+    }
     log.error('Worker failed job', { workerId, jobId: job.id, error: error instanceof Error ? error.message : String(error) });
     await failJob(job, error as ProcessingError);
   }

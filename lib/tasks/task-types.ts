@@ -1,8 +1,8 @@
 import type { SpeakerSummary, TranscriptSegment } from '../audio-engine/types.js';
 import { repairPossiblyMojibakeText } from '../shared/text-encoding.js';
 
-export type TaskStatus = 'pending' | 'processing' | 'blocked' | 'completed' | 'failed';
-export type JobStatus = 'queued' | 'processing' | 'blocked' | 'completed' | 'failed';
+export type TaskStatus = 'pending' | 'processing' | 'blocked' | 'completed' | 'failed' | 'cancelled';
+export type JobStatus = 'queued' | 'processing' | 'blocked' | 'completed' | 'failed' | 'cancelled';
 
 export interface TaskRow {
   id: string;

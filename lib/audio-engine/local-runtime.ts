@@ -151,3 +151,23 @@ export async function ensureLocalAudioRuntime(baseUrlOverride?: string) {
 export function getLocalAudioRuntimeBaseUrl(baseUrlOverride?: string) {
   return getRuntimeBaseUrl(baseUrlOverride);
 }
+
+export async function cancelLocalAudioRuntimeRequest(
+  requestId: string,
+  baseUrlOverride?: string,
+) {
+  if (!requestId) {
+    return false;
+  }
+
+  try {
+    const response = await axios.post(
+      `${getRuntimeBaseUrl(baseUrlOverride)}/transcriptions/${encodeURIComponent(requestId)}/cancel`,
+      undefined,
+      { timeout: 1_500 },
+    );
+    return response.data?.cancelled === true;
+  } catch {
+    return false;
+  }
+}

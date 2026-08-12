@@ -11,6 +11,11 @@ import {
 import type { TranscriptionExecutionResult, TranscriptionJobInput } from './types.js';
 import { getUserSettings } from '../settings/settings.js';
 import logger from '../shared/logger.js';
+import {
+  TranscriptionCancelledError,
+  isTranscriptionCancelledError,
+  throwIfTranscriptionCancelled,
+} from './cancellation.js';
 
 const log = logger.child('audio-engine');
 
@@ -19,6 +24,7 @@ export async function parseAudioWithFallback(
   primaryProvider: string | null | undefined,
   input: TranscriptionJobInput,
 ): Promise<TranscriptionExecutionResult> {
+  throwIfTranscriptionCancelled(input.signal);
   const userSettings = userId ? await getUserSettings(userId) : null;
   const chain = buildProviderChain(userSettings, primaryProvider);
   const attemptedProviders: string[] = [];
@@ -30,9 +36,11 @@ export async function parseAudioWithFallback(
     mimeType: input.mimeType,
     fileName: input.fileName,
   });
+  throwIfTranscriptionCancelled(input.signal);
   let lastTaskError: ProcessingError | null = null;
 
   for (const providerName of chain) {
+    throwIfTranscriptionCancelled(input.signal);
     if (await isProviderCircuitOpen(providerName)) {
       const circuitError = createServiceError(`Provider ${providerName} circuit open.`, providerName);
       await recordProviderFailure(providerName, userId, circuitError);
@@ -49,6 +57,7 @@ export async function parseAudioWithFallback(
         ...input,
         wordTimestamps: input.wordTimestamps ?? false,
       });
+      throwIfTranscriptionCancelled(input.signal);
       log.info('Provider completed', { provider: providerName, durationSec: ((Date.now() - providerStart) / 1000).toFixed(1) });
       log.info('Normalizing and splitting segments');
       const normalizeStart = Date.now();
@@ -71,6 +80,7 @@ export async function parseAudioWithFallback(
             }
           : undefined,
       });
+      throwIfTranscriptionCancelled(input.signal);
 
       log.info('Normalization + splitting completed', { durationSec: ((Date.now() - normalizeStart) / 1000).toFixed(1), segments: result.segments.length });
       log.info('Total pipeline completed', { durationSec: ((Date.now() - pipelineStart) / 1000).toFixed(1) });
@@ -82,6 +92,12 @@ export async function parseAudioWithFallback(
         result,
       };
     } catch (error) {
+      if (input.signal?.aborted) {
+        throw new TranscriptionCancelledError();
+      }
+      if (isTranscriptionCancelledError(error)) {
+        throw error;
+      }
       const normalized = asProcessingError(error, providerName);
       if (normalized.category === 'service') {
         await recordProviderFailure(providerName, userId, normalized);

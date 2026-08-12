@@ -1,4 +1,4 @@
-export type TaskStatus = 'pending' | 'processing' | 'blocked' | 'completed' | 'failed';
+export type TaskStatus = 'pending' | 'processing' | 'blocked' | 'completed' | 'failed' | 'cancelled';
 
 export interface TranscriptSegment {
   id: string;

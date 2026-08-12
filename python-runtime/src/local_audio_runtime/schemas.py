@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class TranscriptionRequest(BaseModel):
+    request_id: str | None = None
     file_path: str
     language: str | None = None
     diarization: bool = False

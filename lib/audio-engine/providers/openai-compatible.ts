@@ -60,6 +60,7 @@ export class OpenAICompatibleProvider extends BaseTranscriptionProvider {
           ...formData.getHeaders(),
         },
         timeout: 600000,
+        signal: input.signal,
       });
     } catch (error) {
       if (axios.isAxiosError(error)) {
