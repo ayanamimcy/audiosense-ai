@@ -28,8 +28,20 @@ export async function findTaskJobRowById(jobId: string) {
   return (await db('task_jobs').where({ id: jobId }).first()) as TaskJobRow | undefined;
 }
 
-export async function updateTaskJobRowById(jobId: string, updates: Partial<TaskJobRow>) {
-  await db('task_jobs').where({ id: jobId }).update(updates);
+export async function findActiveTaskJobRowByTaskId(taskId: string) {
+  return (await db('task_jobs')
+    .where({ taskId })
+    .whereIn('status', ['queued', 'processing', 'blocked'])
+    .orderBy('createdAt', 'desc')
+    .first()) as TaskJobRow | undefined;
+}
+
+export async function updateTaskJobRowByIdWhereStatus(
+  jobId: string,
+  statuses: TaskJobRow['status'][],
+  updates: Partial<TaskJobRow>,
+) {
+  return db('task_jobs').where({ id: jobId }).whereIn('status', statuses).update(updates);
 }
 
 export async function deleteTaskJobRowsByTaskId(taskId: string) {

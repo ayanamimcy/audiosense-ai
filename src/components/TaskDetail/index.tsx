@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ArrowUp,
   Copy,
+  CircleStop,
   Edit2,
   List,
   Loader2,
@@ -100,6 +101,7 @@ export function TaskDetail({
   const [isMiniPlayer, setIsMiniPlayer] = useState(false);
   const [isActionSheetOpen, setIsActionSheetOpen] = useState(false);
   const [isReprocessOpen, setIsReprocessOpen] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const [reprocessLanguage, setReprocessLanguage] = useState(task.language || 'auto');
   const [isChatOverlayOpen, setIsChatOverlayOpen] = useState(false);
   const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
@@ -578,6 +580,27 @@ export function TaskDetail({
     }
   };
 
+  const handleCancelTask = async () => {
+    if (isCancelling) {
+      return;
+    }
+
+    setIsCancelling(true);
+    try {
+      const res = await apiFetch(`/api/tasks/${task.id}/cancel`, { method: 'POST' });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({})) as { error?: string };
+        throw new Error(payload.error || 'Failed to cancel task.');
+      }
+      await onUpdateTask();
+    } catch (error) {
+      console.error('Failed to cancel task:', error);
+      alert(error instanceof Error ? error.message : 'Failed to cancel task.');
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
   const handleTogglePlayback = async () => {
     const media = mediaRef.current;
     if (!media) {
@@ -679,7 +702,7 @@ export function TaskDetail({
           </button>
         </div>
       ) : null}
-      {(task.status === 'completed' || task.status === 'failed') && (
+      {(task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') && (
         <button
           onClick={() => setIsReprocessOpen(true)}
           className={cn(
@@ -716,6 +739,15 @@ export function TaskDetail({
         <div className="flex h-full flex-col items-center justify-center text-slate-500 space-y-4 p-6">
           <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
           <p>Analyzing audio... This may take a few moments.</p>
+          <button
+            type="button"
+            onClick={() => void handleCancelTask()}
+            disabled={isCancelling}
+            className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <CircleStop className="h-4 w-4" />}
+            {isCancelling ? 'Cancelling...' : 'Cancel analysis'}
+          </button>
         </div>
       );
     }
@@ -729,7 +761,36 @@ export function TaskDetail({
             <p className="text-sm text-slate-500 whitespace-pre-wrap">
               {task.result || 'The worker will automatically retry this task when the provider is healthy again.'}
             </p>
+            <button
+              type="button"
+              onClick={() => void handleCancelTask()}
+              disabled={isCancelling}
+              className="mx-auto mt-4 inline-flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isCancelling ? <Loader2 className="h-4 w-4 animate-spin" /> : <CircleStop className="h-4 w-4" />}
+              {isCancelling ? 'Cancelling...' : 'Cancel analysis'}
+            </button>
           </div>
+        </div>
+      );
+    }
+
+    if (task.status === 'cancelled') {
+      return (
+        <div className="flex h-full flex-col items-center justify-center space-y-4 p-6 text-center text-slate-500">
+          <CircleStop className="h-9 w-9 text-slate-400" />
+          <div>
+            <p className="font-medium text-slate-700">Analysis cancelled</p>
+            <p className="mt-1 text-sm">You can reprocess this recording whenever you are ready.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setIsReprocessOpen(true)}
+            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Reprocess
+          </button>
         </div>
       );
     }
@@ -927,7 +988,7 @@ export function TaskDetail({
                   <p className="mt-1 text-xs text-slate-500">Rename or adjust metadata.</p>
                 </button>
 
-                {(task.status === 'completed' || task.status === 'failed') ? (
+                {(task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') ? (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-left space-y-2">
                     <RefreshCw className="w-4 h-4 text-amber-600" />
                     <p className="text-sm font-semibold text-slate-900">Reprocess</p>

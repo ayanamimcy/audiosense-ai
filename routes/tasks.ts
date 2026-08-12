@@ -3,8 +3,10 @@ import logger from '../lib/shared/logger.js';
 import {
   applyTaskTagSuggestionsForUser,
   buildTaskSubtitlesForUser,
+  cancelTaskForUser,
   dismissTaskTagSuggestionsForUser,
   UserTaskNotFoundError,
+  UserTaskCancellationError,
   UserTaskSelectionError,
   UserTaskTagSuggestionError,
   UserTaskWorkspaceValidationError,
@@ -60,6 +62,21 @@ router.post('/tasks/:id/reprocess', asyncRoute(async (req, res) => {
     }
     if (error instanceof UserTaskWorkspaceValidationError) {
       return res.status(400).json({ error: error.message });
+    }
+    throw error;
+  }
+}));
+
+router.post('/tasks/:id/cancel', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  try {
+    return res.json(await cancelTaskForUser(user.id, req.params.id));
+  } catch (error) {
+    if (error instanceof UserTaskNotFoundError) {
+      return res.status(404).json({ error: error.message });
+    }
+    if (error instanceof UserTaskCancellationError) {
+      return res.status(409).json({ error: error.message });
     }
     throw error;
   }

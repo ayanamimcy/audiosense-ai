@@ -4,7 +4,7 @@ from dataclasses import asdict
 import logging
 import os
 import threading
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -16,6 +16,13 @@ from .diarization import DiarizationEngine
 from .parallel_diarize import transcribe_and_diarize, transcribe_then_diarize
 
 logger = logging.getLogger(__name__)
+
+CancellationCheck = Callable[[], None]
+
+
+def _check_cancelled(cancellation_check: CancellationCheck | None) -> None:
+    if cancellation_check is not None:
+        cancellation_check()
 
 
 _DEFAULT_IDLE_TIMEOUT_SECONDS = int(
@@ -138,7 +145,9 @@ class ModelManager:
         runtime_backend: BaseBackend,
         task: str,
         language: str | None,
+        cancellation_check: CancellationCheck | None = None,
     ) -> dict[str, Any]:
+        _check_cancelled(cancellation_check)
         if (
             not self._config.whisperx_alignment
             or runtime_backend.backend_name != "faster-whisper"
@@ -155,7 +164,7 @@ class ModelManager:
             return result
 
         try:
-            return self._ensure_alignment_engine().align(
+            aligned = self._ensure_alignment_engine().align(
                 result,
                 audio_data,
                 language_code=language_code,
@@ -166,6 +175,8 @@ class ModelManager:
             warnings.append("Optional WhisperX alignment failed; raw ASR output was preserved.")
             result["warnings"] = warnings
             return result
+        _check_cancelled(cancellation_check)
+        return aligned
 
     def _transcribe_audio_with_backend(
         self,
@@ -181,9 +192,11 @@ class ModelManager:
         backend: str | None = None,
         model_name: str | None = None,
         backend_instance: BaseBackend | None = None,
+        cancellation_check: CancellationCheck | None = None,
     ) -> dict[str, Any]:
+        _check_cancelled(cancellation_check)
         runtime_backend = backend_instance or self._ensure_backend(backend=backend, model_name=model_name)
-        return runtime_backend.transcribe(
+        result = runtime_backend.transcribe(
             audio_data,
             audio_sample_rate=sample_rate,
             language=language,
@@ -194,7 +207,10 @@ class ModelManager:
             word_timestamps=word_timestamps,
             vad_filter=self._config.vad_filter,
             translation_target_language=translation_target_language,
+            cancellation_check=cancellation_check,
         )
+        _check_cancelled(cancellation_check)
+        return result
 
     def transcribe_audio(
         self,
@@ -214,13 +230,17 @@ class ModelManager:
         diarization_strategy: str | None = None,
         hf_token: str | None = None,
         backend_instance: BaseBackend | None = None,
+        cancellation_check: CancellationCheck | None = None,
     ) -> dict[str, Any]:
         with self._transcription_lock:
           try:
+            _check_cancelled(cancellation_check)
             runtime_backend = backend_instance or self._ensure_backend(backend=backend, model_name=model_name)
+            _check_cancelled(cancellation_check)
 
             if self._config.normalize_audio:
                 audio_data = normalize_audio_peak(audio_data)
+            _check_cancelled(cancellation_check)
 
             effective_task = (task or "transcribe").strip().lower()
             effective_target = (
@@ -243,8 +263,10 @@ class ModelManager:
                     translation_target_language=effective_target,
                     num_speakers=expected_speakers,
                     hf_token=hf_token or self._config.hf_token,
+                    cancellation_check=cancellation_check,
                 )
                 if result is not None:
+                    _check_cancelled(cancellation_check)
                     result["duration"] = get_audio_duration_seconds(audio_data, sample_rate)
                     result["backend"] = runtime_backend.backend_name
                     result["model_name"] = runtime_backend.model_name
@@ -263,6 +285,7 @@ class ModelManager:
                     backend=backend,
                     model_name=model_name,
                     backend_instance=runtime_backend,
+                    cancellation_check=cancellation_check,
                 )
                 result = self._apply_optional_alignment(
                     result,
@@ -270,7 +293,9 @@ class ModelManager:
                     runtime_backend=runtime_backend,
                     task=effective_task,
                     language=language,
+                    cancellation_check=cancellation_check,
                 )
+                _check_cancelled(cancellation_check)
                 result["duration"] = get_audio_duration_seconds(audio_data, sample_rate)
                 result["backend"] = runtime_backend.backend_name
                 result["model_name"] = runtime_backend.model_name
@@ -296,6 +321,7 @@ class ModelManager:
                     suppress_tokens=suppress_tokens,
                     backend=backend_spec.backend,
                     model_name=backend_spec.model_name,
+                    cancellation_check=cancellation_check,
                 )
                 return self._apply_optional_alignment(
                     raw_result,
@@ -303,16 +329,20 @@ class ModelManager:
                     runtime_backend=runtime_backend,
                     task=effective_task,
                     language=language,
+                    cancellation_check=cancellation_check,
                 )
 
             def diarize_fn() -> list[dict[str, Any]]:
-                return diarization_engine.diarize(
+                _check_cancelled(cancellation_check)
+                diarization_segments = diarization_engine.diarize(
                     audio_data,
                     sample_rate=sample_rate,
                     num_speakers=expected_speakers,
                     hf_token=hf_token,
                     exclusive=self._config.exclusive_diarization,
                 )
+                _check_cancelled(cancellation_check)
+                return diarization_segments
 
             # Optional alignment adds a second GPU model. In auto mode, finish
             # and unload the transcription/alignment stage before diarization
@@ -339,6 +369,8 @@ class ModelManager:
                     if self._config.sequential_unload_between_stages
                     else None,
                 )
+
+            _check_cancelled(cancellation_check)
 
             warnings = list(result.get("warnings", []))
             result["diarization_segments"] = diarization_segments or []
@@ -369,9 +401,13 @@ class ModelManager:
         model_name: str | None = None,
         diarization_strategy: str | None = None,
         hf_token: str | None = None,
+        cancellation_check: CancellationCheck | None = None,
     ) -> dict[str, Any]:
+        _check_cancelled(cancellation_check)
         runtime_backend = self._ensure_backend(backend=backend, model_name=model_name)
+        _check_cancelled(cancellation_check)
         audio, sample_rate = load_audio(file_path, target_sample_rate=16000)
+        _check_cancelled(cancellation_check)
         return self.transcribe_audio(
             audio_data=audio,
             sample_rate=sample_rate,
@@ -386,6 +422,7 @@ class ModelManager:
             diarization_strategy=diarization_strategy,
             hf_token=hf_token,
             backend_instance=runtime_backend,
+            cancellation_check=cancellation_check,
         )
 
     def health(self) -> dict[str, Any]:

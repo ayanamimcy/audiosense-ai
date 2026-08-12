@@ -81,6 +81,14 @@ export async function updateTaskRowById(taskId: string, updates: Partial<TaskRow
   await db('tasks').where({ id: taskId }).update(updates);
 }
 
+export async function updateTaskRowByIdWhereStatus(
+  taskId: string,
+  statuses: TaskRow['status'][],
+  updates: Partial<TaskRow>,
+) {
+  return db('tasks').where({ id: taskId }).whereIn('status', statuses).update(updates);
+}
+
 export async function updateTaskRowForUser(userId: string, taskId: string, updates: Partial<TaskRow>) {
   await db('tasks').where({ id: taskId, userId }).update(updates);
 }

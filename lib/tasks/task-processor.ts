@@ -1,8 +1,9 @@
 import path from 'path';
 import {
   findTaskRowById,
-  updateTaskRowById,
+  updateTaskRowByIdWhereStatus,
 } from '../../database/repositories/tasks-repository.js';
+import { findTaskJobRowById } from '../../database/repositories/task-jobs-repository.js';
 import { parseAudioWithFallback } from '../audio-engine/engine.js';
 import { formatTranscriptMarkdown } from '../audio-engine/markdown.js';
 import { reindexTask } from '../search/search-index.js';
@@ -11,6 +12,10 @@ import { repairPossiblyMojibakeText } from '../shared/text-encoding.js';
 import { parseJsonField, type TaskJobRow, type TaskRow } from './task-types.js';
 import { runTaskPostProcessing } from './task-post-processing.js';
 import config from '../config.js';
+import {
+  TranscriptionCancelledError,
+  throwIfTranscriptionCancelled,
+} from '../audio-engine/cancellation.js';
 
 const uploadDir = config.upload.dir;
 
@@ -27,13 +32,17 @@ interface TaskProcessingContext {
   metadata: Record<string, unknown>;
   displayName: string;
   startedAt: number;
+  signal: AbortSignal;
 }
 
 // ---------------------------------------------------------------------------
 // Phase functions
 // ---------------------------------------------------------------------------
 
-async function loadProcessingContext(job: TaskJobRow): Promise<TaskProcessingContext> {
+async function loadProcessingContext(
+  job: TaskJobRow,
+  signal: AbortSignal,
+): Promise<TaskProcessingContext> {
   const task = (await findTaskRowById(job.taskId)) as TaskRow | undefined;
   if (!task) {
     throw new Error(`Task ${job.taskId} not found.`);
@@ -54,16 +63,52 @@ async function loadProcessingContext(job: TaskJobRow): Promise<TaskProcessingCon
     metadata,
     displayName,
     startedAt: Date.now(),
+    signal,
   };
 }
 
+async function assertJobActive(job: TaskJobRow, signal?: AbortSignal) {
+  throwIfTranscriptionCancelled(signal);
+  const [currentJob, currentTask] = await Promise.all([
+    findTaskJobRowById(job.id),
+    findTaskRowById(job.taskId),
+  ]);
+  if (!currentJob || !currentTask || currentJob.status === 'cancelled' || currentTask.status === 'cancelled') {
+    throw new TranscriptionCancelledError();
+  }
+}
+
+function startCancellationWatcher(job: TaskJobRow, controller: AbortController) {
+  let polling = false;
+  const timer = setInterval(() => {
+    if (polling || controller.signal.aborted) {
+      return;
+    }
+    polling = true;
+    void assertJobActive(job, controller.signal)
+      .catch((error) => {
+        if (error instanceof TranscriptionCancelledError) {
+          controller.abort();
+        }
+      })
+      .finally(() => {
+        polling = false;
+      });
+  }, 500);
+  timer.unref();
+  return () => clearInterval(timer);
+}
+
 async function markTaskProcessing(ctx: TaskProcessingContext) {
-  await updateTaskRowById(ctx.task.id, {
+  const updated = await updateTaskRowByIdWhereStatus(ctx.task.id, ['pending', 'processing', 'blocked'], {
     status: 'processing',
     startedAt: ctx.startedAt,
     updatedAt: ctx.startedAt,
     provider: ctx.provider || ctx.task.provider,
   });
+  if (!updated) {
+    throw new TranscriptionCancelledError();
+  }
 }
 
 async function runPrimaryTranscription(ctx: TaskProcessingContext) {
@@ -92,6 +137,8 @@ async function runPrimaryTranscription(ctx: TaskProcessingContext) {
         typeof expectedSpeakers === 'number' && Number.isFinite(expectedSpeakers) && expectedSpeakers > 0
           ? expectedSpeakers
           : undefined,
+      requestId: ctx.job.id,
+      signal: ctx.signal,
     },
   );
 }
@@ -103,7 +150,7 @@ async function persistTranscriptionResult(
   const { providerName, result, attemptedProviders, skippedProviders } = transcriptionResult;
   const completedAt = Date.now();
 
-  await updateTaskRowById(ctx.task.id, {
+  const updated = await updateTaskRowByIdWhereStatus(ctx.task.id, ['processing'], {
     status: 'completed',
     result: formatTranscriptMarkdown(result),
     transcript: result.text,
@@ -128,6 +175,10 @@ async function persistTranscriptionResult(
     }),
   });
 
+  if (!updated) {
+    throw new TranscriptionCancelledError();
+  }
+
   return completedAt;
 }
 
@@ -142,21 +193,25 @@ async function finalizePrimaryTask(ctx: TaskProcessingContext) {
 // ---------------------------------------------------------------------------
 
 export async function processQueuedJob(job: TaskJobRow) {
-  // 1. Load context
-  const ctx = await loadProcessingContext(job);
+  const controller = new AbortController();
+  const stopCancellationWatcher = startCancellationWatcher(job, controller);
 
-  // 2. Mark processing
-  await markTaskProcessing(ctx);
+  try {
+    await assertJobActive(job, controller.signal);
+    const ctx = await loadProcessingContext(job, controller.signal);
 
-  // 3. Run transcription
-  const transcriptionResult = await runPrimaryTranscription(ctx);
+    await assertJobActive(job, controller.signal);
+    await markTaskProcessing(ctx);
 
-  // 4. Persist result & mark completed
-  const completedAt = await persistTranscriptionResult(ctx, transcriptionResult);
+    const transcriptionResult = await runPrimaryTranscription(ctx);
 
-  // 5. Finalize (reindex)
-  const completedTask = await finalizePrimaryTask(ctx);
+    await assertJobActive(job, controller.signal);
+    const completedAt = await persistTranscriptionResult(ctx, transcriptionResult);
 
-  // 6. Post-processing (summary, tag suggestions) — fire-and-forget, does not block worker
-  void runTaskPostProcessing(completedTask, ctx.userSettings, { completedAt });
+    const completedTask = await finalizePrimaryTask(ctx);
+
+    void runTaskPostProcessing(completedTask, ctx.userSettings, { completedAt });
+  } finally {
+    stopCancellationWatcher();
+  }
 }

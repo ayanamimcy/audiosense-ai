@@ -52,6 +52,7 @@ export class AzureOpenAIProvider extends BaseTranscriptionProvider {
             ...formData.getHeaders(),
           },
           timeout: 600000,
+          signal: input.signal,
         },
       );
     } catch (error) {

@@ -7,6 +7,7 @@ import { createServiceError, createTaskError } from '../errors.js';
 import { BaseTranscriptionProvider } from './base.js';
 import type { ProviderTranscriptionPayload, TranscriptionJobInput } from '../types.js';
 import type { LocalRuntimeSettings } from '../../settings/user-settings-schema.js';
+import { TranscriptionCancelledError } from '../cancellation.js';
 
 function readString(value: unknown) {
   return typeof value === 'string' && value.trim() ? value.trim() : undefined;
@@ -86,6 +87,7 @@ export class LocalPythonProvider extends BaseTranscriptionProvider {
     formData.append('backend', readString(this.config.backendId) || '');
     formData.append('model_name', readString(this.config.modelName) || '');
     formData.append('hf_token', readString(this.config.hfToken) || '');
+    formData.append('request_id', input.requestId || '');
 
     let response;
     try {
@@ -95,15 +97,22 @@ export class LocalPythonProvider extends BaseTranscriptionProvider {
         {
           headers: formData.getHeaders(),
           timeout: Math.max(60_000, Number(this.config.requestTimeoutMs || 3_600_000)),
+          signal: input.signal,
         },
       );
     } catch (error) {
+      if (input.signal?.aborted || (axios.isAxiosError(error) && error.code === 'ERR_CANCELED')) {
+        throw new TranscriptionCancelledError();
+      }
       if (axios.isAxiosError(error)) {
         const status = Number(error.response?.status || 0);
         const detail =
           typeof error.response?.data?.detail === 'string'
             ? error.response?.data?.detail
             : error.message;
+        if (status === 409 && error.response?.data?.detail === 'Transcription was cancelled.') {
+          throw new TranscriptionCancelledError();
+        }
         const message = `Local audio runtime request failed: ${detail}`;
         if (status >= 400 && status < 500 && status !== 408 && status !== 429) {
           throw createTaskError(message, this.name, error);

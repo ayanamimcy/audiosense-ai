@@ -20,6 +20,7 @@ import {
 import { isLlmConfigured } from '../../lib/ai/llm.js';
 import { clearTaskIndex, reindexTask, syncTaskWorkspaceScope } from '../../lib/search/search-index.js';
 import { getUserSettings } from '../../lib/settings/settings.js';
+import { cancelLocalAudioRuntimeRequest } from '../../lib/audio-engine/local-runtime.js';
 import { buildWebVttFromSegments } from '../../lib/tasks/subtitles.js';
 import {
   buildTagSuggestionMetadata,
@@ -34,7 +35,7 @@ import {
   validateNotebookForWorkspace,
 } from '../../lib/tasks/task-helpers.js';
 import { repairPossiblyMojibakeText } from '../../lib/shared/text-encoding.js';
-import { enqueueTaskJob } from '../../lib/tasks/task-queue.js';
+import { cancelTaskJob, enqueueTaskJob } from '../../lib/tasks/task-queue.js';
 import { normalizeTags, parseJsonField, toTaskListResponse, toTaskResponse, type TaskRow } from '../../lib/tasks/task-types.js';
 import { createUploadTask, type UploadTaskInput } from '../../lib/tasks/upload-service.js';
 import {
@@ -64,6 +65,12 @@ export class UserTaskWorkspaceValidationError extends Error {
 }
 
 export class UserTaskSelectionError extends Error {
+  constructor(message: string) {
+    super(message);
+  }
+}
+
+export class UserTaskCancellationError extends Error {
   constructor(message: string) {
     super(message);
   }
@@ -127,6 +134,35 @@ export async function reprocessTaskForUser(
   }
   await updateTaskRowById(task.id, updates);
   await enqueueTaskJob({ taskId: task.id, userId, provider });
+}
+
+export async function cancelTaskForUser(userId: string, taskId: string) {
+  const task = await findTaskForUser(userId, taskId);
+  if (!task) {
+    throw new UserTaskNotFoundError();
+  }
+
+  if (task.status !== 'cancelled' && !['pending', 'processing', 'blocked'].includes(task.status)) {
+    throw new UserTaskCancellationError('Only queued or processing tasks can be cancelled.');
+  }
+
+  const { cancelled, job } = await cancelTaskJob(task.id);
+  const updatedTask = await findTaskForUser(userId, task.id);
+  if (!updatedTask) {
+    throw new UserTaskNotFoundError();
+  }
+
+  if (!cancelled && updatedTask.status !== 'cancelled') {
+    throw new UserTaskCancellationError('The task finished before it could be cancelled.');
+  }
+
+  if (job?.provider === 'local-python') {
+    void getUserSettings(userId)
+      .then((settings) => cancelLocalAudioRuntimeRequest(job.id, settings.localRuntime.baseUrl))
+      .catch(() => false);
+  }
+
+  return toTaskResponse(updatedTask);
 }
 
 export async function listTasksForUser(userId: string) {
