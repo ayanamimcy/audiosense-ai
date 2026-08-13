@@ -59,6 +59,27 @@ def _get_candidate_models(model_name: str) -> list[str]:
     return [model_name, *fallbacks]
 
 
+def _resolve_diarization_annotation(output: Any, *, exclusive: bool) -> Any:
+    """Return a pyannote Annotation from both legacy and 4.x pipeline outputs."""
+    if callable(getattr(output, "itertracks", None)):
+        return output
+
+    preferred_field = (
+        "exclusive_speaker_diarization" if exclusive else "speaker_diarization"
+    )
+    annotation = getattr(output, preferred_field, None)
+    if annotation is None and exclusive:
+        annotation = getattr(output, "speaker_diarization", None)
+
+    if callable(getattr(annotation, "itertracks", None)):
+        return annotation
+
+    raise TypeError(
+        "Unsupported pyannote diarization output: expected an Annotation or "
+        "DiarizeOutput with speaker_diarization fields."
+    )
+
+
 def _load_pipeline(
     pipeline_cls: Any,
     *,
@@ -194,9 +215,13 @@ class DiarizationEngine:
             pipeline_kwargs["min_speakers"] = num_speakers
             pipeline_kwargs["max_speakers"] = num_speakers
 
-        diarization = self._pipeline(
+        diarization_output = self._pipeline(
             {"waveform": waveform, "sample_rate": sample_rate},
             **{k: v for k, v in pipeline_kwargs.items() if v is not None},
+        )
+        diarization = _resolve_diarization_annotation(
+            diarization_output,
+            exclusive=exclusive,
         )
 
         segments: list[dict[str, Any]] = []
