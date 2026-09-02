@@ -12,6 +12,7 @@ import { AppDataProvider, useAppDataContext, type AppDataContextValue } from './
 import { AppShell } from './layouts/AppShell';
 import { TaskDetail } from './components/TaskDetail';
 import { Login } from './components/Login';
+import { RecordingDraftProvider } from './features/recording-draft/model/recording-draft-context';
 
 // --- Route-level code splitting: each page is loaded on demand ---
 // This reduces the initial JS bundle significantly. Each lazy-loaded page becomes its own chunk.
@@ -388,9 +389,11 @@ function AppRoot() {
 
   return (
     <AuthProvider value={authContextValue}>
-    <AppDataProvider value={appDataContextValue}>
-      <AuthenticatedApp />
-    </AppDataProvider>
+      <AppDataProvider value={appDataContextValue}>
+        <RecordingDraftProvider>
+          <AuthenticatedApp />
+        </RecordingDraftProvider>
+      </AppDataProvider>
     </AuthProvider>
   );
 }

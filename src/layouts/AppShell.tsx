@@ -24,6 +24,7 @@ import { BottomNavButton } from './nav/BottomNavButton';
 import { DrawerButton } from './nav/DrawerButton';
 import { useAppDataContext } from '../contexts/AppDataContext';
 import type { AuthUser } from '../types';
+import { RECORDING_NAVIGATION_EVENT } from '../features/recording-draft/model/recording-draft-context';
 
 export type Tab = 'upload' | 'record' | 'notebook' | 'knowledge' | 'prompts' | 'settings';
 
@@ -45,6 +46,13 @@ const PATH_TO_TAB: Record<string, Tab> = {
   '/prompts': 'prompts',
   '/settings': 'settings',
 };
+
+function canLeaveCurrentPage(destination: string) {
+  return window.dispatchEvent(new CustomEvent(RECORDING_NAVIGATION_EVENT, {
+    cancelable: true,
+    detail: { destination },
+  }));
+}
 
 function useActiveTab(): Tab {
   const { pathname } = useLocation();
@@ -173,12 +181,19 @@ export function AppShell({
   }, [isNewMenuOpen]);
 
   const goTo = (tab: Tab) => {
-    navigate(TAB_TO_PATH[tab]);
+    const nextPath = TAB_TO_PATH[tab];
+    if (nextPath !== pathname && !canLeaveCurrentPage(nextPath)) {
+      return;
+    }
+    navigate(nextPath);
     setIsMobileMenuOpen(false);
   };
 
   const handleWorkspaceChange = async (workspaceId: string) => {
     if (!workspaceId || workspaceId === currentWorkspaceId) {
+      return;
+    }
+    if (!canLeaveCurrentPage('workspace')) {
       return;
     }
 
@@ -195,6 +210,12 @@ export function AppShell({
     } catch (error) {
       console.error('Failed to switch workspace:', error);
       window.alert(error instanceof Error ? error.message : 'Failed to switch workspace.');
+    }
+  };
+
+  const handleLogout = () => {
+    if (canLeaveCurrentPage('logout')) {
+      onLogout();
     }
   };
 
@@ -320,7 +341,7 @@ export function AppShell({
           <SidebarButton collapsed={isSidebarCollapsed} active={activeTab === 'settings'} onClick={() => goTo('settings')} icon={<Settings className="w-5 h-5" />}>
             Settings
           </SidebarButton>
-          <SidebarButton collapsed={isSidebarCollapsed} active={false} onClick={onLogout} icon={<LogOut className="w-5 h-5" />} variant="danger">
+          <SidebarButton collapsed={isSidebarCollapsed} active={false} onClick={handleLogout} icon={<LogOut className="w-5 h-5" />} variant="danger">
             Sign Out
           </SidebarButton>
 
@@ -463,7 +484,7 @@ export function AppShell({
               </div>
 
               <button
-                onClick={onLogout}
+                onClick={handleLogout}
                 className="w-full flex items-center justify-center gap-2 px-4 py-3.5 mt-4 rounded-xl text-base font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-colors"
               >
                 <LogOut className="w-5 h-5" />
