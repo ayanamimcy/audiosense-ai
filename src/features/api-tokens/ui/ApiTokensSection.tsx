@@ -93,19 +93,15 @@ export function ApiTokensSection() {
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200 p-5 space-y-4">
-      <div className="flex items-center justify-between">
-        <div>
-          <h3 className="text-base font-semibold text-slate-900">API Tokens</h3>
-          <p className="text-sm text-slate-500 mt-1">For external access like iOS Shortcuts.</p>
-        </div>
+    <div className="space-y-4">
+      <div className="flex items-center justify-end">
         {!isCreating && !createdToken && (
           <button
             onClick={() => setIsCreating(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-stone-900 px-3.5 text-sm font-medium text-white hover:bg-stone-800 transition-colors"
           >
             <Plus className="w-3.5 h-3.5" />
-            New Token
+            New token
           </button>
         )}
       </div>
@@ -114,12 +110,12 @@ export function ApiTokensSection() {
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 space-y-3">
           <p className="text-sm font-medium text-amber-800">Token created — copy it now. It won't be shown again.</p>
           <div className="flex items-center gap-2">
-            <code className="flex-1 min-w-0 truncate rounded-lg bg-white border border-amber-200 px-3 py-2 text-xs font-mono text-slate-800">
+            <code className="flex-1 min-w-0 truncate rounded-lg bg-white border border-amber-200 px-3 py-2 text-xs font-mono text-stone-800">
               {createdToken}
             </code>
             <button
               onClick={handleCopy}
-              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition-colors"
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 transition-colors"
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
               {copied ? 'Copied' : 'Copy'}
@@ -135,19 +131,19 @@ export function ApiTokensSection() {
       )}
 
       {isCreating && (
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+        <div className="rounded-xl border border-stone-200 bg-stone-50 p-4 space-y-3">
           <label className="block">
-            <span className="text-xs font-medium text-slate-700">Name</span>
+            <span className="text-xs font-medium text-stone-700">Name</span>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. iOS Shortcut"
-              className="w-full mt-1 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full mt-1 px-3 py-2 text-sm bg-white border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-stone-900/10"
             />
           </label>
           <div>
-            <span className="text-xs font-medium text-slate-700">Allowed endpoints</span>
+            <span className="text-xs font-medium text-stone-700">Allowed endpoints</span>
             <div className="mt-1.5 flex flex-wrap gap-2">
               {SCOPE_OPTIONS.map((scope) => (
                 <button
@@ -157,8 +153,8 @@ export function ApiTokensSection() {
                   className={cn(
                     'px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors',
                     selectedScopes.includes(scope.pattern)
-                      ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
-                      : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50',
+                      ? 'bg-stone-900 text-white border-stone-900'
+                      : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50',
                   )}
                 >
                   {scope.label}
@@ -167,11 +163,11 @@ export function ApiTokensSection() {
             </div>
           </div>
           <label className="block">
-            <span className="text-xs font-medium text-slate-700">Expires</span>
+            <span className="text-xs font-medium text-stone-700">Expires</span>
             <select
               value={expiry}
               onChange={(e) => setExpiry(e.target.value)}
-              className="w-full mt-1 px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full mt-1 px-3 py-2 text-sm bg-white border border-stone-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-stone-900/10"
             >
               {EXPIRY_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -182,13 +178,13 @@ export function ApiTokensSection() {
             <button
               onClick={() => void handleCreate()}
               disabled={isSaving || !name.trim() || selectedScopes.length === 0}
-              className="px-3 py-1.5 text-xs font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              className="px-3 py-1.5 text-xs font-medium text-white bg-stone-900 rounded-lg hover:bg-stone-800 disabled:opacity-50 transition-colors"
             >
-              {isSaving ? 'Creating...' : 'Create Token'}
+              {isSaving ? 'Creating...' : 'Create token'}
             </button>
             <button
               onClick={() => setIsCreating(false)}
-              className="px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+              className="px-3 py-1.5 text-xs font-medium text-stone-600 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 transition-colors"
             >
               Cancel
             </button>
@@ -199,20 +195,20 @@ export function ApiTokensSection() {
       {tokens.length > 0 && (
         <div className="space-y-2">
           {tokens.map((token) => (
-            <div key={token.id} className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <div key={token.id} className="flex items-start justify-between gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <Key className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                  <span className="text-sm font-medium text-slate-800 truncate">{token.name}</span>
+                  <Key className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                  <span className="text-sm font-medium text-stone-800 truncate">{token.name}</span>
                 </div>
                 <div className="flex flex-wrap gap-1 mt-1.5">
                   {token.scopes.map((s) => (
-                    <span key={s} className="text-[10px] font-medium text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
+                    <span key={s} className="text-[10px] font-medium text-stone-500 bg-stone-100 px-1.5 py-0.5 rounded">
                       {s}
                     </span>
                   ))}
                 </div>
-                <p className="text-[10px] text-slate-400 mt-1.5">
+                <p className="text-[10px] text-stone-400 mt-1.5">
                   Created {format(token.createdAt, 'MMM d, yyyy')}
                   {token.lastUsedAt ? ` · Last used ${format(token.lastUsedAt, 'MMM d, HH:mm')}` : ' · Never used'}
                   {token.expiresAt ? ` · Expires ${format(token.expiresAt, 'MMM d, yyyy')}` : ''}
@@ -220,8 +216,9 @@ export function ApiTokensSection() {
               </div>
               <button
                 onClick={() => void handleRevoke(token.id)}
-                className="shrink-0 p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                className="shrink-0 p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                 title="Revoke token"
+                aria-label={`Revoke ${token.name}`}
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -231,7 +228,7 @@ export function ApiTokensSection() {
       )}
 
       {tokens.length === 0 && !isCreating && !createdToken && (
-        <p className="text-xs text-slate-400 text-center py-3">No API tokens yet.</p>
+        <p className="text-xs text-stone-400 text-center py-3">No API tokens yet.</p>
       )}
     </div>
   );

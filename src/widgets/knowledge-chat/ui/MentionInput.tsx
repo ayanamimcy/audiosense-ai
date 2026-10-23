@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AtSign, Book, FileAudio, Loader2, SendHorizontal, X } from 'lucide-react';
+import { ArrowUp, AtSign, Book, FileAudio, Loader2, X } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
-import type { MentionCandidate, MentionRef } from '@/types';
+import type { MentionCandidate, MentionRef } from '@/entities/knowledge';
 
 export function MentionInput({
   value,
@@ -155,8 +155,7 @@ export function MentionInput({
         </div>
       )}
 
-      {/* Mobile: gradient border, PC: standard border */}
-      <div className="rounded-2xl p-[1.5px] bg-gradient-to-r from-pink-400 via-purple-400 to-indigo-400 lg:bg-none lg:p-0 lg:border lg:border-slate-200 lg:rounded-2xl focus-within:lg:ring-2 focus-within:lg:ring-indigo-500 focus-within:lg:border-indigo-300 transition-shadow">
+      <div className="rounded-2xl border border-stone-300 bg-white shadow-[0_4px_16px_rgba(28,25,23,0.06)] transition-shadow focus-within:border-stone-400 focus-within:ring-2 focus-within:ring-stone-900/10">
         <div className="flex items-end gap-2 rounded-[calc(1rem-1px)] lg:rounded-[calc(1rem-1px)] bg-white px-3 py-2">
           <textarea
             ref={textareaRef}
@@ -164,27 +163,27 @@ export function MentionInput({
             value={value}
             onChange={handleChange}
             onKeyDown={handleKeyDown}
-            placeholder={disabled ? 'Configure LLM to enable chat...' : "Type '@' to select files to analyze"}
+            placeholder={disabled ? 'Set up an AI model in Settings to enable chat' : 'Ask across your recordings — type @ to focus on one'}
             disabled={disabled || isSending}
-            className="min-h-[44px] flex-1 resize-none border-0 bg-transparent px-0 py-[10px] text-[15px] leading-6 text-slate-900 placeholder:text-slate-400 focus:outline-none disabled:text-slate-400"
+            className="min-h-[44px] flex-1 resize-none border-0 bg-transparent px-0 py-[10px] text-[15px] leading-6 text-stone-900 placeholder:text-stone-400 focus:outline-none disabled:text-stone-400"
           />
 
           <button
             type="button"
             onClick={onSend}
             disabled={!canSend}
+            aria-label="Send"
             className={cn(
-              'mb-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors',
+              'mb-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors',
               canSend
-                ? 'bg-indigo-600 text-white shadow-sm active:bg-indigo-700'
-                : 'bg-slate-100 text-slate-400',
+                ? 'bg-stone-900 text-white shadow-sm active:bg-stone-800'
+                : 'bg-stone-100 text-stone-400',
             )}
           >
-            {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <SendHorizontal className="h-4 w-4" />}
+            {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
           </button>
         </div>
 
-        {/* Action buttons row inside gradient border */}
         <div className="flex items-center gap-1 px-3 pb-2 -mt-1 bg-white rounded-b-[calc(1rem-1px)]">
           <button
             type="button"
@@ -199,10 +198,11 @@ export function MentionInput({
             className={cn(
               'flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
               isMentionMenuOpen
-                ? 'bg-indigo-100 text-indigo-600'
-                : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100',
+                ? 'bg-stone-200 text-stone-900'
+                : 'text-stone-500 hover:text-stone-800 hover:bg-stone-100',
             )}
             title="Mention a notebook or recording (@)"
+            aria-label="Mention a notebook or recording"
           >
             <AtSign className="h-4 w-4" />
           </button>
@@ -212,15 +212,15 @@ export function MentionInput({
       {isMentionMenuOpen && (
         <div
           ref={menuRef}
-          className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-xl border border-slate-200 shadow-lg max-h-64 overflow-y-auto z-50"
+          className="absolute bottom-full left-0 right-0 mb-2 bg-white rounded-xl border border-stone-200 shadow-lg max-h-64 overflow-y-auto z-50"
         >
           {isMentionLoading ? (
-            <div className="flex items-center gap-2 px-4 py-3 text-sm text-slate-500">
+            <div className="flex items-center gap-2 px-4 py-3 text-sm text-stone-500">
               <Loader2 className="w-4 h-4 animate-spin" />
               Loading...
             </div>
           ) : mentionCandidates.length === 0 ? (
-            <div className="px-4 py-3 text-sm text-slate-400">
+            <div className="px-4 py-3 text-sm text-stone-400">
               Type to search notebooks and recordings...
             </div>
           ) : (
@@ -232,8 +232,8 @@ export function MentionInput({
                 className={cn(
                   'w-full flex items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors',
                   index === selectedIndex
-                    ? 'bg-indigo-50 text-indigo-900'
-                    : 'hover:bg-slate-50 text-slate-700',
+                    ? 'bg-stone-100 text-stone-900'
+                    : 'hover:bg-stone-50 text-stone-700',
                 )}
               >
                 <div className={cn(
@@ -250,7 +250,7 @@ export function MentionInput({
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="font-medium truncate">{candidate.name}</p>
-                  <p className="text-xs text-slate-400 capitalize">{candidate.type}</p>
+                  <p className="text-xs text-stone-400 capitalize">{candidate.type}</p>
                 </div>
               </button>
             ))

@@ -17,6 +17,22 @@ database/                   → data access (repositories + migrations)
 
 React pages, components, hooks, contexts, and route composition. Responsible for user interaction, optimistic UI, polling, and streaming presentation.
 
+Organized by Feature-Sliced Design layers; a layer only imports from layers below it:
+
+```
+src/
+├── App.tsx                 # Providers + routes (/notebook/:id?, /knowledge, /settings)
+├── app/providers/          # App-wide data context
+├── pages/                  # notebook (list + detail split), knowledge (Ask AI), settings (sectioned)
+├── widgets/                # app-shell (rail + mobile nav), recording-list, task-detail, knowledge-chat
+├── features/               # new-recording (record/upload dialog), notebook-nav, summary-templates,
+│                           # recording-draft, task-edit, task-polling, upload-file, auth, api-tokens, knowledge-chat
+├── entities/               # Domain types and helpers (task status, notebook filter, settings, …)
+└── shared/                 # API client, utilities, and UI primitives (Dialog, DropdownMenu, form fields)
+```
+
+The selected notebook is kept in the URL (`/notebook?notebook=<id>|inbox`) so the sidebar, list, and links agree. `/upload`, `/record`, and `/prompts` remain as redirects.
+
 ### app-api (`routes/`)
 
 Express route handlers and middleware. Responsible for auth enforcement, request validation, response mapping, and HTTP-only concerns.

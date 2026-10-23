@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { format } from 'date-fns';
-import { X } from 'lucide-react';
 import { apiFetch } from '@/shared/api/base';
-import { useAppDataContext } from '@/contexts/AppDataContext';
+import { Dialog } from '@/shared/ui/Dialog';
+import { Field, inputClassName, primaryButtonClassName } from '@/shared/ui/form';
+import { useAppDataContext } from '@/app/providers/app-data-context';
 import type { Task } from '@/entities/task';
 
 export function TaskEditModal({
@@ -19,12 +20,17 @@ export function TaskEditModal({
   const [notebookId, setNotebookId] = useState<string>(task.notebookId || '');
   const [date, setDate] = useState(format(new Date(task.eventDate || task.createdAt), 'yyyy-MM-dd'));
   const [tags, setTags] = useState(task.tags.join(', '));
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleSave = async () => {
     if (!name.trim()) return;
 
-    const eventDateTimestamp = date ? new Date(date).getTime() : task.eventDate || task.createdAt;
+    const [year, month, day] = date.split('-').map(Number);
+    const eventDateTimestamp = year && month && day
+      ? new Date(year, month - 1, day).getTime()
+      : task.eventDate || task.createdAt;
 
+    setIsSaving(true);
     try {
       const res = await apiFetch(`/api/tasks/${task.id}`, {
         method: 'PATCH',
@@ -37,76 +43,83 @@ export function TaskEditModal({
         }),
       });
 
-      if (!res.ok) throw new Error('Failed to update task.');
+      if (!res.ok) throw new Error('Failed to update recording.');
       onClose();
       await onSaved();
     } catch (error) {
       console.error('Failed to update task:', error);
+      alert(error instanceof Error ? error.message : 'Failed to update recording.');
+    } finally {
+      setIsSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-slate-900">Edit Recording</h3>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-        <div className="p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              autoFocus
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Notebook</label>
-            <select
-              value={notebookId}
-              onChange={(e) => setNotebookId(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-            >
-              <option value="">None</option>
-              {notebooks.map((nb) => (
-                <option key={nb.id} value={nb.id}>{nb.name}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Date</label>
-            <input
-              type="date"
-              value={date}
-              onChange={(e) => setDate(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Tags</label>
-            <input
-              type="text"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white"
-              placeholder="meeting, research"
-            />
-          </div>
-        </div>
-        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
-          <button onClick={onClose} className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 transition-colors">
+    <Dialog
+      title="Edit details"
+      onClose={onClose}
+      className="sm:max-w-md"
+      footer={(
+        <>
+          <span className="flex-1" />
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-9 rounded-lg px-3.5 text-sm font-medium text-stone-800 hover:bg-stone-200/60"
+          >
             Cancel
           </button>
-          <button onClick={() => void handleSave()} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition-colors shadow-sm">
-            Save Changes
+          <button
+            type="button"
+            onClick={() => void handleSave()}
+            disabled={isSaving || !name.trim()}
+            className={primaryButtonClassName}
+          >
+            {isSaving ? 'Saving…' : 'Save'}
           </button>
+        </>
+      )}
+    >
+      <form
+        className="flex flex-col gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void handleSave();
+        }}
+      >
+        <Field label="Name">
+          <input
+            type="text"
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            className={inputClassName}
+            autoFocus
+          />
+        </Field>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Notebook">
+            <select value={notebookId} onChange={(event) => setNotebookId(event.target.value)} className={inputClassName}>
+              <option value="">Inbox</option>
+              {notebooks.map((notebook) => (
+                <option key={notebook.id} value={notebook.id}>{notebook.name}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Date">
+            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} className={inputClassName} />
+          </Field>
         </div>
-      </div>
-    </div>
+        <Field label="Tags" hint="Comma separated.">
+          <input
+            type="text"
+            value={tags}
+            onChange={(event) => setTags(event.target.value)}
+            placeholder="meeting, research"
+            className={inputClassName}
+          />
+        </Field>
+        <button type="submit" className="hidden" aria-hidden="true" tabIndex={-1} />
+      </form>
+    </Dialog>
   );
 }

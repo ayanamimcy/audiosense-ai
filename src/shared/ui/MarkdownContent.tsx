@@ -149,10 +149,10 @@ export function MarkdownContent({
             cell: 'border-red-200',
           }
         : {
-            wrapper: 'border-slate-200 bg-white',
-            table: 'text-slate-700',
-            head: 'bg-slate-50 text-slate-600',
-            cell: 'border-slate-200',
+            wrapper: 'border-stone-200 bg-white',
+            table: 'text-stone-700',
+            head: 'bg-stone-50 text-stone-600',
+            cell: 'border-stone-200',
           };
 
   return (
