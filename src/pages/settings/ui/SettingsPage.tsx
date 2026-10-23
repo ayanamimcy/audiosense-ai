@@ -1,11 +1,63 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { ChevronDown, LogOut, RefreshCw } from 'lucide-react';
-import { apiJson } from '@/api';
-import { cn, LANGUAGE_OPTIONS } from '@/lib/utils';
-import { useAppDataContext } from '@/contexts/AppDataContext';
-import { useAuthContext } from '@/contexts/AuthContext';
-import { ApiTokensSection } from '@/components/ApiTokensSection';
-import type { AuthUser, UserSettings } from '@/types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { Check, LogOut, RefreshCw } from 'lucide-react';
+import { apiJson } from '@/shared/api/base';
+import { cn } from '@/shared/lib/cn';
+import { LANGUAGE_OPTIONS } from '@/shared/lib/constants';
+import {
+  Field,
+  SectionHeading,
+  SubHeading,
+  ToggleRow,
+  inputClassName,
+  primaryButtonClassName,
+  secondaryButtonClassName,
+} from '@/shared/ui/form';
+import { useAppDataContext } from '@/app/providers/app-data-context';
+import type { UserSettings } from '@/entities/settings';
+import type { AuthUser } from '@/entities/user';
+import { ApiTokensSection } from '@/features/api-tokens';
+import { useAuthContext } from '@/features/auth';
+import { SummaryTemplates } from '@/features/summary-templates';
+
+type SectionId =
+  | 'transcription'
+  | 'ai'
+  | 'templates'
+  | 'search'
+  | 'workspaces'
+  | 'account'
+  | 'tokens'
+  | 'status';
+
+const SECTION_GROUPS: { label: string; items: { id: SectionId; label: string }[] }[] = [
+  {
+    label: 'Processing',
+    items: [
+      { id: 'transcription', label: 'Transcription' },
+      { id: 'ai', label: 'AI model' },
+      { id: 'templates', label: 'Summary templates' },
+      { id: 'search', label: 'Search' },
+    ],
+  },
+  { label: 'Organization', items: [{ id: 'workspaces', label: 'Workspaces' }] },
+  {
+    label: 'Account',
+    items: [
+      { id: 'account', label: 'Profile & password' },
+      { id: 'tokens', label: 'API tokens' },
+      { id: 'status', label: 'System status' },
+    ],
+  },
+];
+
+const ALL_SECTIONS = SECTION_GROUPS.flatMap((group) => group.items);
+/** Sections whose fields belong to the shared settings draft and the Save bar. */
+const DRAFT_SECTIONS = new Set<SectionId>(['transcription', 'ai', 'search']);
+
+function isSectionId(value: string | null): value is SectionId {
+  return ALL_SECTIONS.some((item) => item.id === value);
+}
 
 export function SettingsPage({
   onLogout,
@@ -26,44 +78,40 @@ export function SettingsPage({
     refreshAll,
   } = useAppDataContext();
   const { currentUser } = useAuthContext();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const sectionParam = searchParams.get('section');
+  const section: SectionId = isSectionId(sectionParam) ? sectionParam : 'transcription';
+
   const [draft, setDraft] = useState<UserSettings | null>(userSettings);
   const [isSaving, setIsSaving] = useState(false);
+  const [justSaved, setJustSaved] = useState(false);
   const [profileName, setProfileName] = useState(currentUser.name);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isSavingPassword, setIsSavingPassword] = useState(false);
-  const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
   const [llmModels, setLlmModels] = useState<string[]>([]);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState('');
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
 
-  const fetchLlmModels = useCallback(async () => {
-    setIsLoadingModels(true);
-    try {
-      const result = await apiJson<{ data: { id: string }[] }>('/api/llm/models');
-      const ids = (result.data || []).map((m) => m.id).filter(Boolean).sort();
-      setLlmModels(ids);
-    } catch {
-      setLlmModels([]);
-    } finally {
-      setIsLoadingModels(false);
-    }
-  }, []);
-
   useEffect(() => {
-    if (!userSettings) {
-      return;
-    }
-
-    setDraft(userSettings);
+    if (userSettings) setDraft(userSettings);
   }, [userSettings]);
 
   useEffect(() => {
     setProfileName(currentUser.name);
   }, [currentUser.name]);
+
+  const isDirty = useMemo(
+    () => Boolean(draft && userSettings && JSON.stringify(draft) !== JSON.stringify(userSettings)),
+    [draft, userSettings],
+  );
+
+  const goToSection = (id: SectionId) => {
+    setSearchParams(id === 'transcription' ? {} : { section: id }, { replace: true });
+  };
 
   const updateDraft = (updater: (current: UserSettings) => UserSettings) => {
     setDraft((current) => (current ? updater(current) : current));
@@ -72,11 +120,20 @@ export function SettingsPage({
   const providerOptions = capabilities?.transcription.providers || [];
   const providerHealthMap = new Map(providerHealth.map((item) => [item.provider, item]));
 
-  const handleSave = async () => {
-    if (!draft) {
-      return;
+  const fetchLlmModels = useCallback(async () => {
+    setIsLoadingModels(true);
+    try {
+      const result = await apiJson<{ data: { id: string }[] }>('/api/llm/models');
+      setLlmModels((result.data || []).map((model) => model.id).filter(Boolean).sort());
+    } catch {
+      setLlmModels([]);
+    } finally {
+      setIsLoadingModels(false);
     }
+  }, []);
 
+  const handleSave = async () => {
+    if (!draft) return;
     setIsSaving(true);
     try {
       await apiJson('/api/settings', {
@@ -85,7 +142,8 @@ export function SettingsPage({
         body: JSON.stringify(draft),
       });
       await onSettingsSaved();
-      alert('Settings saved successfully.');
+      setJustSaved(true);
+      window.setTimeout(() => setJustSaved(false), 2500);
     } catch (error) {
       console.error('Failed to save settings:', error);
       alert(error instanceof Error ? error.message : 'Failed to save settings.');
@@ -100,7 +158,6 @@ export function SettingsPage({
       alert('Display name is required.');
       return;
     }
-
     setIsSavingProfile(true);
     try {
       const payload = await apiJson<{ user: AuthUser }>('/api/account/profile', {
@@ -109,7 +166,7 @@ export function SettingsPage({
         body: JSON.stringify({ name: trimmedName }),
       });
       onUserUpdated(payload.user);
-      alert('Profile updated successfully.');
+      alert('Profile updated.');
     } catch (error) {
       console.error('Failed to update profile:', error);
       alert(error instanceof Error ? error.message : 'Failed to update profile.');
@@ -131,22 +188,17 @@ export function SettingsPage({
       alert('New password and confirmation do not match.');
       return;
     }
-
     setIsSavingPassword(true);
     try {
       await apiJson('/api/account/password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentPassword,
-          newPassword,
-          confirmPassword,
-        }),
+        body: JSON.stringify({ currentPassword, newPassword, confirmPassword }),
       });
       setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
-      alert('Password updated successfully.');
+      alert('Password updated.');
     } catch (error) {
       console.error('Failed to update password:', error);
       alert(error instanceof Error ? error.message : 'Failed to update password.');
@@ -155,71 +207,50 @@ export function SettingsPage({
     }
   };
 
-  const refreshWorkspaceData = async (preferredTaskId?: string | null) => {
-    await refreshAll(preferredTaskId);
+  const runWorkspaceAction = async (action: () => Promise<unknown>, fallbackMessage: string) => {
+    setIsSavingWorkspace(true);
+    try {
+      await action();
+      await refreshAll();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : fallbackMessage);
+    } finally {
+      setIsSavingWorkspace(false);
+    }
   };
 
-  const handleCreateWorkspace = async () => {
+  const handleCreateWorkspace = () => {
     const name = newWorkspaceName.trim();
     if (!name) {
       alert('Workspace name is required.');
       return;
     }
-
-    setIsSavingWorkspace(true);
-    try {
+    void runWorkspaceAction(async () => {
       await apiJson('/api/workspaces', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name }),
       });
       setNewWorkspaceName('');
-      await refreshWorkspaceData();
-      alert('Workspace created successfully.');
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to create workspace.');
-    } finally {
-      setIsSavingWorkspace(false);
-    }
+    }, 'Failed to create workspace.');
   };
 
-  const handleRenameWorkspace = async (workspaceId: string, currentName: string) => {
+  const handleRenameWorkspace = (workspaceId: string, currentName: string) => {
     const nextName = window.prompt('Rename workspace', currentName)?.trim();
-    if (!nextName || nextName === currentName) {
-      return;
-    }
-
-    setIsSavingWorkspace(true);
-    try {
-      await apiJson(`/api/workspaces/${workspaceId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: nextName }),
-      });
-      await refreshWorkspaceData();
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to rename workspace.');
-    } finally {
-      setIsSavingWorkspace(false);
-    }
+    if (!nextName || nextName === currentName) return;
+    void runWorkspaceAction(() => apiJson(`/api/workspaces/${workspaceId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: nextName }),
+    }), 'Failed to rename workspace.');
   };
 
-  const handleDeleteWorkspace = async (workspaceId: string, workspaceName: string) => {
-    if (!window.confirm(`Delete workspace "${workspaceName}"? The workspace must be empty.`)) {
-      return;
-    }
-
-    setIsSavingWorkspace(true);
-    try {
-      await apiJson(`/api/workspaces/${workspaceId}`, {
-        method: 'DELETE',
-      });
-      await refreshWorkspaceData();
-    } catch (error) {
-      alert(error instanceof Error ? error.message : 'Failed to delete workspace.');
-    } finally {
-      setIsSavingWorkspace(false);
-    }
+  const handleDeleteWorkspace = (workspaceId: string, workspaceName: string) => {
+    if (!window.confirm(`Delete workspace "${workspaceName}"? It must be empty.`)) return;
+    void runWorkspaceAction(
+      () => apiJson(`/api/workspaces/${workspaceId}`, { method: 'DELETE' }),
+      'Failed to delete workspace.',
+    );
   };
 
   const handleSwitchWorkspace = async (workspaceId: string) => {
@@ -234,743 +265,634 @@ export function SettingsPage({
     }
   };
 
-  if (!draft) {
-    return (
-      <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm max-w-3xl">
-        <h2 className="text-2xl font-bold text-slate-900 mb-4">Settings</h2>
-        <p className="text-slate-500">Loading settings...</p>
+  const renderTranscription = (current: UserSettings) => (
+    <>
+      <SectionHeading
+        title="Transcription"
+        description="Defaults for every new recording. You can still change them per recording."
+      />
+
+      <SubHeading>Default provider</SubHeading>
+      <div role="radiogroup" aria-label="Default provider" className="divide-y divide-stone-200 rounded-xl border border-stone-200">
+        {providerOptions.map((provider) => {
+          const health = providerHealthMap.get(provider.id);
+          return (
+            <label key={provider.id} className="flex cursor-pointer items-center gap-3 px-4 py-3.5">
+              <input
+                type="radio"
+                name="default-provider"
+                checked={current.defaultProvider === provider.id}
+                onChange={() => updateDraft((value) => ({
+                  ...value,
+                  defaultProvider: provider.id,
+                  fallbackProviders: value.fallbackProviders.filter((item) => item !== provider.id),
+                }))}
+                className="h-4 w-4 accent-stone-900"
+              />
+              <span className="min-w-0 flex-1">
+                <span className={cn('block text-sm font-medium', provider.configured ? 'text-stone-900' : 'text-stone-500')}>
+                  {provider.label}
+                </span>
+                <span className="block truncate text-[13px] text-stone-600">{provider.description}</span>
+              </span>
+              {!provider.configured ? (
+                <span className="text-xs text-stone-500">Not set up</span>
+              ) : health?.lastError ? (
+                <span className="inline-flex items-center gap-1.5 text-xs text-red-800">
+                  <span className="h-2 w-2 rounded-full bg-red-600" />
+                  Errors
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 text-xs text-emerald-800">
+                  <span className="h-2 w-2 rounded-full bg-emerald-600" />
+                  Ready
+                </span>
+              )}
+            </label>
+          );
+        })}
       </div>
-    );
-  }
 
-  return (
-    <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-sm max-w-3xl">
-      <h2 className="text-2xl font-bold text-slate-900 mb-6">Settings</h2>
-
-      <div className="space-y-6">
-        <div className="rounded-2xl border border-slate-200 p-5 space-y-4">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">Workspaces</h3>
-            <p className="text-sm text-slate-500 mt-1">Choose the default workspace for browsing, search, and knowledge chat. Recordings and notebooks stay isolated inside their workspace.</p>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            {workspaces.map((workspace) => {
-              const isCurrent = workspace.id === currentWorkspaceId;
-              return (
-                <div
-                  key={workspace.id}
-                  className={cn(
-                    'flex flex-col gap-3 rounded-2xl border p-4 md:flex-row md:items-center md:justify-between',
-                    isCurrent ? 'border-indigo-200 bg-indigo-50/60' : 'border-slate-200 bg-slate-50',
-                  )}
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="truncate text-sm font-semibold text-slate-900">{workspace.name}</span>
-                      {isCurrent ? (
-                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[11px] font-medium text-indigo-700">
-                          Current
-                        </span>
-                      ) : null}
-                    </div>
-                    {workspace.description ? (
-                      <p className="mt-1 text-sm text-slate-500">{workspace.description}</p>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {!isCurrent ? (
-                      <button
-                        type="button"
-                        onClick={() => void handleSwitchWorkspace(workspace.id)}
-                        disabled={isSavingWorkspace}
-                        className="rounded-xl bg-indigo-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        Use
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      onClick={() => void handleRenameWorkspace(workspace.id, workspace.name)}
-                      disabled={isSavingWorkspace}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Rename
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleDeleteWorkspace(workspace.id, workspace.name)}
-                      disabled={isSavingWorkspace || workspaces.length <= 1}
-                      className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="flex flex-col gap-3 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 md:flex-row md:items-center">
-            <input
-              type="text"
-              value={newWorkspaceName}
-              onChange={(event) => setNewWorkspaceName(event.target.value)}
-              placeholder="New workspace name"
-              className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-            <button
-              type="button"
-              onClick={() => void handleCreateWorkspace()}
-              disabled={isSavingWorkspace}
-              className="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Add workspace
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-slate-700 mb-2">Parsing Language</label>
+      <div className="mt-6 grid gap-4 sm:grid-cols-2">
+        <Field label="Language">
           <select
-            value={draft.parseLanguage}
-            onChange={(event) =>
-              updateDraft((current) => ({
-                ...current,
-                parseLanguage: event.target.value,
-              }))
-            }
-            className="w-full max-w-md px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-700"
+            value={current.parseLanguage}
+            onChange={(event) => updateDraft((value) => ({ ...value, parseLanguage: event.target.value }))}
+            className={inputClassName}
           >
             {LANGUAGE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
+              <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
-        </div>
+        </Field>
+      </div>
 
-        <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
-          <input
-            type="checkbox"
-            checked={draft.enableDiarization}
-            onChange={(event) =>
-              updateDraft((current) => ({
-                ...current,
-                enableDiarization: event.target.checked,
-              }))
-            }
-            className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-          />
-          <div>
-            <p className="text-sm font-medium text-slate-800">Enable speaker diarization</p>
-            <p className="text-sm text-slate-500 mt-1">Providers that support diarization can split transcripts by speaker and time segments.</p>
+      <SubHeading>After transcription</SubHeading>
+      <div>
+        <ToggleRow
+          label="Identify speakers"
+          description="Label who said what, when the provider supports it."
+          checked={current.enableDiarization}
+          onChange={(checked) => updateDraft((value) => ({ ...value, enableDiarization: checked }))}
+        />
+        <ToggleRow
+          label="Write a summary"
+          description="Uses your default summary template. Needs an AI model."
+          checked={current.autoGenerateSummary}
+          onChange={(checked) => updateDraft((value) => ({ ...value, autoGenerateSummary: checked }))}
+        />
+        <ToggleRow
+          label="Suggest tags"
+          description="You confirm suggestions before they are applied. Needs an AI model."
+          checked={current.autoSuggestTags}
+          onChange={(checked) => updateDraft((value) => ({ ...value, autoSuggestTags: checked }))}
+        />
+      </div>
+
+      <SubHeading>OpenAI-compatible Whisper API</SubHeading>
+      <div className="rounded-xl border border-stone-200 px-4">
+        <ToggleRow
+          label="Enable this provider"
+          description="Once saved it can be the default or a fallback provider."
+          checked={current.openaiWhisper.enabled}
+          onChange={(checked) => updateDraft((value) => ({ ...value, openaiWhisper: { ...value.openaiWhisper, enabled: checked } }))}
+        />
+        {current.openaiWhisper.enabled ? (
+          <div className="grid gap-4 py-4 sm:grid-cols-2">
+            <Field label="API base URL" className="sm:col-span-2">
+              <input
+                type="url"
+                value={current.openaiWhisper.baseUrl}
+                onChange={(event) => updateDraft((value) => ({ ...value, openaiWhisper: { ...value.openaiWhisper, baseUrl: event.target.value } }))}
+                placeholder="https://api.openai.com/v1"
+                className={inputClassName}
+              />
+            </Field>
+            <Field label="Model">
+              <input
+                type="text"
+                value={current.openaiWhisper.model}
+                onChange={(event) => updateDraft((value) => ({ ...value, openaiWhisper: { ...value.openaiWhisper, model: event.target.value } }))}
+                placeholder="whisper-1"
+                className={inputClassName}
+              />
+            </Field>
+            <Field label="API key">
+              <input
+                type="password"
+                value={current.openaiWhisper.apiKey}
+                onChange={(event) => updateDraft((value) => ({ ...value, openaiWhisper: { ...value.openaiWhisper, apiKey: event.target.value } }))}
+                placeholder="sk-…"
+                className={inputClassName}
+              />
+            </Field>
+            <Field label="Transcription path">
+              <input
+                type="text"
+                value={current.openaiWhisper.transcriptionPath}
+                onChange={(event) => updateDraft((value) => ({ ...value, openaiWhisper: { ...value.openaiWhisper, transcriptionPath: event.target.value } }))}
+                className={inputClassName}
+              />
+            </Field>
+            <Field label="Translation path">
+              <input
+                type="text"
+                value={current.openaiWhisper.translationPath}
+                onChange={(event) => updateDraft((value) => ({ ...value, openaiWhisper: { ...value.openaiWhisper, translationPath: event.target.value } }))}
+                className={inputClassName}
+              />
+            </Field>
+            <Field label="Response format">
+              <select
+                value={current.openaiWhisper.responseFormat}
+                onChange={(event) => updateDraft((value) => ({ ...value, openaiWhisper: { ...value.openaiWhisper, responseFormat: event.target.value } }))}
+                className={inputClassName}
+              >
+                <option value="verbose_json">verbose_json</option>
+                <option value="json">json</option>
+                <option value="text">text</option>
+              </select>
+            </Field>
+            <div className="sm:col-span-2">
+              <ToggleRow
+                label="Disable timestamp granularities"
+                description="Turn on if your endpoint rejects timestamp_granularities[]."
+                checked={current.openaiWhisper.disableTimestampGranularities}
+                onChange={(checked) => updateDraft((value) => ({
+                  ...value,
+                  openaiWhisper: { ...value.openaiWhisper, disableTimestampGranularities: checked },
+                }))}
+              />
+            </div>
           </div>
-        </label>
+        ) : null}
+      </div>
 
-        <div className="rounded-2xl border border-slate-200 p-5 space-y-5">
-            <div>
-              <h3 className="text-base font-semibold text-slate-900">Transcription</h3>
-              <p className="text-sm text-slate-500 mt-1">Choose your transcription provider and automation preferences.</p>
-            </div>
-
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Default provider</span>
-            <select
-              value={draft.defaultProvider}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  defaultProvider: event.target.value,
-                  fallbackProviders: current.fallbackProviders.filter((item) => item !== event.target.value),
-                }))
-              }
-              className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              {providerOptions.map((provider) => (
-                <option key={provider.id} value={provider.id}>
+      <details className="group mt-8 rounded-xl border border-stone-200 px-4 py-3.5">
+        <summary className="cursor-pointer text-sm font-medium text-stone-900">Advanced: fallback and retries</summary>
+        <div className="mt-4 flex flex-col gap-5">
+          <fieldset>
+            <legend className="text-sm font-medium text-stone-800">Fallback providers</legend>
+            <p className="mt-0.5 text-xs text-stone-500">Tried in order when the default provider fails.</p>
+            <div className="mt-2 flex flex-col gap-2">
+              {providerOptions.filter((provider) => provider.id !== current.defaultProvider).map((provider) => (
+                <label key={provider.id} className="flex cursor-pointer items-center gap-3 text-sm text-stone-800">
+                  <input
+                    type="checkbox"
+                    checked={current.fallbackProviders.includes(provider.id)}
+                    onChange={(event) => updateDraft((value) => ({
+                      ...value,
+                      fallbackProviders: event.target.checked
+                        ? [...value.fallbackProviders, provider.id]
+                        : value.fallbackProviders.filter((item) => item !== provider.id),
+                    }))}
+                    className="h-4 w-4 accent-stone-900"
+                  />
                   {provider.label}
-                  {provider.configured ? '' : ' (Missing saved config)'}
-                </option>
+                </label>
               ))}
-            </select>
-          </label>
-
-          <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
-            <input
-              type="checkbox"
-              checked={draft.autoGenerateSummary}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  autoGenerateSummary: event.target.checked,
-                }))
-              }
-              className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <div>
-              <p className="text-sm font-medium text-slate-800">Auto generate summary after transcription</p>
-              <p className="text-sm text-slate-500 mt-1">If LLM is configured, the worker will generate a summary automatically after a task completes.</p>
             </div>
-          </label>
-
-          <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
-            <input
-              type="checkbox"
-              checked={draft.autoSuggestTags}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  autoSuggestTags: event.target.checked,
-                }))
-              }
-              className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <div>
-              <p className="text-sm font-medium text-slate-800">Auto suggest tags after transcription</p>
-              <p className="text-sm text-slate-500 mt-1">If LLM is configured, completed tasks will get suggested tags that you can review before applying.</p>
-            </div>
-          </label>
-
-          <button
-            type="button"
-            onClick={() => setIsAdvancedOpen((v) => !v)}
-            className="flex items-center gap-2 text-xs font-medium text-slate-500 hover:text-slate-700 transition-colors"
-          >
-            <ChevronDown className={cn('w-3.5 h-3.5 transition-transform', isAdvancedOpen && 'rotate-180')} />
-            Advanced provider settings
-          </button>
-
-          {isAdvancedOpen && (
-            <>
-              <div>
-                <span className="text-sm font-medium text-slate-700">Fallback chain</span>
-                <div className="mt-2 space-y-2">
-                  {providerOptions
-                    .filter((provider) => provider.id !== draft.defaultProvider)
-                    .map((provider) => {
-                      const checked = draft.fallbackProviders.includes(provider.id);
-                      return (
-                        <label key={provider.id} className="flex items-start gap-3 p-3 rounded-xl border border-slate-200 bg-slate-50">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(event) => {
-                              updateDraft((current) => ({
-                                ...current,
-                                fallbackProviders: event.target.checked
-                                  ? [...current.fallbackProviders, provider.id]
-                                  : current.fallbackProviders.filter((item) => item !== provider.id),
-                              }));
-                            }}
-                            className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                          />
-                          <div>
-                            <p className="text-sm font-medium text-slate-800">{provider.label}</p>
-                            <p className="text-xs text-slate-500 mt-1">{provider.description}</p>
-                          </div>
-                        </label>
-                      );
-                    })}
-                </div>
-              </div>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Circuit breaker threshold</span>
+          </fieldset>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Circuit breaker threshold" hint="Failures before a provider is paused.">
               <input
                 type="number"
                 min={1}
                 max={10}
-                value={draft.circuitBreakerThreshold}
-                onChange={(event) =>
-                  updateDraft((current) => ({
-                    ...current,
-                    circuitBreakerThreshold: Number(event.target.value),
-                  }))
-                }
-                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                value={current.circuitBreakerThreshold}
+                onChange={(event) => updateDraft((value) => ({ ...value, circuitBreakerThreshold: Number(event.target.value) }))}
+                className={inputClassName}
               />
-            </label>
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">Cooldown (seconds)</span>
+            </Field>
+            <Field label="Cooldown (seconds)" hint="How long a paused provider rests.">
               <input
                 type="number"
                 min={10}
                 max={3600}
-                value={Math.round(draft.circuitBreakerCooldownMs / 1000)}
-                onChange={(event) =>
-                  updateDraft((current) => ({
-                    ...current,
-                    circuitBreakerCooldownMs: Number(event.target.value) * 1000,
-                  }))
-                }
-                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                value={Math.round(current.circuitBreakerCooldownMs / 1000)}
+                onChange={(event) => updateDraft((value) => ({ ...value, circuitBreakerCooldownMs: Number(event.target.value) * 1000 }))}
+                className={inputClassName}
               />
-            </label>
+            </Field>
           </div>
-            </>
-          )}
         </div>
+      </details>
+    </>
+  );
 
-        <div className="rounded-2xl border border-slate-200 p-5 space-y-5">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">OpenAI Whisper API</h3>
-            <p className="text-sm text-slate-500 mt-1">Configure a standard OpenAI-compatible Whisper transcription endpoint.</p>
-          </div>
-
-          <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
-            <input
-              type="checkbox"
-              checked={draft.openaiWhisper.enabled}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  openaiWhisper: {
-                    ...current.openaiWhisper,
-                    enabled: event.target.checked,
-                  },
-                }))
-              }
-              className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-            />
-            <div>
-              <p className="text-sm font-medium text-slate-800">Enable OpenAI Whisper provider</p>
-              <p className="text-sm text-slate-500 mt-1">After saving, this provider can be used as the default provider or a fallback provider.</p>
-            </div>
-          </label>
-
-          {draft.openaiWhisper.enabled && (
-            <>
-              <div className="grid md:grid-cols-2 gap-4">
-                <label className="block md:col-span-2">
-                  <span className="text-sm font-medium text-slate-700">API base URL</span>
-                  <input
-                    type="url"
-                    value={draft.openaiWhisper.baseUrl}
-                    onChange={(event) =>
-                      updateDraft((current) => ({
-                        ...current,
-                        openaiWhisper: {
-                          ...current.openaiWhisper,
-                          baseUrl: event.target.value,
-                        },
-                      }))
-                    }
-                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="https://api.openai.com/v1"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-700">Model</span>
-                  <input
-                    type="text"
-                    value={draft.openaiWhisper.model}
-                    onChange={(event) =>
-                      updateDraft((current) => ({
-                        ...current,
-                        openaiWhisper: {
-                          ...current.openaiWhisper,
-                          model: event.target.value,
-                        },
-                      }))
-                    }
-                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="whisper-1"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-700">API key</span>
-                  <input
-                    type="password"
-                    value={draft.openaiWhisper.apiKey}
-                    onChange={(event) =>
-                      updateDraft((current) => ({
-                        ...current,
-                        openaiWhisper: {
-                          ...current.openaiWhisper,
-                          apiKey: event.target.value,
-                        },
-                      }))
-                    }
-                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="sk-..."
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-700">Transcription path</span>
-                  <input
-                    type="text"
-                    value={draft.openaiWhisper.transcriptionPath}
-                    onChange={(event) =>
-                      updateDraft((current) => ({
-                        ...current,
-                        openaiWhisper: {
-                          ...current.openaiWhisper,
-                          transcriptionPath: event.target.value,
-                        },
-                      }))
-                    }
-                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-700">Translation path</span>
-                  <input
-                    type="text"
-                    value={draft.openaiWhisper.translationPath}
-                    onChange={(event) =>
-                      updateDraft((current) => ({
-                        ...current,
-                        openaiWhisper: {
-                          ...current.openaiWhisper,
-                          translationPath: event.target.value,
-                        },
-                      }))
-                    }
-                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-700">Response format</span>
-                  <select
-                    value={draft.openaiWhisper.responseFormat}
-                    onChange={(event) =>
-                      updateDraft((current) => ({
-                        ...current,
-                        openaiWhisper: {
-                          ...current.openaiWhisper,
-                          responseFormat: event.target.value,
-                        },
-                      }))
-                    }
-                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  >
-                    <option value="verbose_json">verbose_json</option>
-                    <option value="json">json</option>
-                    <option value="text">text</option>
-                  </select>
-                </label>
-              </div>
-
-              <label className="flex items-start gap-3 p-4 rounded-2xl border border-slate-200 bg-slate-50">
-                <input
-                  type="checkbox"
-                  checked={draft.openaiWhisper.disableTimestampGranularities}
-                  onChange={(event) =>
-                    updateDraft((current) => ({
-                      ...current,
-                      openaiWhisper: {
-                        ...current.openaiWhisper,
-                        disableTimestampGranularities: event.target.checked,
-                      },
-                    }))
-                  }
-                  className="mt-1 h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                />
-                <div>
-                  <p className="text-sm font-medium text-slate-800">Disable timestamp granularities</p>
-                  <p className="text-sm text-slate-500 mt-1">Turn this on if your endpoint does not support `timestamp_granularities[]`.</p>
-                </div>
-              </label>
-            </>
-          )}
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 p-5 space-y-5">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">LLM API</h3>
-            <p className="text-sm text-slate-500 mt-1">Used for summary generation and transcript chat.</p>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-4">
-            <label className="block md:col-span-2">
-              <span className="text-sm font-medium text-slate-700">Base URL</span>
+  const renderAiModel = (current: UserSettings) => (
+    <>
+      <SectionHeading title="AI model" description="Used for summaries, tag suggestions and chat." />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Base URL" className="sm:col-span-2">
+          <input
+            type="url"
+            value={current.llm.baseUrl}
+            onChange={(event) => updateDraft((value) => ({ ...value, llm: { ...value.llm, baseUrl: event.target.value } }))}
+            placeholder="https://api.openai.com/v1"
+            className={inputClassName}
+          />
+        </Field>
+        <div className="flex flex-col gap-1.5 sm:col-span-2">
+          <label htmlFor="llm-model" className="text-sm font-medium text-stone-800">Model</label>
+          <div className="flex items-center gap-2">
+            {llmModels.length > 0 ? (
+              <select
+                id="llm-model"
+                value={current.llm.model}
+                onChange={(event) => updateDraft((value) => ({ ...value, llm: { ...value.llm, model: event.target.value } }))}
+                className={inputClassName}
+              >
+                {!llmModels.includes(current.llm.model) && current.llm.model ? (
+                  <option value={current.llm.model}>{current.llm.model}</option>
+                ) : null}
+                {llmModels.map((model) => (
+                  <option key={model} value={model}>{model}</option>
+                ))}
+              </select>
+            ) : (
               <input
-                type="url"
-                value={draft.llm.baseUrl}
-                onChange={(event) =>
-                  updateDraft((current) => ({
-                    ...current,
-                    llm: {
-                      ...current.llm,
-                      baseUrl: event.target.value,
-                    },
-                  }))
-                }
-                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="https://api.openai.com/v1"
+                id="llm-model"
+                type="text"
+                value={current.llm.model}
+                onChange={(event) => updateDraft((value) => ({ ...value, llm: { ...value.llm, model: event.target.value } }))}
+                placeholder="gpt-4o-mini"
+                className={inputClassName}
               />
-            </label>
-            <div className="block md:col-span-2">
-              <span className="text-sm font-medium text-slate-700">Model</span>
-              <div className="flex items-center gap-2 mt-1">
-                {llmModels.length > 0 ? (
-                  <select
-                    value={draft.llm.model}
-                    onChange={(event) =>
-                      updateDraft((current) => ({
-                        ...current,
-                        llm: {
-                          ...current.llm,
-                          model: event.target.value,
-                        },
-                      }))
-                    }
-                    className="min-w-0 flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            )}
+            <button
+              type="button"
+              onClick={() => void fetchLlmModels()}
+              disabled={isLoadingModels}
+              aria-label="Load available models"
+              title="Load available models"
+              className={cn(secondaryButtonClassName, 'h-10 w-10 shrink-0 px-0')}
+            >
+              <RefreshCw className={cn('h-4 w-4', isLoadingModels && 'animate-spin')} />
+            </button>
+          </div>
+        </div>
+        <Field label="API key">
+          <input
+            type="password"
+            value={current.llm.apiKey}
+            onChange={(event) => updateDraft((value) => ({ ...value, llm: { ...value.llm, apiKey: event.target.value } }))}
+            placeholder="sk-…"
+            className={inputClassName}
+          />
+        </Field>
+      </div>
+    </>
+  );
+
+  const renderSearch = (current: UserSettings) => (
+    <>
+      <SectionHeading title="Search" description="How search and Ask AI rank transcript passages." />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Retrieval mode">
+          <select
+            value={current.retrievalMode}
+            onChange={(event) => updateDraft((value) => ({ ...value, retrievalMode: event.target.value as UserSettings['retrievalMode'] }))}
+            className={inputClassName}
+          >
+            <option value="hybrid">Hybrid (full-text + vector)</option>
+            <option value="fts">Full-text only</option>
+            <option value="vector">Vector only</option>
+          </select>
+        </Field>
+        <Field label="Passages per answer" hint="Between 3 and 20.">
+          <input
+            type="number"
+            min={3}
+            max={20}
+            value={current.maxKnowledgeChunks}
+            onChange={(event) => updateDraft((value) => ({ ...value, maxKnowledgeChunks: Number(event.target.value) }))}
+            className={inputClassName}
+          />
+        </Field>
+      </div>
+    </>
+  );
+
+  const renderWorkspaces = () => (
+    <>
+      <SectionHeading
+        title="Workspaces"
+        description="Recordings, notebooks and conversations stay inside their workspace."
+      />
+      <div className="divide-y divide-stone-200 rounded-xl border border-stone-200">
+        {workspaces.map((workspace) => {
+          const isCurrent = workspace.id === currentWorkspaceId;
+          return (
+            <div key={workspace.id} className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-stone-900 text-[13px] font-semibold text-white">
+                {workspace.name.charAt(0).toUpperCase()}
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-stone-900">{workspace.name}</span>
+                <span className="block text-xs text-stone-500">{isCurrent ? 'Current workspace' : workspace.description || ''}</span>
+              </span>
+              <div className="flex gap-1.5">
+                {!isCurrent ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleSwitchWorkspace(workspace.id)}
+                    disabled={isSavingWorkspace}
+                    className={secondaryButtonClassName}
                   >
-                    {!llmModels.includes(draft.llm.model) && draft.llm.model && (
-                      <option value={draft.llm.model}>{draft.llm.model}</option>
-                    )}
-                    {llmModels.map((id) => (
-                      <option key={id} value={id}>{id}</option>
-                    ))}
-                  </select>
-                ) : (
-                  <input
-                    type="text"
-                    value={draft.llm.model}
-                    onChange={(event) =>
-                      updateDraft((current) => ({
-                        ...current,
-                        llm: {
-                          ...current.llm,
-                          model: event.target.value,
-                        },
-                      }))
-                    }
-                    className="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="gpt-4o-mini"
-                  />
-                )}
+                    Switch
+                  </button>
+                ) : null}
                 <button
                   type="button"
-                  onClick={() => void fetchLlmModels()}
-                  disabled={isLoadingModels}
-                  className="inline-flex items-center justify-center w-9 h-9 rounded-xl border border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-50"
-                  title="Fetch available models"
+                  onClick={() => handleRenameWorkspace(workspace.id, workspace.name)}
+                  disabled={isSavingWorkspace}
+                  className={secondaryButtonClassName}
                 >
-                  <RefreshCw className={cn('w-4 h-4', isLoadingModels && 'animate-spin')} />
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteWorkspace(workspace.id, workspace.name)}
+                  disabled={isSavingWorkspace || workspaces.length <= 1}
+                  className={cn(secondaryButtonClassName, 'text-red-700')}
+                >
+                  Delete
                 </button>
               </div>
             </div>
-            <label className="block">
-              <span className="text-sm font-medium text-slate-700">API key</span>
-              <input
-                type="password"
-                value={draft.llm.apiKey}
-                onChange={(event) =>
-                  updateDraft((current) => ({
-                    ...current,
-                    llm: {
-                      ...current.llm,
-                      apiKey: event.target.value,
-                    },
-                  }))
-                }
-                className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="sk-..."
-              />
-            </label>
-          </div>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex gap-2">
+        <label className="sr-only" htmlFor="new-workspace">New workspace name</label>
+        <input
+          id="new-workspace"
+          type="text"
+          value={newWorkspaceName}
+          onChange={(event) => setNewWorkspaceName(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') handleCreateWorkspace();
+          }}
+          placeholder="New workspace name"
+          className={inputClassName}
+        />
+        <button type="button" onClick={handleCreateWorkspace} disabled={isSavingWorkspace} className={cn(primaryButtonClassName, 'h-10 shrink-0')}>
+          Add
+        </button>
+      </div>
+    </>
+  );
+
+  const renderAccount = () => (
+    <>
+      <SectionHeading title="Profile & password" description={currentUser.email} />
+      <SubHeading>Display name</SubHeading>
+      <div className="flex gap-2">
+        <label className="sr-only" htmlFor="profile-name">Display name</label>
+        <input
+          id="profile-name"
+          type="text"
+          value={profileName}
+          onChange={(event) => setProfileName(event.target.value)}
+          placeholder="Your name"
+          className={inputClassName}
+        />
+        <button
+          type="button"
+          onClick={() => void handleProfileSave()}
+          disabled={isSavingProfile || profileName.trim() === currentUser.name}
+          className={cn(primaryButtonClassName, 'h-10 shrink-0')}
+        >
+          {isSavingProfile ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+
+      <SubHeading>Change password</SubHeading>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Current password" className="sm:col-span-2">
+          <input
+            type="password"
+            autoComplete="current-password"
+            value={currentPassword}
+            onChange={(event) => setCurrentPassword(event.target.value)}
+            className={inputClassName}
+          />
+        </Field>
+        <Field label="New password" hint="At least 8 characters.">
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={newPassword}
+            onChange={(event) => setNewPassword(event.target.value)}
+            className={inputClassName}
+          />
+        </Field>
+        <Field label="Confirm new password">
+          <input
+            type="password"
+            autoComplete="new-password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            className={inputClassName}
+          />
+        </Field>
+      </div>
+      <button
+        type="button"
+        onClick={() => void handlePasswordSave()}
+        disabled={isSavingPassword}
+        className={cn(primaryButtonClassName, 'mt-4')}
+      >
+        {isSavingPassword ? 'Updating…' : 'Update password'}
+      </button>
+    </>
+  );
+
+  const renderStatus = () => (
+    <>
+      <SectionHeading title="System status" description="Health of the services this workspace depends on." />
+      <div className="divide-y divide-stone-200 rounded-xl border border-stone-200">
+        <div className="flex items-center gap-3 px-4 py-3">
+          <span className="flex-1 text-sm font-medium text-stone-900">AI model</span>
+          <span className="text-sm text-stone-600">{capabilities?.llm.configured ? capabilities.llm.model : 'Not configured'}</span>
         </div>
+        <div className="flex items-center gap-3 px-4 py-3">
+          <span className="flex-1 text-sm font-medium text-stone-900">Embeddings</span>
+          <span className="text-sm text-stone-600">{capabilities?.embeddings.configured ? capabilities.embeddings.model : 'Off'}</span>
+        </div>
+      </div>
 
-        <div className="rounded-2xl border border-slate-200 p-5 space-y-5">
-          <div>
-            <h3 className="text-base font-semibold text-slate-900">Retrieval Settings</h3>
-            <p className="text-sm text-slate-500 mt-1">Tune how global search and cross-recording Q&A rank transcript chunks.</p>
-          </div>
+      <SubHeading>Transcription providers</SubHeading>
+      <div className="divide-y divide-stone-200 rounded-xl border border-stone-200">
+        {providerOptions.map((provider) => {
+          const health = providerHealthMap.get(provider.id);
+          return (
+            <div key={provider.id} className="flex flex-wrap items-start gap-3 px-4 py-3">
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-medium text-stone-900">{provider.label}</span>
+                <span className="block text-xs text-stone-500">
+                  {provider.configured ? 'Configured' : 'Not set up'} · {health?.successCount || 0} succeeded · {health?.failureCount || 0} failed
+                </span>
+                {health?.lastError ? <span className="mt-1 block text-xs text-red-800">{health.lastError}</span> : null}
+              </span>
+              <button
+                type="button"
+                onClick={async () => {
+                  await apiJson(`/api/provider-health/${provider.id}/reset`, { method: 'POST' });
+                  await onSettingsSaved();
+                }}
+                className={secondaryButtonClassName}
+              >
+                Reset circuit
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
 
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Retrieval mode</span>
-            <select
-              value={draft.retrievalMode}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  retrievalMode: event.target.value as UserSettings['retrievalMode'],
-                }))
-              }
-              className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            >
-              <option value="hybrid">Hybrid (FTS + vector)</option>
-              <option value="fts">Full-text only</option>
-              <option value="vector">Vector only</option>
-            </select>
-          </label>
-
-          <label className="block">
-            <span className="text-sm font-medium text-slate-700">Max knowledge chunks</span>
-            <input
-              type="number"
-              min={3}
-              max={20}
-              value={draft.maxKnowledgeChunks}
-              onChange={(event) =>
-                updateDraft((current) => ({
-                  ...current,
-                  maxKnowledgeChunks: Number(event.target.value),
-                }))
-              }
-              className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+  const renderSection = () => {
+    if (DRAFT_SECTIONS.has(section) && !draft) {
+      return <p className="text-sm text-stone-600">Loading settings…</p>;
+    }
+    switch (section) {
+      case 'transcription':
+        return renderTranscription(draft!);
+      case 'ai':
+        return renderAiModel(draft!);
+      case 'search':
+        return renderSearch(draft!);
+      case 'templates':
+        return (
+          <>
+            <SectionHeading
+              title="Summary templates"
+              description="Reusable instructions for summaries. Pick one per recording, or set a default."
             />
-          </label>
-        </div>
+            <SummaryTemplates />
+          </>
+        );
+      case 'workspaces':
+        return renderWorkspaces();
+      case 'account':
+        return renderAccount();
+      case 'tokens':
+        return (
+          <>
+            <SectionHeading title="API tokens" description="For external access, like iOS Shortcuts." />
+            <ApiTokensSection />
+          </>
+        );
+      case 'status':
+        return renderStatus();
+      default:
+        return null;
+    }
+  };
 
-        <div className="rounded-2xl border border-slate-200 p-5">
-          <h3 className="text-base font-semibold text-slate-900">System Status</h3>
-          <div className="mt-3 flex flex-wrap gap-3 text-xs">
-            <span className={cn('px-2.5 py-1 rounded-full border', capabilities?.llm.configured ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200')}>
-              LLM: {capabilities?.llm.configured ? capabilities.llm.model : 'Not configured'}
-            </span>
-            <span className={cn('px-2.5 py-1 rounded-full border', capabilities?.embeddings.configured ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200')}>
-              Embeddings: {capabilities?.embeddings.configured ? capabilities.embeddings.model : 'Off'}
-            </span>
-          </div>
-          <div className="mt-4 space-y-2">
-            {providerOptions.map((provider) => (
-              <div key={provider.id} className="rounded-xl border border-slate-200 p-4 flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-sm font-medium text-slate-900">{provider.label}</p>
-                  <p className="text-xs text-slate-500 mt-1">{provider.description}</p>
-                  {providerHealthMap.get(provider.id)?.lastError && (
-                    <p className="text-xs text-red-600 mt-2">
-                      {providerHealthMap.get(provider.id)?.lastError}
-                    </p>
+  const showSaveBar = DRAFT_SECTIONS.has(section) && (isDirty || justSaved);
+
+  return (
+    <div className="flex min-h-full flex-col lg:h-full lg:flex-row">
+      <nav
+        aria-label="Settings sections"
+        className="shrink-0 lg:flex lg:w-56 lg:flex-col lg:overflow-y-auto lg:border-r lg:border-stone-200 lg:px-3 lg:py-5"
+      >
+        <h1 className="hidden px-2.5 pb-3 text-lg font-semibold text-stone-900 lg:block">Settings</h1>
+        {/* Mobile: one scrollable row of sections */}
+        <div className="flex gap-1.5 overflow-x-auto px-4 py-2 lg:hidden">
+          {ALL_SECTIONS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => goToSection(item.id)}
+              aria-current={section === item.id ? 'page' : undefined}
+              className={cn(
+                'h-8 shrink-0 rounded-full border px-3 text-[13px] font-medium',
+                section === item.id ? 'border-stone-900 bg-stone-900 text-white' : 'border-stone-200 bg-white text-stone-700',
+              )}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <div className="hidden flex-col lg:flex">
+          {SECTION_GROUPS.map((group) => (
+            <div key={group.label} className="mb-3 flex flex-col gap-0.5">
+              <span className="px-2.5 pt-2 pb-1 text-xs font-semibold text-stone-500">{group.label}</span>
+              {group.items.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => goToSection(item.id)}
+                  aria-current={section === item.id ? 'page' : undefined}
+                  className={cn(
+                    'flex min-h-9 items-center rounded-lg px-2.5 text-left text-sm',
+                    section === item.id
+                      ? 'bg-white font-medium text-stone-900 shadow-[0_0_0_1px_var(--color-stone-200)]'
+                      : 'text-stone-700 hover:bg-stone-200/50',
                   )}
-                </div>
-                <div className="flex flex-col items-end gap-2">
-                  <span className={cn('text-xs font-medium px-2.5 py-1 rounded-full border', provider.configured ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200')}>
-                    {provider.configured ? 'Configured' : 'Missing config'}
-                  </span>
-                  <span className="text-[11px] text-slate-500">
-                    failures {providerHealthMap.get(provider.id)?.failureCount || 0}
-                    {' • '}
-                    success {providerHealthMap.get(provider.id)?.successCount || 0}
-                  </span>
-                  <button
-                    onClick={async () => {
-                      await apiJson(`/api/provider-health/${provider.id}/reset`, { method: 'POST' });
-                      await onSettingsSaved();
-                    }}
-                    className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
-                  >
-                    Reset Circuit
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="pt-4 border-t border-slate-100">
-          <button
-            onClick={() => void handleSave()}
-            disabled={isSaving}
-            className="px-6 py-2.5 bg-indigo-600 text-white font-medium rounded-xl hover:bg-indigo-700 transition-colors shadow-sm disabled:opacity-60"
-          >
-            {isSaving ? 'Saving...' : 'Save Settings'}
-          </button>
-        </div>
-
-        <div className="pt-8 mt-8 border-t border-slate-100">
-          <h3 className="text-lg font-semibold text-slate-900 mb-4">Account</h3>
-          <div className="flex items-center gap-4 mb-6">
-            <div className="w-12 h-12 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold text-xl">
-              {currentUser.name.charAt(0).toUpperCase()}
+                >
+                  {item.label}
+                </button>
+              ))}
             </div>
-            <div>
-              <p className="font-medium text-slate-900">{currentUser.name}</p>
-              <p className="text-sm text-slate-500">{currentUser.email}</p>
-            </div>
-          </div>
+          ))}
+        </div>
+        <button
+          type="button"
+          onClick={() => void onLogout()}
+          className="mt-auto hidden min-h-9 items-center gap-2 rounded-lg px-2.5 text-left text-sm text-red-700 hover:bg-red-50 lg:flex"
+        >
+          <LogOut className="h-4 w-4" />
+          Sign out
+        </button>
+      </nav>
 
-          <div className="grid gap-6 mb-6">
-            <div className="rounded-2xl border border-slate-200 p-5 space-y-4">
-              <div>
-                <h4 className="text-base font-semibold text-slate-900">Profile</h4>
-                <p className="text-sm text-slate-500 mt-1">Update the display name shown across your workspace.</p>
-              </div>
-
-              <label className="block">
-                <span className="text-sm font-medium text-slate-700">Display name</span>
-                <input
-                  type="text"
-                  value={profileName}
-                  onChange={(event) => setProfileName(event.target.value)}
-                  className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  placeholder="Your name"
-                />
-              </label>
-
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
+        <div className="min-h-0 flex-1 lg:overflow-y-auto custom-scrollbar">
+          <div className="max-w-2xl px-5 py-6 lg:px-10 lg:py-8">
+            {renderSection()}
+            {section === 'account' ? (
               <button
-                onClick={() => void handleProfileSave()}
-                disabled={isSavingProfile}
-                className="px-5 py-2.5 bg-slate-900 text-white font-medium rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-60"
+                type="button"
+                onClick={() => void onLogout()}
+                className={cn(secondaryButtonClassName, 'mt-10 text-red-700 lg:hidden')}
               >
-                {isSavingProfile ? 'Saving profile...' : 'Save Profile'}
+                <LogOut className="h-4 w-4" />
+                Sign out
               </button>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 p-5 space-y-4">
-              <div>
-                <h4 className="text-base font-semibold text-slate-900">Password</h4>
-                <p className="text-sm text-slate-500 mt-1">Use your current password to set a new one.</p>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block md:col-span-2">
-                  <span className="text-sm font-medium text-slate-700">Current password</span>
-                  <input
-                    type="password"
-                    value={currentPassword}
-                    onChange={(event) => setCurrentPassword(event.target.value)}
-                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="Current password"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-700">New password</span>
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={(event) => setNewPassword(event.target.value)}
-                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="At least 8 characters"
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-sm font-medium text-slate-700">Confirm new password</span>
-                  <input
-                    type="password"
-                    value={confirmPassword}
-                    onChange={(event) => setConfirmPassword(event.target.value)}
-                    className="w-full mt-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="Repeat new password"
-                  />
-                </label>
-              </div>
-
-              <button
-                onClick={() => void handlePasswordSave()}
-                disabled={isSavingPassword}
-                className="px-5 py-2.5 bg-slate-900 text-white font-medium rounded-xl hover:bg-slate-800 transition-colors disabled:opacity-60"
-              >
-                {isSavingPassword ? 'Updating password...' : 'Update Password'}
-              </button>
-            </div>
+            ) : null}
           </div>
-
-          <ApiTokensSection />
-
-          <button
-            onClick={() => void onLogout()}
-            className="w-full sm:w-auto px-6 py-2.5 bg-red-50 text-red-600 font-medium rounded-xl hover:bg-red-100 transition-colors flex items-center justify-center gap-2"
-          >
-            <LogOut className="w-4 h-4" />
-            Sign Out
-          </button>
         </div>
+
+        {showSaveBar ? (
+          <div className="sticky bottom-0 flex shrink-0 items-center gap-2 border-t border-stone-200 bg-stone-50 px-5 py-3 lg:px-10">
+            {justSaved && !isDirty ? (
+              <span className="inline-flex flex-1 items-center gap-1.5 text-sm font-medium text-emerald-800">
+                <Check className="h-4 w-4" />
+                Settings saved
+              </span>
+            ) : (
+              <>
+                <span className="flex-1 text-sm text-stone-600">You have unsaved changes</span>
+                <button
+                  type="button"
+                  onClick={() => setDraft(userSettings)}
+                  disabled={isSaving}
+                  className="h-9 rounded-lg px-3.5 text-sm font-medium text-stone-800 hover:bg-stone-200/60"
+                >
+                  Discard
+                </button>
+                <button type="button" onClick={() => void handleSave()} disabled={isSaving} className={primaryButtonClassName}>
+                  {isSaving ? 'Saving…' : 'Save'}
+                </button>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
   );

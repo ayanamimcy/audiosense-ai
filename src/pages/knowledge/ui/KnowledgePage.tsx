@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useAppDataContext } from '@/contexts/AppDataContext';
-import { useKnowledgeChat } from '@/hooks/useKnowledgeChat';
-import { useMentions } from '@/hooks/useMentions';
-import { DesktopSidebar, HistoryDrawer } from '@/components/KnowledgeBase/ConversationSidebar';
-import { KnowledgeChatPanel } from '@/components/KnowledgeBase/KnowledgeChatPanel';
-import type { KnowledgeMessage, MentionRef } from '@/types';
+import { useAppDataContext } from '@/app/providers/app-data-context';
+import { useKnowledgeChat, useMentions } from '@/features/knowledge-chat';
+import { DesktopSidebar, HistoryDrawer, KnowledgeChatPanel } from '@/widgets/knowledge-chat/ui';
+import type { KnowledgeMessage, MentionRef } from '@/entities/knowledge';
 
 function extractMentionsFromMessages(messages: KnowledgeMessage[]): MentionRef[] {
   const seen = new Map<string, MentionRef>();
@@ -87,9 +85,9 @@ export function KnowledgeBase({
   };
 
   return (
-    <div className="h-full flex gap-4">
-      {/* PC: persistent sidebar (hidden on mobile) */}
-      <div className="hidden lg:block w-[280px] shrink-0">
+    <div className="flex h-full">
+      {/* Desktop: conversation list (mobile uses the history drawer) */}
+      <div className="hidden w-64 shrink-0 border-r border-stone-200 lg:block">
         <DesktopSidebar
           conversations={conversations}
           activeId={activeConversationId}
@@ -100,8 +98,7 @@ export function KnowledgeBase({
         />
       </div>
 
-      {/* Chat panel (full width on mobile, flex-1 on PC) */}
-      <div className="flex-1 min-w-0">
+      <div className="min-w-0 flex-1">
         <KnowledgeChatPanel
           messages={messages}
           isStreaming={isStreaming}

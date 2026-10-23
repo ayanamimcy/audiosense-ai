@@ -1,77 +1,49 @@
 import { useEffect, useState } from 'react';
-import { FileAudio, Link2, Loader2 } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 import { apiJson } from '@/shared/api/base';
 
 interface RelatedTask {
   id: string;
   originalName: string;
-  tags: string[];
-  notebookId?: string | null;
   score: number;
 }
 
-export function RelatedRecordings({
-  taskId,
-  onNavigate,
-}: {
-  taskId: string;
-  onNavigate: (taskId: string) => void;
-}) {
+export function RelatedRecordings({ taskId }: { taskId: string }) {
+  const { search } = useLocation();
   const [related, setRelated] = useState<RelatedTask[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    setIsLoading(true);
+    let cancelled = false;
+    setRelated([]);
     void apiJson<RelatedTask[]>(`/api/tasks/${taskId}/related`)
-      .then(setRelated)
-      .catch(() => setRelated([]))
-      .finally(() => setIsLoading(false));
+      .then((items) => {
+        if (!cancelled) setRelated(items);
+      })
+      .catch(() => {
+        if (!cancelled) setRelated([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [taskId]);
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-slate-400 py-3">
-        <Loader2 className="w-4 h-4 animate-spin" />
-        Finding related recordings...
-      </div>
-    );
-  }
 
   if (related.length === 0) return null;
 
   return (
-    <div className="mt-4 pt-4 border-t border-slate-100">
-      <div className="flex items-center gap-2 text-sm font-medium text-slate-700 mb-3">
-        <Link2 className="w-4 h-4" />
-        Related Recordings
-      </div>
-      <div className="space-y-1.5">
+    <section className="mt-8">
+      <h3 className="mb-2 text-[13px] font-semibold text-stone-600">Related</h3>
+      <div className="flex flex-wrap gap-2">
         {related.map((task) => (
-          <button
+          <Link
             key={task.id}
-            type="button"
-            onClick={() => onNavigate(task.id)}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-left hover:bg-indigo-50 hover:border-indigo-200 transition-colors"
+            to={{ pathname: `/notebook/${task.id}`, search }}
+            title={`${Math.round(task.score * 100)}% match`}
+            className="max-w-full truncate rounded-lg border border-stone-200 bg-white px-3 py-1.5 text-sm text-stone-800 hover:bg-stone-50"
           >
-            <FileAudio className="w-4 h-4 text-slate-400 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-slate-800 truncate">{task.originalName}</p>
-              {task.tags.length > 0 && (
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {task.tags.slice(0, 3).map((tag) => (
-                    <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-500">
-                      #{tag}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-            <span className="text-[10px] text-slate-400 shrink-0">
-              {Math.round(task.score * 100)}%
-            </span>
-          </button>
+            {task.originalName}
+          </Link>
         ))}
       </div>
-    </div>
+    </section>
   );
 }

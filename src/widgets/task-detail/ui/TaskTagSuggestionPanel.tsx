@@ -8,8 +8,8 @@ import {
   getTaskTagSuggestionError,
   getTaskTagSuggestions,
   isTaskTagSuggestionGenerating,
-} from '@/lib/taskTagSuggestions';
-import type { Task } from '@/types';
+  type Task,
+} from '@/entities/task';
 
 type TaskTagSuggestionPanelMode = 'desktop-popover' | 'inline';
 
@@ -44,7 +44,7 @@ function parseCustomTagInput(value: string) {
 }
 
 function SkeletonTag() {
-  return <span className="h-8 animate-pulse rounded-full bg-slate-100" />;
+  return <span className="h-8 animate-pulse rounded-full bg-stone-100" />;
 }
 
 export function TaskTagSuggestionPanel({
@@ -290,17 +290,17 @@ export function TaskTagSuggestionPanel({
   const panel = (
     <div
       className={cn(
-        'flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.12)]',
+        'flex flex-col overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-[0_18px_50px_rgba(15,23,42,0.12)]',
         mode === 'desktop-popover'
           ? 'w-full max-h-full'
           : useFloatingMobilePanel
-            ? 'fixed left-1/2 top-1/2 z-50 w-[min(26rem,calc(100vw-1.5rem))] max-h-[min(26rem,calc(100dvh-8rem))] -translate-x-1/2 -translate-y-1/2 rounded-[28px]'
+            ? 'fixed left-1/2 top-1/2 z-50 w-[min(26rem,calc(100vw-1.5rem))] max-h-[min(26rem,calc(100dvh-8rem))] -transtone-x-1/2 -transtone-y-1/2 rounded-[28px]'
             : 'w-full max-w-none max-h-[min(28rem,calc(100dvh-16rem))]',
       )}
     >
       {useFloatingMobilePanel ? (
         <div className="pt-3">
-          <div className="mx-auto h-1.5 w-12 rounded-full bg-slate-200" />
+          <div className="mx-auto h-1.5 w-12 rounded-full bg-stone-200" />
         </div>
       ) : null}
       <div className={cn('space-y-4 overflow-y-auto custom-scrollbar', useFloatingMobilePanel ? 'p-3.5 pt-3' : 'p-4')}>
@@ -308,9 +308,9 @@ export function TaskTagSuggestionPanel({
           <div>
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-indigo-600" />
-              <p className="text-sm font-semibold text-slate-900">AI tag suggestions</p>
+              <p className="text-sm font-semibold text-stone-900">AI tag suggestions</p>
             </div>
-            <p className="mt-1 text-xs text-slate-500">
+            <p className="mt-1 text-xs text-stone-500">
               Pick the tags you want to add, or mix in your own.
             </p>
           </div>
@@ -318,7 +318,7 @@ export function TaskTagSuggestionPanel({
             <button
               type="button"
               onClick={() => setIsOpen(false)}
-              className="rounded-full p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+              className="rounded-full p-1 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-600"
               aria-label="Close tag suggestions"
             >
               <X className="w-4 h-4" />
@@ -327,16 +327,16 @@ export function TaskTagSuggestionPanel({
         </div>
 
         {triggerBusy ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+          <div className="rounded-2xl border border-stone-200 bg-stone-50/80 p-3">
             <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm text-slate-600">
+              <div className="flex items-center gap-2 text-sm text-stone-600">
                 <Loader2 className="w-4 h-4 animate-spin text-indigo-600" />
                 <span>Suggesting tags...</span>
               </div>
               <button
                 type="button"
                 onClick={() => void handleDismiss()}
-                className="text-xs text-slate-500 hover:text-slate-700 transition-colors"
+                className="text-xs text-stone-500 hover:text-stone-700 transition-colors"
               >
                 Dismiss
               </button>
@@ -365,10 +365,10 @@ export function TaskTagSuggestionPanel({
         {!triggerBusy && suggestedTags.length > 0 ? (
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
-              <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">
+              <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-400">
                 Suggested
               </p>
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-stone-500">
                 {selectedCount > 0 ? `${selectedCount} ready to add` : 'Select tags or accept all'}
               </p>
             </div>
@@ -385,7 +385,7 @@ export function TaskTagSuggestionPanel({
                     className={cn(
                       'inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
                       selected
-                        ? 'border-indigo-600 bg-indigo-600 text-white shadow-sm'
+                        ? 'border-stone-900 bg-stone-900 text-white shadow-sm'
                         : 'border-dashed border-indigo-200 bg-indigo-50/60 text-indigo-700 hover:bg-indigo-100',
                     )}
                   >
@@ -400,7 +400,7 @@ export function TaskTagSuggestionPanel({
 
         {!triggerBusy && selectedCustomTags.length > 0 ? (
           <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-400">
               Custom
             </p>
             <div className="flex flex-wrap gap-2">
@@ -411,7 +411,7 @@ export function TaskTagSuggestionPanel({
                   onClick={() =>
                     setSelectedTags((current) => current.filter((item) => toTagKey(item) !== toTagKey(tag)))
                   }
-                  className="inline-flex items-center gap-1.5 rounded-full border border-slate-300 bg-slate-900 px-3 py-1.5 text-xs font-medium text-white"
+                  className="inline-flex items-center gap-1.5 rounded-full border border-stone-300 bg-stone-900 px-3 py-1.5 text-xs font-medium text-white"
                 >
                   <X className="w-3 h-3" />
                   <span>#{tag}</span>
@@ -423,7 +423,7 @@ export function TaskTagSuggestionPanel({
 
         {!triggerBusy ? (
           <div className="space-y-2">
-            <p className="text-xs font-medium uppercase tracking-[0.12em] text-slate-400">
+            <p className="text-xs font-medium uppercase tracking-[0.12em] text-stone-400">
               Add custom tag
             </p>
             <div className="flex items-center gap-2">
@@ -438,13 +438,13 @@ export function TaskTagSuggestionPanel({
                   }
                 }}
                 placeholder="product review, podcast"
-                className="h-10 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-700 outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
+                className="h-10 flex-1 rounded-xl border border-stone-200 bg-stone-50 px-3 text-sm text-stone-700 outline-none transition focus:border-indigo-300 focus:bg-white focus:ring-2 focus:ring-indigo-100"
               />
               <button
                 type="button"
                 onClick={handleCustomTagAdd}
                 disabled={!customTagInput.trim()}
-                className="inline-flex h-10 items-center gap-1 rounded-xl border border-slate-200 bg-white px-3 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-10 items-center gap-1 rounded-xl border border-stone-200 bg-white px-3 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Plus className="w-3.5 h-3.5" />
                 Add
@@ -458,7 +458,7 @@ export function TaskTagSuggestionPanel({
             type="button"
             onClick={() => void handleApply()}
             disabled={isSubmitting !== null || selectedCount === 0}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 rounded-xl bg-stone-900 px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Wand2 className="w-3.5 h-3.5" />
             {selectedCount === 0
@@ -470,7 +470,7 @@ export function TaskTagSuggestionPanel({
               type="button"
               onClick={handleSelectAll}
               disabled={isSubmitting !== null || suggestedTags.every((tag) => selectedTagKeys.has(toTagKey(tag)))}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Accept all
             </button>
@@ -479,7 +479,7 @@ export function TaskTagSuggestionPanel({
             type="button"
             onClick={() => void handleGenerate()}
             disabled={isSubmitting !== null}
-            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-700 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {suggestedTags.length > 0 || suggestionError ? 'Regenerate' : 'Generate'}
           </button>
@@ -488,7 +488,7 @@ export function TaskTagSuggestionPanel({
               type="button"
               onClick={() => void handleDismiss()}
               disabled={isSubmitting !== null}
-              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-xs font-medium text-stone-500 transition-colors hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Dismiss
             </button>
@@ -521,7 +521,7 @@ export function TaskTagSuggestionPanel({
                 ? 'border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50'
                 : suggestionError
                   ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
-                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+                  : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50',
           )}
         >
           {triggerBusy ? (
@@ -574,7 +574,7 @@ export function TaskTagSuggestionPanel({
                 ? 'border-indigo-200 bg-white text-indigo-700 hover:bg-indigo-50'
                 : suggestionError
                   ? 'border-red-200 bg-red-50 text-red-700 hover:bg-red-100'
-                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50',
+                  : 'border-stone-200 bg-white text-stone-700 hover:bg-stone-50',
           )}
         >
           {triggerBusy ? (
@@ -590,7 +590,7 @@ export function TaskTagSuggestionPanel({
         <>
           <button
             type="button"
-            className="fixed inset-0 z-40 bg-slate-900/20 backdrop-blur-[1px]"
+            className="fixed inset-0 z-40 bg-stone-900/20 backdrop-blur-[1px]"
             aria-label="Close tag suggestions"
             onClick={() => setIsOpen(false)}
           />

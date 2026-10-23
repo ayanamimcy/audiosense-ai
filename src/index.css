@@ -1,6 +1,17 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+@theme {
+  --color-canvas: #f6f6f4;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+body {
+  background-color: var(--color-canvas);
+  color: var(--color-stone-900);
+  -webkit-font-smoothing: antialiased;
+}
+
 :root {
   --mobile-bottom-nav-height: 84px;
 }
@@ -15,23 +26,9 @@
     padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
   }
 
-  .pb-safe {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-
   @media (max-width: 1023px) {
     .mobile-main-scroll-region {
       bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom));
-    }
-  }
-
-  .batch-action-bar {
-    bottom: calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom) + 20px);
-  }
-
-  @media (min-width: 1024px) {
-    .batch-action-bar {
-      bottom: 0;
     }
   }
 
@@ -43,10 +40,10 @@
     background: transparent;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #cbd5e1;
+    background: #d6d3d1;
     border-radius: 10px;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8;
+    background: #a8a29e;
   }
 }

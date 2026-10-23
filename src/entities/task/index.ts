@@ -14,6 +14,13 @@ export {
   canTaskGenerateTagSuggestions,
 } from './model/task-tag-suggestions';
 export {
+  getTaskStatusBadge,
+  TASK_STATUS_TONE_CLASS,
+  isTaskActive,
+  formatTaskDuration,
+  type TaskStatusTone,
+} from './lib/status';
+export {
   isVideoTask,
   getTaskMediaUrl,
   getTaskSubtitleUrl,

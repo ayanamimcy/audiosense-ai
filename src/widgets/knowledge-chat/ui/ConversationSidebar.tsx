@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, MessageSquare, MessageSquarePlus, Pencil, Search, Trash2, X } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
-import type { KnowledgeConversation } from '@/types';
+import type { KnowledgeConversation } from '@/entities/knowledge';
 
 function groupConversations(conversations: KnowledgeConversation[]) {
   const now = Date.now();
@@ -72,12 +72,12 @@ function ConversationItem({
             if (e.key === 'Escape') { setEditValue(conv.title); setIsEditing(false); }
           }}
           onBlur={handleSubmit}
-          className="flex-1 min-w-0 px-2 py-1 text-sm rounded-lg border border-indigo-300 bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          className="flex-1 min-w-0 px-2 py-1 text-sm rounded-lg border border-stone-300 bg-white focus:outline-none focus:ring-1 focus:ring-stone-900/10"
         />
-        <button type="button" onClick={handleSubmit} className="p-1 text-indigo-600 hover:bg-indigo-50 rounded">
+        <button type="button" onClick={handleSubmit} className="p-1 text-stone-900 hover:bg-stone-100 rounded">
           <Check className="w-3.5 h-3.5" />
         </button>
-        <button type="button" onClick={() => { setEditValue(conv.title); setIsEditing(false); }} className="p-1 text-slate-400 hover:bg-slate-100 rounded">
+        <button type="button" onClick={() => { setEditValue(conv.title); setIsEditing(false); }} className="p-1 text-stone-400 hover:bg-stone-100 rounded">
           <X className="w-3.5 h-3.5" />
         </button>
       </div>
@@ -90,25 +90,25 @@ function ConversationItem({
       onClick={onSelect}
       className={cn(
         'group w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-left transition-colors',
-        isActive ? 'bg-indigo-50' : 'hover:bg-slate-50',
+        isActive ? 'bg-stone-200/70' : 'hover:bg-stone-100',
       )}
     >
-      <MessageSquare className={cn('w-4 h-4 shrink-0', isActive ? 'text-indigo-500' : 'text-slate-400')} />
-      <p className={cn('text-sm truncate flex-1', isActive ? 'text-indigo-900 font-medium' : 'text-slate-700')}>
+      <MessageSquare className={cn('w-4 h-4 shrink-0', isActive ? 'text-stone-700' : 'text-stone-400')} />
+      <p className={cn('text-sm truncate flex-1', isActive ? 'text-stone-900 font-medium' : 'text-stone-700')}>
         {conv.title}
       </p>
       <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); setEditValue(conv.title); setIsEditing(true); }}
-          className="p-1 text-slate-400 hover:text-indigo-600 rounded transition-colors"
+          className="p-1 text-stone-400 hover:text-stone-900 rounded transition-colors"
         >
           <Pencil className="w-3 h-3" />
         </button>
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onDelete(); }}
-          className="p-1 text-slate-400 hover:text-red-500 rounded transition-colors"
+          className="p-1 text-stone-400 hover:text-red-500 rounded transition-colors"
         >
           <Trash2 className="w-3 h-3" />
         </button>
@@ -140,7 +140,7 @@ function ConversationList({
   if (groups.length === 0) {
     return (
       <div className="py-12 text-center">
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-stone-400">
           {searchQuery ? 'No matches found.' : 'No conversations yet.'}
         </p>
       </div>
@@ -151,7 +151,7 @@ function ConversationList({
     <>
       {groups.map((group) => (
         <div key={group.label} className="mb-3">
-          <p className="text-xs font-medium text-slate-400 px-2 mb-1">{group.label}</p>
+          <p className="text-xs font-medium text-stone-400 px-2 mb-1">{group.label}</p>
           {group.items.map((conv) => (
             <ConversationItem
               key={conv.id}
@@ -188,12 +188,12 @@ export function DesktopSidebar({
   const [searchQuery, setSearchQuery] = useState('');
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 rounded-2xl border border-slate-200">
-      <div className="p-3 border-b border-slate-200">
+    <div className="flex h-full flex-col">
+      <div className="p-3">
         <button
           type="button"
           onClick={onNew}
-          className="w-full flex items-center gap-2 px-4 py-2.5 rounded-xl border border-slate-200 bg-white text-sm font-medium text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 transition-colors"
+          className="w-full flex items-center justify-center gap-2 h-10 rounded-xl bg-stone-900 text-sm font-medium text-white hover:bg-stone-800 transition-colors"
         >
           <MessageSquarePlus className="w-4 h-4" />
           New conversation
@@ -201,14 +201,14 @@ export function DesktopSidebar({
       </div>
 
       <div className="px-3 py-2">
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200">
-          <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-stone-200">
+          <Search className="w-3.5 h-3.5 text-stone-400 shrink-0" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder="Search conversations..."
-            className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+            className="flex-1 bg-transparent text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none"
           />
         </div>
       </div>
@@ -276,23 +276,23 @@ export function HistoryDrawer({
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
       <div className="fixed inset-x-0 bottom-0 z-50 bg-white rounded-t-2xl shadow-2xl max-h-[80vh] flex flex-col">
         <div className="flex justify-center pt-3 pb-1">
-          <div className="w-10 h-1 rounded-full bg-slate-300" />
+          <div className="w-10 h-1 rounded-full bg-stone-300" />
         </div>
 
-        <div className="flex items-center justify-between px-5 py-2 border-b border-slate-100">
-          <h2 className="text-base font-semibold text-slate-900">History</h2>
+        <div className="flex items-center justify-between px-5 py-2 border-b border-stone-100">
+          <h2 className="text-base font-semibold text-stone-900">History</h2>
           <div className="flex items-center gap-1">
             <button
               type="button"
               onClick={() => { onNew(); onClose(); }}
-              className="p-2 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+              className="p-2 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-lg transition-colors"
             >
               <MessageSquarePlus className="w-5 h-5" />
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="p-2 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+              className="p-2 text-stone-500 hover:text-stone-700 hover:bg-stone-100 rounded-lg transition-colors"
             >
               <X className="w-5 h-5" />
             </button>
@@ -300,15 +300,15 @@ export function HistoryDrawer({
         </div>
 
         <div className="px-4 py-3">
-          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-slate-100">
-            <Search className="w-4 h-4 text-slate-400 shrink-0" />
+          <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-stone-100">
+            <Search className="w-4 h-4 text-stone-400 shrink-0" />
             <input
               ref={searchRef}
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Search"
-              className="flex-1 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+              className="flex-1 bg-transparent text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none"
             />
           </div>
         </div>

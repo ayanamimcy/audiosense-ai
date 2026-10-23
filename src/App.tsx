@@ -1,18 +1,14 @@
-import React, { Component, lazy, Suspense, useCallback, useMemo, useRef } from 'react';
+import { Component, lazy, Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { ErrorInfo, ReactNode } from 'react';
 import { BrowserRouter, Navigate, Routes, Route, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { AlertTriangle, ArrowLeft, FileAudio, Loader2, RefreshCw } from 'lucide-react';
-import { cn } from './lib/utils';
-import { storeUser } from './api';
-import { useAuth } from './hooks/useAuth';
-import { useAppData } from './hooks/useAppData';
-import { useTaskPolling } from './hooks/useTaskPolling';
-import { AuthProvider, useAuthContext } from './contexts/AuthContext';
-import { AppDataProvider, useAppDataContext, type AppDataContextValue } from './contexts/AppDataContext';
-import { AppShell } from './layouts/AppShell';
-import { TaskDetail } from './components/TaskDetail';
-import { Login } from './components/Login';
-import { RecordingDraftProvider } from './features/recording-draft/model/recording-draft-context';
+import { AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
+import { AppDataProvider, useAppDataContext, type AppDataContextValue } from '@/app/providers/app-data-context';
+import { useAppData } from '@/app/providers/useAppData';
+import { AuthProvider, LoginForm, storeUser, useAuth, useAuthContext } from '@/features/auth';
+import { NewRecordingProvider, useNewRecording, type NewRecordingMode } from '@/features/new-recording';
+import { LOGOUT_DESTINATION, RecordingDraftProvider } from '@/features/recording-draft/model/recording-draft-context';
+import { useTaskPolling } from '@/features/task-polling';
+import { AppShell, canLeaveCurrentPage } from '@/widgets/app-shell/ui';
 
 // --- Route-level code splitting: each page is loaded on demand ---
 // This reduces the initial JS bundle significantly. Each lazy-loaded page becomes its own chunk.
@@ -20,23 +16,14 @@ const NotebookView = lazy(() => import('@/pages/notebook/ui/NotebookPage'));
 const KnowledgeBase = lazy(() =>
   import('@/pages/knowledge/ui/KnowledgePage').then((m) => ({ default: m.KnowledgeBase })),
 );
-const UploadPage = lazy(() =>
-  import('@/pages/upload/ui/UploadPage').then((m) => ({ default: m.UploadPage })),
-);
-const RecordPage = lazy(() =>
-  import('@/pages/record/ui/RecordPage').then((m) => ({ default: m.RecordPage })),
-);
 const SettingsPage = lazy(() =>
   import('@/pages/settings/ui/SettingsPage').then((m) => ({ default: m.SettingsPage })),
-);
-const SummaryPromptPage = lazy(() =>
-  import('@/pages/prompts/ui/SummaryPromptPage').then((m) => ({ default: m.SummaryPromptPage })),
 );
 
 function RouteFallback() {
   return (
-    <div className="flex-1 flex items-center justify-center text-slate-400">
-      <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+    <div className="flex-1 flex items-center justify-center text-stone-400">
+      <Loader2 className="w-6 h-6 animate-spin text-stone-400" />
     </div>
   );
 }
@@ -85,9 +72,9 @@ class RouteErrorBoundary extends Component<{ children: ReactNode }, RouteErrorBo
 
     const isChunkError = isChunkLoadError(this.state.error);
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-slate-500 p-8 text-center">
+      <div className="flex-1 flex flex-col items-center justify-center text-stone-500 p-8 text-center">
         <AlertTriangle className="w-10 h-10 mb-4 text-amber-500" />
-        <h3 className="text-lg font-semibold text-slate-800">
+        <h3 className="text-lg font-semibold text-stone-800">
           {isChunkError ? 'Update available' : 'Something went wrong'}
         </h3>
         <p className="text-sm mt-1 max-w-md">
@@ -100,7 +87,7 @@ class RouteErrorBoundary extends Component<{ children: ReactNode }, RouteErrorBo
             <button
               type="button"
               onClick={this.handleRetry}
-              className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 transition-colors"
+              className="px-4 py-2 text-sm font-medium text-stone-700 bg-white border border-stone-200 rounded-lg hover:bg-stone-50 transition-colors"
             >
               Retry
             </button>
@@ -108,7 +95,7 @@ class RouteErrorBoundary extends Component<{ children: ReactNode }, RouteErrorBo
           <button
             type="button"
             onClick={this.handleRefresh}
-            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-lg hover:bg-indigo-700 transition-colors shadow-sm"
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-stone-900 rounded-lg hover:bg-stone-800 transition-colors"
           >
             <RefreshCw className="w-4 h-4" />
             Refresh
@@ -119,125 +106,13 @@ class RouteErrorBoundary extends Component<{ children: ReactNode }, RouteErrorBo
   }
 }
 
-// --- Task panel layout (upload/record/tasks tabs share this) ---
-// Mobile: Master-Detail — list hides when task selected, detail goes full-width with back button.
-// Desktop: side-by-side grid (1/3 list + 2/3 detail).
-
-function TaskPanelLayout({
-  left,
-  onMobileBack,
-}: {
-  left: React.ReactNode;
-  onMobileBack?: () => void;
-}) {
-  const { selectedTask, selectedTaskLoading, selectTask, refreshTasksAndSelection, fetchTasks, fetchTags } = useAppDataContext();
-
-  const handleMobileBack = () => {
-    void selectTask(null);
-    onMobileBack?.();
-  };
-
-  const handleUpdateTask = useCallback(async () => {
-    if (!selectedTask) return;
-    await refreshTasksAndSelection(selectedTask.id);
-    await fetchTags();
-  }, [selectedTask, refreshTasksAndSelection, fetchTags]);
-
-  const handleDeleteTask = useCallback(async () => {
-    await selectTask(null);
-    await fetchTasks();
-    await fetchTags();
-  }, [selectTask, fetchTasks, fetchTags]);
-
-  return (
-    <div className="flex flex-col lg:grid lg:grid-cols-3 gap-6 h-full lg:overflow-hidden">
-      {/* List panel — hidden on mobile when a task is selected */}
-      <div className={cn(
-        "lg:col-span-1 space-y-6 lg:overflow-y-auto pr-2 custom-scrollbar shrink-0",
-        selectedTask ? "hidden lg:block" : "block"
-      )}>
-        {left}
-      </div>
-
-      {/* Detail panel — full-width on mobile when task selected */}
-      <div className={cn(
-        "lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full min-h-0 shrink-0",
-        selectedTask ? "flex" : "hidden lg:flex"
-      )}>
-        {selectedTask ? (
-          <>
-            {/* Mobile back button */}
-            <div className="lg:hidden flex items-center gap-3 px-4 py-3 border-b border-slate-200 bg-white shrink-0">
-              <button
-                onClick={handleMobileBack}
-                className="p-1.5 -ml-1.5 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <h2 className="text-sm font-semibold text-slate-900 truncate flex-1">
-                {selectedTask.originalName}
-              </h2>
-            </div>
-            <div className="flex-1 min-h-0 overflow-hidden">
-              <TaskDetail
-                task={selectedTask}
-                onUpdateTask={handleUpdateTask}
-                onDeleteTask={handleDeleteTask}
-              />
-            </div>
-          </>
-        ) : selectedTaskLoading ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center bg-slate-50/50">
-            <Loader2 className="w-10 h-10 mb-4 animate-spin text-indigo-500" />
-            <h3 className="text-lg font-medium text-slate-600">Loading task</h3>
-            <p className="text-sm mt-1">Fetching transcript, segments, and summary details.</p>
-          </div>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-slate-400 p-8 text-center bg-slate-50/50">
-            <FileAudio className="w-16 h-16 mb-4 opacity-20 text-indigo-500" />
-            <h3 className="text-lg font-medium text-slate-600">No recording selected</h3>
-            <p className="text-sm mt-1">Choose a recording to review transcript, speakers, summary, and chat.</p>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// --- Upload success handler ---
-
-function UploadTabContent() {
-  const navigate = useNavigate();
-  const { refreshTasksAndSelection, fetchTags } = useAppDataContext();
-
-  const handleUploadSuccess = useCallback(async (taskId?: string) => {
-    await refreshTasksAndSelection(taskId);
-    await fetchTags();
-    if (taskId) navigate(`/notebook/${taskId}`);
-  }, [refreshTasksAndSelection, fetchTags, navigate]);
-
-  return (
-    <TaskPanelLayout
-      left={<UploadPage onUploadSuccess={handleUploadSuccess} />}
-    />
-  );
-}
-
-function RecordTabContent() {
-  const navigate = useNavigate();
-  const { refreshTasksAndSelection, fetchTags } = useAppDataContext();
-
-  const handleUploadSuccess = useCallback(async (taskId?: string) => {
-    await refreshTasksAndSelection(taskId);
-    await fetchTags();
-    if (taskId) navigate(`/notebook/${taskId}`);
-  }, [refreshTasksAndSelection, fetchTags, navigate]);
-
-  return (
-    <TaskPanelLayout
-      left={<RecordPage onUploadSuccess={handleUploadSuccess} />}
-    />
-  );
+// Old /upload and /record links open the New recording dialog over the recordings list.
+function OpenNewRecordingRoute({ mode }: { mode: NewRecordingMode }) {
+  const { openNewRecording } = useNewRecording();
+  useEffect(() => {
+    openNewRecording(mode);
+  }, [mode, openNewRecording]);
+  return <Navigate to="/notebook" replace />;
 }
 
 // --- Main app shell with routes ---
@@ -263,6 +138,13 @@ function AuthenticatedApp() {
     [setCurrentUser],
   );
 
+  // A recording waiting to upload lives only in this tab; let it warn before signing out.
+  const guardedLogout = useCallback(() => {
+    if (canLeaveCurrentPage(LOGOUT_DESTINATION)) {
+      void handleLogout();
+    }
+  }, [handleLogout]);
+
   const handleSettingsSaved = useCallback(async () => {
     await fetchSettings();
     await fetchCapabilities();
@@ -272,7 +154,7 @@ function AuthenticatedApp() {
   return (
     <AppShell
       currentUser={currentUser}
-      onLogout={() => void handleLogout()}
+      onLogout={guardedLogout}
       mainScrollRef={mainScrollRef}
     >
       <RouteErrorBoundary>
@@ -284,22 +166,21 @@ function AuthenticatedApp() {
               path="/knowledge"
               element={<KnowledgeBase onSelectTask={handleSelectKnowledgeTask} />}
             />
-            <Route path="/upload" element={<UploadTabContent />} />
-            <Route path="/record" element={<RecordTabContent />} />
+            <Route path="/upload" element={<OpenNewRecordingRoute mode="upload" />} />
+            <Route path="/record" element={<OpenNewRecordingRoute mode="record" />} />
             <Route path="/tasks" element={<Navigate to="/notebook" replace />} />
             <Route path="/tasks/:id" element={<TasksRedirect />} />
-            <Route path="/prompts" element={
-              <div className="h-full pb-6"><SummaryPromptPage /></div>
-            } />
-            <Route path="/settings" element={
-              <div className="h-full pb-6">
+            <Route path="/prompts" element={<Navigate to="/settings?section=templates" replace />} />
+            <Route
+              path="/settings"
+              element={(
                 <SettingsPage
-                  onLogout={() => void handleLogout()}
+                  onLogout={guardedLogout}
                   onUserUpdated={handleUserUpdated}
                   onSettingsSaved={handleSettingsSaved}
                 />
-              </div>
-            } />
+              )}
+            />
           </Routes>
         </Suspense>
       </RouteErrorBoundary>
@@ -329,7 +210,8 @@ function AppRoot() {
     refreshTasksAndSelection, refreshAll, clearAll,
   } = appData;
   const isNotebookDetailRoute = pathname.startsWith('/notebook/');
-  const isNotebookListRoute = pathname === '/notebook';
+  // The list stays visible next to the detail on desktop, so poll it on every /notebook route.
+  const isNotebookListRoute = pathname.startsWith('/notebook');
   useTaskPolling(
     currentUser,
     tasks,
@@ -374,9 +256,9 @@ function AppRoot() {
 
   if (authLoading) {
     return (
-      <div className="min-h-[100dvh] flex items-center justify-center bg-slate-50 text-slate-500">
+      <div className="min-h-[100dvh] flex items-center justify-center bg-canvas text-stone-500">
         <div className="flex items-center gap-3">
-          <Loader2 className="w-5 h-5 animate-spin text-indigo-600" />
+          <Loader2 className="w-5 h-5 animate-spin text-stone-500" />
           Loading workspace...
         </div>
       </div>
@@ -384,14 +266,16 @@ function AppRoot() {
   }
 
   if (!currentUser) {
-    return <Login onLogin={setCurrentUser} allowRegistration={publicConfig.auth.allowRegistration} />;
+    return <LoginForm onLogin={setCurrentUser} allowRegistration={publicConfig.auth.allowRegistration} />;
   }
 
   return (
     <AuthProvider value={authContextValue}>
       <AppDataProvider value={appDataContextValue}>
         <RecordingDraftProvider>
-          <AuthenticatedApp />
+          <NewRecordingProvider>
+            <AuthenticatedApp />
+          </NewRecordingProvider>
         </RecordingDraftProvider>
       </AppDataProvider>
     </AuthProvider>

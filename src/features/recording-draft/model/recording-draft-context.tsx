@@ -1,6 +1,10 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 
 export const RECORDING_NAVIGATION_EVENT = 'audiosense:before-navigation';
+/** Destination sent when the New recording dialog closes. */
+export const NEW_RECORDING_CLOSE_DESTINATION = 'new-recording:close';
+/** Destination sent before signing out — the only in-app action that drops the draft. */
+export const LOGOUT_DESTINATION = 'logout';
 
 interface RecordingDraftContextValue {
   pendingRecording: File | null;
@@ -23,7 +27,8 @@ export function RecordingDraftProvider({ children }: { children: React.ReactNode
       const destination = event instanceof CustomEvent
         ? String((event.detail as { destination?: string } | undefined)?.destination || '')
         : '';
-      if (destination === '/record') return;
+      // The draft lives in app state, so in-app navigation keeps it; only signing out loses it.
+      if (destination !== LOGOUT_DESTINATION) return;
 
       const confirmed = window.confirm(
         'A recording is waiting to upload and is only stored in this browser tab. Download it before signing out or closing the app. Continue?',
