@@ -9,10 +9,13 @@ import {
 const log = logger.child('task-queue');
 import {
   findActiveTaskJobRowByTaskId,
+  findExpiredProcessingTaskJobs,
   findTaskJobRowById,
   findNextQueuedTaskJob,
   insertTaskJobRow,
   markTaskJobProcessing,
+  updateExpiredTaskJob,
+  updateOwnedTaskJobRow,
   updateTaskJobRowByIdWhereStatus,
 } from '../../database/repositories/task-jobs-repository.js';
 import {
@@ -28,12 +31,23 @@ import { getUserSettings } from '../settings/settings.js';
 import { parseJsonField, type QueueStateRow, type TaskJobRow } from './task-types.js';
 import config from '../config.js';
 import { isTranscriptionCancelledError } from '../audio-engine/cancellation.js';
+import { isJobLeaseLostError, isJobOwnedBy } from './job-lease.js';
 
 const DEFAULT_PROVIDER = config.transcription.defaultProvider;
 const DEFAULT_QUEUE_NAME = 'transcription';
 const MAX_JOB_ATTEMPTS = 3;
 const RETRY_DELAY_MS = 15_000;
 export const QUEUE_RECOVERY_POLL_MS = 10_000;
+
+/**
+ * Updates a processing job only while the claiming worker still holds it. Jobs built
+ * without a workerId (older call sites, tests) fall back to the status-only guard.
+ */
+function updateProcessingJob(job: TaskJobRow, updates: Partial<TaskJobRow>) {
+  return job.workerId
+    ? updateOwnedTaskJobRow(job.id, job.workerId, updates)
+    : updateTaskJobRowByIdWhereStatus(job.id, ['processing'], updates);
+}
 
 function buildDefaultQueueState(now = Date.now()): QueueStateRow {
   return {
@@ -215,12 +229,17 @@ export async function claimNextJob(workerId: string) {
 }
 
 export async function completeJob(job: TaskJobRow) {
-  await updateTaskJobRowByIdWhereStatus(job.id, ['processing'], {
+  const updated = await updateProcessingJob(job, {
     status: 'completed',
+    lockedAt: null,
     updatedAt: Date.now(),
   });
+  if (!updated) {
+    return false;
+  }
 
   await clearQueuePause(job.id);
+  return true;
 }
 
 export async function cancelTaskJob(taskId: string) {
@@ -270,7 +289,7 @@ export async function failJob(job: TaskJobRow, error: unknown) {
 
   if (normalized.category === 'service') {
     const retryAt = now + nextAttemptCount * RETRY_DELAY_MS;
-    const updated = await updateTaskJobRowByIdWhereStatus(job.id, ['processing'], {
+    const updated = await updateProcessingJob(job, {
       status: shouldRetry ? 'queued' : 'blocked',
       attemptCount: nextAttemptCount,
       lastError: message,
@@ -299,9 +318,7 @@ export async function failJob(job: TaskJobRow, error: unknown) {
     return;
   }
 
-  await clearQueuePause(job.id);
-
-  const updated = await updateTaskJobRowByIdWhereStatus(job.id, ['processing'], {
+  const updated = await updateProcessingJob(job, {
     status: shouldRetry ? 'queued' : 'failed',
     attemptCount: nextAttemptCount,
     lastError: message,
@@ -315,12 +332,64 @@ export async function failJob(job: TaskJobRow, error: unknown) {
     return;
   }
 
+  await clearQueuePause(job.id);
+
   if (shouldRetry) {
     await markTaskQueued(job, message, now);
     return;
   }
 
   await markTaskFailed(job, message, now);
+}
+
+/**
+ * Crash recovery: a job stays `processing` only while its worker keeps the lease fresh.
+ * When a worker dies mid-job (OOM, SIGKILL, host restart) its heartbeat stops and the
+ * lease expires; any worker then puts the job back in the queue. The crash counts as an
+ * attempt, so a job that keeps killing workers ends as `failed` instead of looping.
+ */
+export async function reclaimExpiredJobs(now = Date.now(), leaseMs = config.worker.leaseMs) {
+  const expired = await findExpiredProcessingTaskJobs(now - leaseMs);
+  let reclaimed = 0;
+
+  for (const job of expired) {
+    const nextAttemptCount = Number(job.attemptCount || 0) + 1;
+    const shouldRetry = nextAttemptCount < MAX_JOB_ATTEMPTS;
+    const silentForSeconds = Math.round((now - Number(job.lockedAt || job.updatedAt || now)) / 1000);
+    const message = `Worker ${job.workerId || 'unknown'} stopped responding (no heartbeat for ${silentForSeconds}s).`;
+
+    const updated = await updateExpiredTaskJob(job, {
+      status: shouldRetry ? 'queued' : 'failed',
+      attemptCount: nextAttemptCount,
+      lastError: message,
+      lockedAt: null,
+      workerId: null,
+      runAfter: now,
+      updatedAt: now,
+    });
+    if (!updated) {
+      // Another worker reclaimed it first, or the owner's heartbeat landed just in time.
+      continue;
+    }
+
+    reclaimed += 1;
+    log.warn('Reclaimed job with expired lease', {
+      jobId: job.id,
+      taskId: job.taskId,
+      previousWorkerId: job.workerId,
+      attempt: nextAttemptCount,
+      requeued: shouldRetry,
+    });
+
+    if (shouldRetry) {
+      await markTaskQueued(job, message, now);
+    } else {
+      await clearQueuePause(job.id);
+      await markTaskFailed(job, `${message} Gave up after ${nextAttemptCount} attempts.`, now);
+    }
+  }
+
+  return reclaimed;
 }
 
 async function maybeRequeueBlockedJob(queueState: QueueStateRow) {
@@ -424,6 +493,12 @@ export async function runRecoveryCycle(workerId: string) {
   return runWorkerCycle(workerId);
 }
 
+async function hasLostOwnership(job: TaskJobRow) {
+  const current = await findTaskJobRowById(job.id);
+  // A cancelled job was not taken over — it still needs the normal cancellation cleanup.
+  return Boolean(current && current.status !== 'cancelled' && !isJobOwnedBy(current, job));
+}
+
 export async function runWorkerCycle(workerId: string) {
   const job = await claimNextJob(workerId);
   if (!job) {
@@ -432,8 +507,15 @@ export async function runWorkerCycle(workerId: string) {
 
   try {
     await processQueuedJob(job);
-    await completeJob(job);
+    if (!(await completeJob(job))) {
+      log.warn('Finished job no longer owned by this worker; result was not recorded twice', { workerId, jobId: job.id });
+    }
   } catch (error) {
+    if (isJobLeaseLostError(error) || (job.workerId && await hasLostOwnership(job))) {
+      // Someone else owns the job now; touching it would undo their work.
+      log.warn('Worker dropped job after losing its lease', { workerId, jobId: job.id });
+      return true;
+    }
     if (isTranscriptionCancelledError(error)) {
       log.info('Worker stopped cancelled job', { workerId, jobId: job.id });
       await cancelTaskJob(job.taskId);

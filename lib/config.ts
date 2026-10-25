@@ -96,6 +96,11 @@ const upload = Object.freeze({
 
 const worker = Object.freeze({
   idleMs: num(process.env.WORKER_IDLE_MS, 3000),
+  // A processing job is owned by a worker only while its lease is fresh. The worker
+  // refreshes the lease every heartbeat; a job whose lease is older than leaseMs is
+  // treated as abandoned (worker crashed or was killed) and is re-queued.
+  leaseMs: num(process.env.WORKER_LEASE_MS, 120_000),
+  heartbeatMs: num(process.env.WORKER_HEARTBEAT_MS, 15_000),
 });
 
 // ---------------------------------------------------------------------------
