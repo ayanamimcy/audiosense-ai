@@ -391,6 +391,7 @@ async function buildSuggestedTagsForTask(task: TaskRow, userSettings: Partial<Us
       historicalTags,
     },
     userSettings,
+    { userId: task.userId, taskId: task.id },
   );
 
   return finalizeSuggestedTags(rawTags, {

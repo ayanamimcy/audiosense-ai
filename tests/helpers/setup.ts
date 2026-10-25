@@ -38,6 +38,7 @@ export async function setupTestDb() {
     await db('task_associations').delete().catch(() => {});
     await db('task_chunks').delete().catch(() => {});
     await db('task_messages').delete().catch(() => {});
+    await db('llm_calls').delete().catch(() => {});
     await db('task_jobs').delete().catch(() => {});
     await db('tasks').delete().catch(() => {});
     await db('summary_prompts').delete().catch(() => {});

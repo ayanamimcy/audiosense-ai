@@ -30,9 +30,18 @@ AudioSense AI is split into a few clear responsibilities:
 
 High-level flow:
 
-```text
-Browser -> app(API) -> task_jobs queue -> worker -> audio-engine -> provider/local runtime
-                                 \-> SQLite / search index / transcript messages
+```mermaid
+flowchart LR
+  B[Browser<br/>React PWA] -->|upload / record| A[app<br/>Express API]
+  A -->|enqueue| Q[(task_jobs<br/>queue)]
+  W[worker<br/>lease + heartbeat] -->|claim| Q
+  W --> E[audio-engine<br/>provider chain + circuit breaker]
+  E --> L[local runtime<br/>Faster Whisper / WhisperX]
+  E --> O[OpenAI-compatible / Azure]
+  W -->|transcript, segments| D[(SQLite / PostgreSQL<br/>tasks, chunks, FTS, vectors)]
+  A -->|summaries, chat, Ask AI| M[LLM API]
+  A -->|one row per call| T[(llm_calls)]
+  A <-->|hybrid retrieval| D
 ```
 
 ## Core Features
@@ -61,9 +70,20 @@ Browser -> app(API) -> task_jobs queue -> worker -> audio-engine -> provider/loc
 ### Operations
 
 - User login / registration / sessions
-- Worker retries for failed jobs
-- Provider health tracking and circuit breaking
+- Worker retries for failed jobs, and crash recovery through job leases and heartbeats
+- Provider health tracking, circuit breaking, and fallback to the next configured provider
+- Per-call LLM tracing: latency, time to first token, token usage, errors, prompt version
 - Docker Compose deployment for app, worker, and CUDA runtime
+
+## Engineering Notes
+
+How the system is kept honest about reliability and quality:
+
+| Topic | What it covers | Verify it |
+|---|---|---|
+| [Worker crash recovery](docs/reliability.md) | Leases, heartbeats and fencing so a killed or frozen worker never strands or double-writes a job; provider fallback by error type | `npm run chaos:worker` kills and freezes real worker processes and checks the outcome |
+| [LLM observability](docs/observability.md) | One row per LLM call without storing content; usage, latency and cost estimates in Settings › System status | `tests/llm-observability.test.ts` |
+| [Evaluation](evaluation/README.md) | CER/WER and real-time factor per transcription configuration; Recall@k, MRR and timestamp hits per retrieval mode | `npm run eval:asr`, `npm run eval:retrieval`, `npm run eval:report` |
 
 ## Repository Layout
 
@@ -74,12 +94,13 @@ db.ts                       # Schema bootstrap and DB initialization
 
 lib/
 ├── config.ts               # Centralized configuration (single source of truth for all env vars)
-├── ai/                     # LLM calls, embeddings, query enhancement, reranking
+├── ai/                     # LLM calls + call tracing, embeddings, query enhancement, reranking
 ├── auth/                   # User auth, sessions, API tokens, encrypted settings
-├── audio-engine/           # Provider abstraction, normalization, speaker merge, subtitle split
+├── audio-engine/           # Provider abstraction and fallback chain, normalization, speaker merge, subtitle split
+├── evaluation/             # CER/WER and retrieval metrics
 ├── search/                 # Full-text + vector search, knowledge base, associations
 ├── settings/               # User settings schema, merge, and persistence
-├── tasks/                  # Task lifecycle: queue, processor, chat, uploads, subtitles
+├── tasks/                  # Task lifecycle: queue with job leases, processor, chat, uploads, subtitles
 ├── workspaces/             # Workspace creation and resolution
 └── shared/                 # Logger, text encoding, cross-cutting utilities
 
@@ -88,7 +109,9 @@ database/                   # Knex client, config, migrations, and repository mo
 routes/                     # Express route handlers (thin HTTP layer)
 src/                        # React frontend (Vite + Tailwind)
 python-runtime/             # Local WhisperX / diarization inference runtime
-scripts/                    # CLI utilities (user management, migrations, reindex)
+scripts/                    # CLI utilities (user management, migrations, reindex) and chaos experiments
+evaluation/                 # Transcription and retrieval evaluation harness, datasets format, reports
+docs/                       # Architecture, reliability and observability notes
 tests/                      # Node.js test runner tests
 ```
 
@@ -169,13 +192,13 @@ npm run dev:local-engine
 
 The repository includes:
 
-- [Dockerfile](/Users/chenyangm/Documents/github-project/audiosense-ai/Dockerfile)
+- [Dockerfile](Dockerfile)
   Shared Node image for `app` and `worker`
-- [docker-compose.yml](/Users/chenyangm/Documents/github-project/audiosense-ai/docker-compose.yml)
+- [docker-compose.yml](docker-compose.yml)
   Deployment-focused Compose file using images
-- [docker-compose.build.yml](/Users/chenyangm/Documents/github-project/audiosense-ai/docker-compose.build.yml)
+- [docker-compose.build.yml](docker-compose.build.yml)
   Local build override for source-based Docker builds
-- [python-runtime/Dockerfile.cuda](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime/Dockerfile.cuda)
+- [python-runtime/Dockerfile.cuda](python-runtime/Dockerfile.cuda)
   CUDA-ready Python runtime image
 
 ### Deploy with images
@@ -221,11 +244,11 @@ The Python runtime supports:
 
 Relevant files:
 
-- [python-runtime/src/local_audio_runtime/server.py](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime/src/local_audio_runtime/server.py)
-- [python-runtime/src/local_audio_runtime/model_manager.py](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime/src/local_audio_runtime/model_manager.py)
-- [python-runtime/src/local_audio_runtime/backends.py](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime/src/local_audio_runtime/backends.py)
-- [python-runtime/src/local_audio_runtime/diarization.py](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime/src/local_audio_runtime/diarization.py)
-- [python-runtime/src/local_audio_runtime/parallel_diarize.py](/Users/chenyangm/Documents/github-project/audiosense-ai/python-runtime/src/local_audio_runtime/parallel_diarize.py)
+- [python-runtime/src/local_audio_runtime/server.py](python-runtime/src/local_audio_runtime/server.py)
+- [python-runtime/src/local_audio_runtime/model_manager.py](python-runtime/src/local_audio_runtime/model_manager.py)
+- [python-runtime/src/local_audio_runtime/backends.py](python-runtime/src/local_audio_runtime/backends.py)
+- [python-runtime/src/local_audio_runtime/diarization.py](python-runtime/src/local_audio_runtime/diarization.py)
+- [python-runtime/src/local_audio_runtime/parallel_diarize.py](python-runtime/src/local_audio_runtime/parallel_diarize.py)
 
 ## Current Scope
 
@@ -240,7 +263,7 @@ Current practical boundaries:
 
 ## Database Workflow
 
-Database schema changes are managed through Knex migrations in [database/migrations](/Users/chenyangm/Documents/github-project/audiosense-ai/database/migrations).
+Database schema changes are managed through Knex migrations in [database/migrations](database/migrations).
 
 Common commands:
 

@@ -190,6 +190,7 @@ export async function streamKnowledgeChatMessage(
       onDelta(delta);
     },
     signal,
+    { userId },
   );
   fullContent = content || fullContent;
 

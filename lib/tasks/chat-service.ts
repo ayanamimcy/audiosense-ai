@@ -89,6 +89,7 @@ export async function handleChatMessage(userId: string, taskId: string, message:
     normalizedHistory,
     message,
     userSettings,
+    { userId, taskId },
   );
   const now = Date.now();
 
@@ -137,6 +138,7 @@ export async function handleStreamChat(
     userSettings,
     onDelta,
     signal,
+    { userId, taskId },
   );
 
   await insertTaskMessageRow({
@@ -281,6 +283,7 @@ export async function handleGenerateSummary(
         options.instructions,
         userSettings,
         resolvedPrompt,
+        { userId, taskId: task.id },
       );
       const latest = await findTaskRowById(task.id);
       if (

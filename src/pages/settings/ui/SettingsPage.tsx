@@ -18,6 +18,7 @@ import type { UserSettings } from '@/entities/settings';
 import type { AuthUser } from '@/entities/user';
 import { ApiTokensSection } from '@/features/api-tokens';
 import { useAuthContext } from '@/features/auth';
+import { LlmUsagePanel } from '@/features/llm-usage';
 import { SummaryTemplates } from '@/features/summary-templates';
 
 type SectionId =
@@ -722,6 +723,8 @@ export function SettingsPage({
           <span className="text-sm text-stone-600">{capabilities?.embeddings.configured ? capabilities.embeddings.model : 'Off'}</span>
         </div>
       </div>
+
+      <LlmUsagePanel />
 
       <SubHeading>Transcription providers</SubHeading>
       <div className="divide-y divide-stone-200 rounded-xl border border-stone-200">

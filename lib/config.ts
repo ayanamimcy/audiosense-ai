@@ -96,16 +96,47 @@ const upload = Object.freeze({
 
 const worker = Object.freeze({
   idleMs: num(process.env.WORKER_IDLE_MS, 3000),
+  // A processing job is owned by a worker only while its lease is fresh. The worker
+  // refreshes the lease every heartbeat; a job whose lease is older than leaseMs is
+  // treated as abandoned (worker crashed or was killed) and is re-queued.
+  leaseMs: num(process.env.WORKER_LEASE_MS, 120_000),
+  heartbeatMs: num(process.env.WORKER_HEARTBEAT_MS, 15_000),
 });
 
 // ---------------------------------------------------------------------------
 // LLM
 // ---------------------------------------------------------------------------
 
+export interface ModelPrice {
+  inputPerMTok: number;
+  outputPerMTok: number;
+}
+
+function parsePricing(raw: string | undefined): Record<string, ModelPrice> {
+  if (!raw?.trim()) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, Partial<ModelPrice>>;
+    const result: Record<string, ModelPrice> = {};
+    for (const [model, price] of Object.entries(parsed)) {
+      const input = Number(price?.inputPerMTok);
+      const output = Number(price?.outputPerMTok);
+      if (Number.isFinite(input) && Number.isFinite(output)) {
+        result[model] = { inputPerMTok: input, outputPerMTok: output };
+      }
+    }
+    return result;
+  } catch {
+    console.warn('LLM_PRICING_JSON is not valid JSON; cost estimates are disabled.');
+    return {};
+  }
+}
+
 const llm = Object.freeze({
   baseUrl: stripTrailingSlash(str(process.env.LLM_API_BASE_URL, 'https://api.openai.com/v1')),
   apiKey: str(process.env.LLM_API_KEY, '') || str(process.env.OPENAI_API_KEY, ''),
   model: str(process.env.LLM_MODEL, 'gpt-4o-mini'),
+  // Optional, for cost estimates in usage stats: {"<model>": {"inputPerMTok": 0.15, "outputPerMTok": 0.6}} (USD).
+  pricing: parsePricing(process.env.LLM_PRICING_JSON),
 });
 
 // ---------------------------------------------------------------------------

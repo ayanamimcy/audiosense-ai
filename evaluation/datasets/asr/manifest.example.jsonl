@@ -1,0 +1,6 @@
+// One clip per line. Copy to manifest.jsonl and point at your own recordings.
+// "reference" is a path to a hand-corrected transcript (relative to this file) or inline text.
+// "tags" let the report break results down, e.g. by noise, speaker count or domain terms.
+{"id": "mtg-01", "audio": "audio/mtg-01.wav", "reference": "references/mtg-01.txt", "language": "ja", "tags": ["meeting", "terms"]}
+{"id": "mtg-02", "audio": "audio/mtg-02.m4a", "reference": "references/mtg-02.txt", "language": "ja", "tags": ["meeting", "noisy"]}
+{"id": "talk-01", "audio": "audio/talk-01.mp3", "reference": "Today we will talk about speech recognition.", "language": "en", "tags": ["lecture"]}

@@ -11,6 +11,9 @@ import {
 } from '../../database/repositories/summary-prompts-repository.js';
 import { getEmbeddingsInfo } from '../../lib/ai/embeddings.js';
 import { getLlmInfo } from '../../lib/ai/llm.js';
+import { summarizeLlmUsage } from '../../lib/ai/llm-usage.js';
+import config from '../../lib/config.js';
+import { listLlmCallRowsForUserSince } from '../../database/repositories/llm-calls-repository.js';
 import { resetProviderCircuit } from '../../lib/audio-engine/routing.js';
 import { getAvailableTranscriptionProviders } from '../../lib/audio-engine/providers/index.js';
 import {
@@ -200,4 +203,13 @@ export async function listLlmModelsForUser(userId: string) {
     log.error('Failed to fetch LLM models', { error: error instanceof Error ? error.message : String(error) });
     return [];
   }
+}
+
+const MAX_USAGE_WINDOW_DAYS = 90;
+
+export async function getLlmUsageForUser(userId: string, days: number) {
+  const windowDays = Math.min(Math.max(Math.round(days) || 7, 1), MAX_USAGE_WINDOW_DAYS);
+  const since = Date.now() - windowDays * 24 * 60 * 60 * 1000;
+  const rows = await listLlmCallRowsForUserSince(userId, since);
+  return summarizeLlmUsage(rows, config.llm.pricing, since);
 }

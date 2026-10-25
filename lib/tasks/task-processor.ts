@@ -16,6 +16,7 @@ import {
   TranscriptionCancelledError,
   throwIfTranscriptionCancelled,
 } from '../audio-engine/cancellation.js';
+import { JobLeaseLostError, isJobLeaseLostError, isJobOwnedBy, startLeaseHeartbeat } from './job-lease.js';
 
 const uploadDir = config.upload.dir;
 
@@ -76,6 +77,10 @@ async function assertJobActive(job: TaskJobRow, signal?: AbortSignal) {
   if (!currentJob || !currentTask || currentJob.status === 'cancelled' || currentTask.status === 'cancelled') {
     throw new TranscriptionCancelledError();
   }
+  // Fencing: once the lease is reclaimed, this worker must not write results.
+  if (job.workerId && !isJobOwnedBy(currentJob, job)) {
+    throw new JobLeaseLostError();
+  }
 }
 
 function startCancellationWatcher(job: TaskJobRow, controller: AbortController) {
@@ -87,7 +92,7 @@ function startCancellationWatcher(job: TaskJobRow, controller: AbortController) 
     polling = true;
     void assertJobActive(job, controller.signal)
       .catch((error) => {
-        if (error instanceof TranscriptionCancelledError) {
+        if (error instanceof TranscriptionCancelledError || isJobLeaseLostError(error)) {
           controller.abort();
         }
       })
@@ -195,6 +200,11 @@ async function finalizePrimaryTask(ctx: TaskProcessingContext) {
 export async function processQueuedJob(job: TaskJobRow) {
   const controller = new AbortController();
   const stopCancellationWatcher = startCancellationWatcher(job, controller);
+  let leaseLost = false;
+  const stopHeartbeat = startLeaseHeartbeat(job, () => {
+    leaseLost = true;
+    controller.abort();
+  });
 
   try {
     await assertJobActive(job, controller.signal);
@@ -211,7 +221,15 @@ export async function processQueuedJob(job: TaskJobRow) {
     const completedTask = await finalizePrimaryTask(ctx);
 
     void runTaskPostProcessing(completedTask, ctx.userSettings, { completedAt });
+  } catch (error) {
+    // An abort caused by losing the lease surfaces as a cancellation from the provider;
+    // report it as what it is so the queue does not cancel a job another worker now owns.
+    if (leaseLost && !isJobLeaseLostError(error)) {
+      throw new JobLeaseLostError();
+    }
+    throw error;
   } finally {
+    stopHeartbeat();
     stopCancellationWatcher();
   }
 }

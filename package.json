@@ -26,7 +26,11 @@
     "preview": "vite preview",
     "clean": "rm -rf dist dist-server",
     "lint": "tsc --noEmit",
-    "test": "node --import tsx --test tests/*.test.ts tests/unit/*.test.ts"
+    "test": "node --import tsx --test tests/*.test.ts tests/unit/*.test.ts",
+    "chaos:worker": "node --import tsx scripts/chaos/worker-recovery.ts",
+    "eval:asr": "node --import tsx evaluation/asr-eval.ts",
+    "eval:retrieval": "node --import tsx evaluation/retrieval-eval.ts",
+    "eval:report": "node --import tsx evaluation/report.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
