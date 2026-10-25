@@ -1,0 +1,7 @@
+# Your recordings and transcripts stay local unless you choose to commit them.
+datasets/asr/audio/*
+datasets/asr/references/*
+datasets/asr/manifest.jsonl
+datasets/retrieval/questions.jsonl
+# Raw run outputs contain full hypotheses; the generated report is the shareable artifact.
+results/

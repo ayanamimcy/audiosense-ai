@@ -1,0 +1,5 @@
+// One question per line. Copy to questions.jsonl.
+// "task" is a recording id or its exact title in the workspace; "start"/"end" (seconds) mark where the answer is said.
+{"id": "q1", "question": "アップロードの再試行はいつ対応する予定？", "relevant": [{"task": "Weekly product sync", "start": 748, "end": 800}]}
+{"id": "q2", "question": "バックエンド候補者の次のステップは？", "relevant": [{"task": "Hiring sync — backend role"}]}
+{"id": "q3", "question": "Which recordings discussed the mobile player?", "relevant": [{"task": "Design review: mobile player"}, {"task": "Weekly product sync"}]}
