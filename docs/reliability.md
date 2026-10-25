@@ -75,3 +75,34 @@ settings, expect roughly 2–2.5 minutes before a crashed job restarts.
 - **Post-processing.** Summary and tag generation start after the job completes. They are not
   covered by the lease and are not retried if the worker dies at that moment.
 
+# Provider fallback
+
+## Problem
+
+`parseAudioWithFallback` built a provider chain (default provider plus the user's fallbacks),
+but the fallback rarely took over:
+
+- A **service** error (outage, 429, 5xx, timeout) on the first provider stopped the chain and
+  paused the whole queue, even with a healthy fallback configured.
+- An **open circuit** on the first provider also aborted the chain, which defeats the purpose
+  of a circuit breaker: skip the sick provider, use the next one.
+- Only **task** errors (input rejected) moved on to the next provider.
+
+## Behaviour now
+
+[`lib/audio-engine/provider-chain.ts`](../lib/audio-engine/provider-chain.ts):
+
+| Situation on a provider | Action |
+|---|---|
+| Circuit open | Skip it without calling it; the skip does not extend the circuit |
+| Service error (outage, 429, 5xx, timeout) | Record it against the provider's circuit, try the next provider |
+| Task error (this file was rejected) | Try the next provider; does not count against the circuit |
+| Cancelled | Stop immediately, never fall through |
+| Nothing succeeded | Service error if any provider was merely unavailable (the queue backs off and retries); task error only when every provider rejected the input (the recording fails) |
+
+Only providers the user configured as fallbacks are tried, so cost and privacy choices
+(for example "never send audio to a cloud API") stay with the user's settings.
+
+Not handled yet: capability matching. A fallback without speaker diarization still produces
+a transcript, just without speaker labels; the switch shows up in the task's
+`skippedProviders` / `finalProvider` metadata. Tests: [`tests/unit/provider-chain.test.ts`](../tests/unit/provider-chain.test.ts).

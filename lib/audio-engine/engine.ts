@@ -1,6 +1,5 @@
 import { inspectAudioFile } from './media.js';
 import { buildTranscriptionResult } from './normalize.js';
-import { asProcessingError, createServiceError, createTaskError, type ProcessingError } from './errors.js';
 import { createTranscriptionProvider } from './providers/index.js';
 import {
   buildProviderChain,
@@ -11,11 +10,8 @@ import {
 import type { TranscriptionExecutionResult, TranscriptionJobInput } from './types.js';
 import { getUserSettings } from '../settings/settings.js';
 import logger from '../shared/logger.js';
-import {
-  TranscriptionCancelledError,
-  isTranscriptionCancelledError,
-  throwIfTranscriptionCancelled,
-} from './cancellation.js';
+import { throwIfTranscriptionCancelled } from './cancellation.js';
+import { runProviderChain } from './provider-chain.js';
 
 const log = logger.child('audio-engine');
 
@@ -27,9 +23,6 @@ export async function parseAudioWithFallback(
   throwIfTranscriptionCancelled(input.signal);
   const userSettings = userId ? await getUserSettings(userId) : null;
   const chain = buildProviderChain(userSettings, primaryProvider);
-  const attemptedProviders: string[] = [];
-  const skippedProviders: string[] = [];
-  const errors: string[] = [];
   log.info('Starting transcription', { file: input.fileName || input.filePath });
   const pipelineStart = Date.now();
   const inspectedFile = await inspectAudioFile(input.filePath, {
@@ -37,19 +30,11 @@ export async function parseAudioWithFallback(
     fileName: input.fileName,
   });
   throwIfTranscriptionCancelled(input.signal);
-  let lastTaskError: ProcessingError | null = null;
-
-  for (const providerName of chain) {
-    throwIfTranscriptionCancelled(input.signal);
-    if (await isProviderCircuitOpen(providerName)) {
-      const circuitError = createServiceError(`Provider ${providerName} circuit open.`, providerName);
-      await recordProviderFailure(providerName, userId, circuitError);
-      throw circuitError;
-    }
-
-    attemptedProviders.push(providerName);
-
-    try {
+  const outcome = await runProviderChain(chain, {
+    signal: input.signal,
+    isCircuitOpen: isProviderCircuitOpen,
+    recordFailure: (providerName, error) => recordProviderFailure(providerName, userId, error),
+    attempt: async (providerName) => {
       const provider = createTranscriptionProvider(providerName, userSettings || undefined);
       log.info('Sending to provider', { provider: providerName });
       const providerStart = Date.now();
@@ -83,36 +68,20 @@ export async function parseAudioWithFallback(
       throwIfTranscriptionCancelled(input.signal);
 
       log.info('Normalization + splitting completed', { durationSec: ((Date.now() - normalizeStart) / 1000).toFixed(1), segments: result.segments.length });
-      log.info('Total pipeline completed', { durationSec: ((Date.now() - pipelineStart) / 1000).toFixed(1) });
       await recordProviderSuccess(provider.name);
-      return {
-        providerName: provider.name,
-        attemptedProviders,
-        skippedProviders,
-        result,
-      };
-    } catch (error) {
-      if (input.signal?.aborted) {
-        throw new TranscriptionCancelledError();
-      }
-      if (isTranscriptionCancelledError(error)) {
-        throw error;
-      }
-      const normalized = asProcessingError(error, providerName);
-      if (normalized.category === 'service') {
-        await recordProviderFailure(providerName, userId, normalized);
-        throw normalized;
-      }
+      return { providerName: provider.name, result };
+    },
+  });
 
-      lastTaskError = normalized;
-      errors.push(`${providerName}: ${normalized.message}`);
-      skippedProviders.push(providerName);
-    }
-  }
-
-  if (lastTaskError) {
-    throw createTaskError(`All providers failed. ${errors.join(' | ')}`, lastTaskError.provider, lastTaskError);
-  }
-
-  throw createServiceError(`All providers failed. ${errors.join(' | ')}`);
+  log.info('Total pipeline completed', {
+    durationSec: ((Date.now() - pipelineStart) / 1000).toFixed(1),
+    provider: outcome.value.providerName,
+    skippedProviders: outcome.skippedProviders,
+  });
+  return {
+    providerName: outcome.value.providerName,
+    attemptedProviders: outcome.attemptedProviders,
+    skippedProviders: outcome.skippedProviders,
+    result: outcome.value.result,
+  };
 }
