@@ -308,7 +308,7 @@ export default function NotebookView() {
         </label>
 
         {/* Mobile: notebooks as chips (the desktop rail lists them) */}
-        <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-0.5 lg:hidden">
+        <div className="-mx-4 flex shrink-0 gap-1.5 overflow-x-auto px-4 pb-0.5 lg:hidden">
           <Chip active={!notebookFilter} onClick={() => setNotebookFilter(null)}>All</Chip>
           <Chip active={notebookFilter === INBOX_FILTER} onClick={() => setNotebookFilter(INBOX_FILTER)}>Inbox</Chip>
           {notebooks.map((notebook) => (
@@ -339,7 +339,7 @@ export default function NotebookView() {
             onDelete={() => void handleBatchDelete()}
           />
         ) : (
-          <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 lg:mx-0 lg:flex-wrap lg:px-0">
+          <div className="-mx-4 flex shrink-0 gap-1.5 overflow-x-auto px-4 lg:mx-0 lg:flex-wrap lg:px-0">
             <Chip active={statusFilter === 'all'} onClick={() => setStatusFilter('all')}>All</Chip>
             {activeCount > 0 || statusFilter === 'active' ? (
               <Chip active={statusFilter === 'active'} onClick={() => setStatusFilter('active')}>

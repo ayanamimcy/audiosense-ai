@@ -303,7 +303,11 @@ export function AppShell({
               />
             </div>
           )}
-          <div className="flex h-full w-full flex-col">{children}</div>
+          {/* Split-pane pages are viewport-high and scroll inside; on mobile, list pages grow and
+              the shell scrolls. A fixed height there would let flex squash the page's rows. */}
+          <div className={cn('flex w-full flex-col', isFixedHeightPage ? 'h-full' : 'min-h-full lg:h-full')}>
+            {children}
+          </div>
         </div>
       </main>
 

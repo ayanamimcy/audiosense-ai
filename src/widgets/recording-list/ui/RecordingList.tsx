@@ -20,6 +20,16 @@ function getTimeGroup(timestamp: number): string {
   return format(date, 'MMMM yyyy');
 }
 
+/** Summaries are Markdown; a one-line preview reads better without heading and list markers. */
+function toPlainSnippet(markdown: string) {
+  return markdown
+    .replace(/^\s{0,3}#{1,6}\s+[^\n]*\n+/, '')
+    .replace(/[#*_`>]+/g, '')
+    .replace(/^\s*[-+]\s+/gm, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function formatRowTime(timestamp: number) {
   const date = new Date(timestamp);
   if (isToday(date) || isYesterday(date)) return format(date, 'HH:mm');
@@ -117,7 +127,7 @@ export function RecordingList({
                 </span>
                 <span className="mt-0.5 block truncate text-xs text-stone-500">{meta}</span>
                 {task.summarySnippet ? (
-                  <span className="mt-1 block truncate text-[13px] text-stone-600">{task.summarySnippet}</span>
+                  <span className="mt-1 block truncate text-[13px] text-stone-600">{toPlainSnippet(task.summarySnippet)}</span>
                 ) : null}
               </Link>
             </div>
