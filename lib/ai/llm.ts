@@ -5,8 +5,26 @@ import type { SpeakerSummary } from '../audio-engine/types.js';
 import type { UserSettings } from '../settings/user-settings-schema.js';
 import { resolveLlmSettings } from '../settings/user-settings-schema.js';
 import logger from '../shared/logger.js';
+import {
+  buildPromptVersion,
+  readProviderUsage,
+  recordLlmCall,
+  type LlmTraceContext,
+  type ProviderUsage,
+} from './llm-trace.js';
 
 const log = logger.child('llm');
+
+export type { LlmTraceContext } from './llm-trace.js';
+
+/** What a call is for (trace) and which prompt template produced it (promptVersion). */
+interface LlmCallMeta {
+  trace?: LlmTraceContext;
+  promptVersion: string;
+}
+
+/** Hosts that rejected `stream_options`; streams to them are sent without it from then on. */
+const hostsWithoutStreamUsage = new Set<string>();
 
 export interface LlmMessage {
   role: 'system' | 'user' | 'assistant';
@@ -87,35 +105,58 @@ async function callChatCompletion(
   temperature = 0.2,
   settings?: Partial<UserSettings>,
   timeoutMs = 120000,
+  meta?: LlmCallMeta,
 ) {
   const apiKey = getApiKey(settings);
   if (!apiKey) {
     throw new Error('LLM API is not configured. Please set LLM_API_KEY or OPENAI_API_KEY.');
   }
 
-  const response = await axios.post(
-    `${getBaseUrl(settings)}/chat/completions`,
-    {
-      model: getModel(settings),
-      temperature,
-      messages,
-    },
-    {
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      timeout: timeoutMs,
-    },
-  );
+  const model = getModel(settings);
+  const baseUrl = getBaseUrl(settings);
+  const startedAt = Date.now();
+  const traceBase = {
+    trace: meta?.trace,
+    model,
+    baseUrl,
+    promptVersion: meta?.promptVersion || 'untracked',
+    streamed: false,
+    startedAt,
+    inputText: messages.map((item) => item.content).join('\n'),
+  };
 
-  const content = response.data?.choices?.[0]?.message?.content;
-  const parsedContent = extractCompletionContent(content);
-  if (parsedContent) {
-    return parsedContent.trim();
+  let output: string;
+  let usage: ProviderUsage | null = null;
+  try {
+    const response = await axios.post(
+      `${baseUrl}/chat/completions`,
+      {
+        model,
+        temperature,
+        messages,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: timeoutMs,
+      },
+    );
+
+    usage = readProviderUsage(response.data);
+    const parsedContent = extractCompletionContent(response.data?.choices?.[0]?.message?.content);
+    if (!parsedContent) {
+      throw new Error('The LLM response did not contain message content.');
+    }
+    output = parsedContent.trim();
+  } catch (error) {
+    recordLlmCall({ ...traceBase, outputText: '', usage, error, cancelled: axios.isCancel(error) });
+    throw error;
   }
 
-  throw new Error('The LLM response did not contain message content.');
+  recordLlmCall({ ...traceBase, outputText: output, usage });
+  return output;
 }
 
 function extractCompletionContent(content: unknown) {
@@ -155,6 +196,7 @@ function extractStreamDelta(payload: unknown) {
 async function parseJsonCompletionStream(
   response: AxiosResponse<NodeJS.ReadableStream>,
   onDelta?: (text: string) => Promise<void> | void,
+  usageSink?: { usage: ProviderUsage | null },
 ) {
   let raw = '';
   for await (const chunk of response.data) {
@@ -162,6 +204,7 @@ async function parseJsonCompletionStream(
   }
 
   const payload = JSON.parse(raw);
+  if (usageSink) usageSink.usage = readProviderUsage(payload);
   const content = extractCompletionContent(payload?.choices?.[0]?.message?.content);
   if (content && onDelta) {
     await onDelta(content);
@@ -172,6 +215,7 @@ async function parseJsonCompletionStream(
 async function parseSseCompletionStream(
   response: AxiosResponse<NodeJS.ReadableStream>,
   onDelta?: (text: string) => Promise<void> | void,
+  usageSink?: { usage: ProviderUsage | null },
 ) {
   let buffer = '';
   let output = '';
@@ -192,6 +236,9 @@ async function parseSseCompletionStream(
 
       try {
         const payload = JSON.parse(data);
+        // With stream_options.include_usage the final frame carries usage and no delta.
+        const frameUsage = usageSink ? readProviderUsage(payload) : null;
+        if (frameUsage && usageSink) usageSink.usage = frameUsage;
         const delta = extractStreamDelta(payload);
         if (!delta) {
           continue;
@@ -241,19 +288,40 @@ async function streamChatCompletion(
   temperature = 0.2,
   settings?: Partial<UserSettings>,
   signal?: AbortSignal,
+  meta?: LlmCallMeta,
 ) {
   const apiKey = getApiKey(settings);
   if (!apiKey) {
     throw new Error('LLM API is not configured. Please set LLM_API_KEY or OPENAI_API_KEY.');
   }
 
-  const response = await axios.post<NodeJS.ReadableStream>(
-    `${getBaseUrl(settings)}/chat/completions`,
+  const model = getModel(settings);
+  const baseUrl = getBaseUrl(settings);
+  const startedAt = Date.now();
+  let firstTokenAt: number | null = null;
+  const usageSink: { usage: ProviderUsage | null } = { usage: null };
+  const traceBase = {
+    trace: meta?.trace,
+    model,
+    baseUrl,
+    promptVersion: meta?.promptVersion || 'untracked',
+    streamed: true,
+    startedAt,
+    inputText: messages.map((item) => item.content).join('\n'),
+  };
+  const timedDelta = async (text: string) => {
+    if (firstTokenAt === null) firstTokenAt = Date.now();
+    await onDelta?.(text);
+  };
+
+  const send = (includeUsage: boolean) => axios.post<NodeJS.ReadableStream>(
+    `${baseUrl}/chat/completions`,
     {
-      model: getModel(settings),
+      model,
       temperature,
       messages,
       stream: true,
+      ...(includeUsage ? { stream_options: { include_usage: true } } : {}),
     },
     {
       headers: {
@@ -266,12 +334,44 @@ async function streamChatCompletion(
     },
   );
 
-  const contentType = String(response.headers['content-type'] || '').toLowerCase();
-  if (contentType.includes('application/json')) {
-    return parseJsonCompletionStream(response, onDelta);
+  let output = '';
+  try {
+    const host = new URL(baseUrl).host;
+    let response: AxiosResponse<NodeJS.ReadableStream>;
+    if (hostsWithoutStreamUsage.has(host)) {
+      response = await send(false);
+    } else {
+      try {
+        response = await send(true);
+      } catch (error) {
+        // Some OpenAI-compatible servers reject unknown fields; retry once without usage.
+        const status = axios.isAxiosError(error) ? Number(error.response?.status || 0) : 0;
+        if (status !== 400 && status !== 422) throw error;
+        response = await send(false);
+        // Only now is it clear the field was the problem (a genuine 400 fails again above).
+        hostsWithoutStreamUsage.add(host);
+        log.info('Provider rejected stream_options; streaming without usage', { host });
+      }
+    }
+
+    const contentType = String(response.headers['content-type'] || '').toLowerCase();
+    output = contentType.includes('application/json')
+      ? await parseJsonCompletionStream(response, timedDelta, usageSink)
+      : await parseSseCompletionStream(response, timedDelta, usageSink);
+  } catch (error) {
+    recordLlmCall({
+      ...traceBase,
+      firstTokenAt,
+      outputText: output,
+      usage: usageSink.usage,
+      error,
+      cancelled: Boolean(signal?.aborted) || axios.isCancel(error),
+    });
+    throw error;
   }
 
-  return parseSseCompletionStream(response, onDelta);
+  recordLlmCall({ ...traceBase, firstTokenAt, outputText: output, usage: usageSink.usage });
+  return output;
 }
 
 function buildContextBlock(context: LlmTaskContext) {
@@ -374,11 +474,15 @@ function parseStringArrayCompletion(content: string) {
     .filter(Boolean);
 }
 
+const SUMMARY_SYSTEM_PROMPT =
+  'You summarize audio transcripts for a knowledge management app. Use clear Markdown headings and stay grounded in the transcript.';
+
 export async function generateTaskSummary(
   context: LlmTaskContext,
   instructions?: string,
   settings?: Partial<UserSettings>,
   taskPrompt?: string | null,
+  trace?: Omit<LlmTraceContext, 'operation'>,
 ) {
   const prompt = resolveSummaryPrompt({
     instructions,
@@ -389,8 +493,7 @@ export async function generateTaskSummary(
     [
       {
         role: 'system',
-        content:
-          'You summarize audio transcripts for a knowledge management app. Use clear Markdown headings and stay grounded in the transcript.',
+        content: SUMMARY_SYSTEM_PROMPT,
       },
       {
         role: 'user',
@@ -400,26 +503,34 @@ export async function generateTaskSummary(
     0.3,
     settings,
     1800000,
+    {
+      trace: trace && { ...trace, operation: 'summary' },
+      // The template (user's summary prompt or the fallback) is part of the version.
+      promptVersion: buildPromptVersion('summary', [SUMMARY_SYSTEM_PROMPT, prompt]),
+    },
   );
 }
+
+const TAG_SUGGESTION_SYSTEM_PROMPT = [
+  'You generate short, high-precision tags for audio tasks in a knowledge management app.',
+  'Return JSON only.',
+  'Return a JSON array of strings with 0 to 5 tags.',
+  'Prefer reusing the provided historical tag vocabulary when it fits.',
+  'Only introduce genuinely new tags when necessary, and keep new tags to at most 2.',
+  'Each tag must be concise, specific, and useful for filtering.',
+  'Do not return sentences, explanations, generic labels, timestamps, or filenames.',
+].join(' ');
 
 export async function generateTaskTagSuggestions(
   context: TagSuggestionContext,
   settings?: Partial<UserSettings>,
+  trace?: Omit<LlmTraceContext, 'operation'>,
 ) {
   const completion = await callChatCompletion(
     [
       {
         role: 'system',
-        content: [
-          'You generate short, high-precision tags for audio tasks in a knowledge management app.',
-          'Return JSON only.',
-          'Return a JSON array of strings with 0 to 5 tags.',
-          'Prefer reusing the provided historical tag vocabulary when it fits.',
-          'Only introduce genuinely new tags when necessary, and keep new tags to at most 2.',
-          'Each tag must be concise, specific, and useful for filtering.',
-          'Do not return sentences, explanations, generic labels, timestamps, or filenames.',
-        ].join(' '),
+        content: TAG_SUGGESTION_SYSTEM_PROMPT,
       },
       {
         role: 'user',
@@ -443,23 +554,30 @@ export async function generateTaskTagSuggestions(
     0.1,
     settings,
     120000,
+    {
+      trace: trace && { ...trace, operation: 'tag_suggestion' },
+      promptVersion: buildPromptVersion('tag_suggestion', [TAG_SUGGESTION_SYSTEM_PROMPT]),
+    },
   );
 
   return parseStringArrayCompletion(completion);
 }
+
+const TASK_CHAT_SYSTEM_PROMPT =
+  'You are an assistant for an audio workspace. Answer based on the provided transcript, cite uncertainty when the transcript is incomplete, and keep answers concise unless the user asks for more detail.';
 
 export async function chatWithTranscript(
   context: LlmTaskContext,
   history: LlmMessage[],
   message: string,
   settings?: Partial<UserSettings>,
+  trace?: Omit<LlmTraceContext, 'operation'>,
 ) {
   return callChatCompletion(
     [
       {
         role: 'system',
-        content:
-          'You are an assistant for an audio workspace. Answer based on the provided transcript, cite uncertainty when the transcript is incomplete, and keep answers concise unless the user asks for more detail.',
+        content: TASK_CHAT_SYSTEM_PROMPT,
       },
       {
         role: 'system',
@@ -473,6 +591,11 @@ export async function chatWithTranscript(
     ],
     0.2,
     settings,
+    undefined,
+    {
+      trace: trace && { ...trace, operation: 'task_chat' },
+      promptVersion: buildPromptVersion('task_chat', [TASK_CHAT_SYSTEM_PROMPT]),
+    },
   );
 }
 
@@ -483,13 +606,13 @@ export async function streamChatWithTranscript(
   settings?: Partial<UserSettings>,
   onDelta?: (text: string) => Promise<void> | void,
   signal?: AbortSignal,
+  trace?: Omit<LlmTraceContext, 'operation'>,
 ) {
   return streamChatCompletion(
     [
       {
         role: 'system',
-        content:
-          'You are an assistant for an audio workspace. Answer based on the provided transcript, cite uncertainty when the transcript is incomplete, and keep answers concise unless the user asks for more detail.',
+        content: TASK_CHAT_SYSTEM_PROMPT,
       },
       {
         role: 'system',
@@ -505,6 +628,10 @@ export async function streamChatWithTranscript(
     0.2,
     settings,
     signal,
+    {
+      trace: trace && { ...trace, operation: 'task_chat' },
+      promptVersion: buildPromptVersion('task_chat', [TASK_CHAT_SYSTEM_PROMPT]),
+    },
   );
 }
 
@@ -512,6 +639,7 @@ export async function answerAcrossKnowledgeBase(
   query: string,
   sources: KnowledgeSource[],
   settings?: Partial<UserSettings>,
+  trace?: Omit<LlmTraceContext, 'operation'>,
 ) {
   if (sources.length === 0) {
     throw new Error('No source transcripts available for knowledge-base answering.');
@@ -532,6 +660,11 @@ export async function answerAcrossKnowledgeBase(
     ],
     0.2,
     settings,
+    undefined,
+    {
+      trace: trace && { ...trace, operation: 'knowledge_chat' },
+      promptVersion: buildPromptVersion('knowledge_chat', [CITATION_SYSTEM_PROMPT]),
+    },
   );
 }
 
@@ -542,6 +675,7 @@ export async function streamAnswerAcrossKnowledgeBase(
   settings?: Partial<UserSettings>,
   onDelta?: (text: string) => Promise<void> | void,
   signal?: AbortSignal,
+  trace?: Omit<LlmTraceContext, 'operation'>,
 ) {
   if (sources.length === 0 && history.length === 0) {
     throw new Error('No source transcripts or conversation history available.');
@@ -569,7 +703,10 @@ export async function streamAnswerAcrossKnowledgeBase(
     content: query,
   });
 
-  return streamChatCompletion(messages, onDelta, 0.2, settings, signal);
+  return streamChatCompletion(messages, onDelta, 0.2, settings, signal, {
+    trace: trace && { ...trace, operation: 'knowledge_chat' },
+    promptVersion: buildPromptVersion('knowledge_chat', [CITATION_SYSTEM_PROMPT]),
+  });
 }
 
 export function getLlmInfo(settings?: Partial<UserSettings>) {

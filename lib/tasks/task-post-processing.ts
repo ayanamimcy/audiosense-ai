@@ -77,6 +77,7 @@ const summaryStep: PostProcessingStep = {
         undefined,
         settings || undefined,
         defaultPrompt,
+        { userId: task.userId, taskId: task.id },
       );
 
       // Guard: only write if our request is still current

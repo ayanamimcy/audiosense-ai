@@ -108,6 +108,7 @@ export async function answerFromKnowledgeBase(
       };
     }),
     userSettings,
+    { userId },
   );
 
   return {

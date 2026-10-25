@@ -16,6 +16,7 @@ import {
   SummaryPromptNotFoundError,
   resetProviderCircuitForUser,
   listLlmModelsForUser,
+  getLlmUsageForUser,
 } from '../application/services/settings-service.js';
 import { asyncRoute, requireAuthUser, setSessionCookie } from './middleware.js';
 
@@ -157,6 +158,11 @@ router.post('/provider-health/:provider/reset', asyncRoute(async (req, res) => {
 router.get('/llm/models', asyncRoute(async (req, res) => {
   const user = requireAuthUser(req);
   return res.json({ data: await listLlmModelsForUser(user.id) });
+}));
+
+router.get('/llm/usage', asyncRoute(async (req, res) => {
+  const user = requireAuthUser(req);
+  return res.json(await getLlmUsageForUser(user.id, Number(req.query.days || 7)));
 }));
 
 export const settingsRouter = router;
