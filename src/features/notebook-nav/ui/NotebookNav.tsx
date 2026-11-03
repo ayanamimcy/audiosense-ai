@@ -11,6 +11,7 @@ import {
   useNotebookFilter,
   type Notebook,
 } from '@/entities/notebook';
+import { isImeComposing } from '@/shared/lib/keyboard';
 
 function NavRow({
   label,
@@ -227,6 +228,7 @@ export function NotebookNav({ onNavigate }: { onNavigate?: () => void }) {
             onChange={(event) => setRenameValue(event.target.value)}
             onBlur={() => void handleRename(notebook)}
             onKeyDown={(event) => {
+              if (isImeComposing(event)) return;
               if (event.key === 'Enter') void handleRename(notebook);
               if (event.key === 'Escape') setRenamingId(null);
             }}
@@ -272,6 +274,7 @@ export function NotebookNav({ onNavigate }: { onNavigate?: () => void }) {
           onChange={(event) => setNewName(event.target.value)}
           onBlur={() => void handleCreate()}
           onKeyDown={(event) => {
+            if (isImeComposing(event)) return;
             if (event.key === 'Enter') void handleCreate();
             if (event.key === 'Escape') {
               setNewName('');

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowUp, AtSign, Book, FileAudio, Loader2, X } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 import type { MentionCandidate, MentionRef } from '@/entities/knowledge';
+import { isImeComposing } from '@/shared/lib/keyboard';
 
 export function MentionInput({
   value,
@@ -94,6 +95,9 @@ export function MentionInput({
   }, [onMentionSelect, value, onChange]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Keys pressed while an IME is composing belong to the IME (pick/cancel a candidate).
+    if (isImeComposing(e)) return;
+
     if (isMentionMenuOpen && mentionCandidates.length > 0) {
       if (e.key === 'ArrowDown') {
         e.preventDefault();

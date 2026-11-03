@@ -20,6 +20,7 @@ import { ApiTokensSection } from '@/features/api-tokens';
 import { useAuthContext } from '@/features/auth';
 import { LlmUsagePanel } from '@/features/llm-usage';
 import { SummaryTemplates } from '@/features/summary-templates';
+import { isSubmitEnter } from '@/shared/lib/keyboard';
 
 type SectionId =
   | 'transcription'
@@ -633,7 +634,7 @@ export function SettingsPage({
           value={newWorkspaceName}
           onChange={(event) => setNewWorkspaceName(event.target.value)}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') handleCreateWorkspace();
+            if (isSubmitEnter(event)) handleCreateWorkspace();
           }}
           placeholder="New workspace name"
           className={inputClassName}
