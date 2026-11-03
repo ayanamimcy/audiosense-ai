@@ -199,7 +199,7 @@ function TasksRedirect() {
 function AppRoot() {
   const { pathname } = useLocation();
   const auth = useAuth();
-  const { authLoading, currentUser, publicConfig, setCurrentUser, handleLogout: authLogout } = auth;
+  const { authLoading, currentUser, publicConfig, setCurrentUser, handleLogout: authLogout, sessionExpired } = auth;
   const appData = useAppData(currentUser);
   const {
     workspaces, currentWorkspaceId, currentWorkspace,
@@ -213,7 +213,8 @@ function AppRoot() {
   // The list stays visible next to the detail on desktop, so poll it on every /notebook route.
   const isNotebookListRoute = pathname.startsWith('/notebook');
   useTaskPolling(
-    currentUser,
+    // No point polling with a dead session; it resumes once the user signs back in.
+    sessionExpired ? null : currentUser,
     tasks,
     selectedTaskId,
     selectedTask,
@@ -229,6 +230,17 @@ function AppRoot() {
     await authLogout();
     clearAll();
   }, [authLogout, clearAll]);
+
+  // Signing back in after the session expired keeps the app mounted, so open dialogs and an
+  // unsent recording survive. A different account starts from a clean page instead (the
+  // reload still warns if a recording is waiting to upload).
+  const handleReLogin = useCallback((user: NonNullable<typeof currentUser>) => {
+    if (currentUser && user.id !== currentUser.id) {
+      window.location.assign('/notebook');
+      return;
+    }
+    setCurrentUser(user);
+  }, [currentUser, setCurrentUser]);
 
   const authContextValue = useMemo(
     () => ({ currentUser: currentUser!, handleLogout, setCurrentUser }),
@@ -276,6 +288,15 @@ function AppRoot() {
           <NewRecordingProvider>
             <AuthenticatedApp />
           </NewRecordingProvider>
+          {sessionExpired ? (
+            <div className="fixed inset-0 z-[100] overflow-y-auto bg-canvas/95">
+              <LoginForm
+                onLogin={handleReLogin}
+                allowRegistration={false}
+                notice="Your session has expired. Sign in again to continue — anything you have open stays here."
+              />
+            </div>
+          ) : null}
         </RecordingDraftProvider>
       </AppDataProvider>
     </AuthProvider>
