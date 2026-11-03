@@ -30,7 +30,22 @@ export function getEmbeddingsInfo() {
   };
 }
 
-export async function createEmbedding(input: string) {
+/** Inputs sent per request by createEmbeddings; OpenAI-compatible APIs accept arrays of this size. */
+const EMBEDDING_BATCH_SIZE = 64;
+
+function toVector(embedding: unknown) {
+  if (!Array.isArray(embedding)) {
+    throw new Error('Embedding API did not return a vector.');
+  }
+  if (embedding.length !== getEmbeddingDimensions()) {
+    throw new Error(
+      `Embedding dimension mismatch: configured ${getEmbeddingDimensions()}, received ${embedding.length}.`,
+    );
+  }
+  return embedding.map((value: unknown) => Number(value));
+}
+
+async function postEmbeddings(input: string | string[]) {
   const apiKey = getEmbeddingsApiKey();
   if (!apiKey) {
     throw new Error('Embedding API is not configured.');
@@ -51,20 +66,49 @@ export async function createEmbedding(input: string) {
     },
   );
 
-  const embedding = response.data?.data?.[0]?.embedding;
-  if (!Array.isArray(embedding)) {
-    throw new Error('Embedding API did not return a vector.');
-  }
-  if (embedding.length !== getEmbeddingDimensions()) {
-    throw new Error(
-      `Embedding dimension mismatch: configured ${getEmbeddingDimensions()}, received ${embedding.length}.`,
-    );
-  }
+  return response.data?.data as Array<{ embedding?: unknown; index?: number }> | undefined;
+}
 
+export async function createEmbedding(input: string) {
+  const data = await postEmbeddings(input);
   return {
     model: getEmbeddingsModel(),
-    vector: embedding.map((value: unknown) => Number(value)),
+    vector: toVector(data?.[0]?.embedding),
   };
+}
+
+/**
+ * Embeds many inputs with one request per batch instead of one per input.
+ * The result is aligned with `inputs`; an entry is null when that input could not be embedded.
+ * If a batch request fails (e.g. a provider without array support), its inputs are retried one by one.
+ */
+export async function createEmbeddings(inputs: string[]) {
+  const model = getEmbeddingsModel();
+  const results: Array<{ model: string; vector: number[] } | null> = new Array(inputs.length).fill(null);
+
+  for (let offset = 0; offset < inputs.length; offset += EMBEDDING_BATCH_SIZE) {
+    const batch = inputs.slice(offset, offset + EMBEDDING_BATCH_SIZE);
+    try {
+      const data = await postEmbeddings(batch);
+      if (!Array.isArray(data) || data.length !== batch.length) {
+        throw new Error('Embedding API returned an unexpected number of vectors.');
+      }
+      data.forEach((item, position) => {
+        const index = typeof item.index === 'number' ? item.index : position;
+        results[offset + index] = { model, vector: toVector(item.embedding) };
+      });
+    } catch {
+      for (let index = 0; index < batch.length; index += 1) {
+        try {
+          results[offset + index] = await createEmbedding(batch[index]);
+        } catch {
+          results[offset + index] = null;
+        }
+      }
+    }
+  }
+
+  return results;
 }
 
 export function cosineSimilarity(a: number[], b: number[]) {
