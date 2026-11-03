@@ -8,6 +8,15 @@ import { repairPossiblyMojibakeText } from '../shared/text-encoding.js';
 import { parseJsonField, type TaskRow } from '../tasks/task-types.js';
 import type { TranscriptSegment } from '../audio-engine/types.js';
 import { triggerAssociationAnalysis } from './background-analysis.js';
+import {
+  buildSnippet,
+  extractSearchTerms,
+  fromFtsIndexText,
+  toFtsIndexText,
+  toLikePattern,
+  toSqliteFtsMatch,
+  type SearchMatchMode,
+} from './search-terms.js';
 import { rewriteQueryForSearch, generateHydeEmbedding } from '../ai/query-enhancer.js';
 import { rerankChunks } from '../ai/reranker.js';
 import type { UserSettings } from '../settings/user-settings-schema.js';
@@ -19,15 +28,6 @@ function serializeEmbedding(vector: number[]) {
   return isSqliteDb()
     ? { embedding: serialized }
     : { embedding: null, embeddingVector: db.raw('?::halfvec', [serialized]) };
-}
-
-function toSqliteFtsQuery(query: string) {
-  const tokens = query.match(/[\p{L}\p{N}]+/gu) || [];
-  if (tokens.length === 0) {
-    return '';
-  }
-
-  return tokens.join(' ');
 }
 
 function chunkTranscript(transcript: string, maxLength = 1200) {
@@ -205,10 +205,10 @@ export async function syncTaskWorkspaceScope(taskIds: string[], workspaceId: str
         row.taskId,
         row.userId,
         row.workspaceId,
-        row.title,
-        row.summary || '',
-        row.tags || '',
-        row.content,
+        toFtsIndexText(repairPossiblyMojibakeText(row.title)),
+        toFtsIndexText(row.summary),
+        toFtsIndexText(parseJsonField<string[]>(row.tags, []).join(' ')),
+        toFtsIndexText(row.content),
       ],
     );
   }
@@ -255,7 +255,7 @@ export async function refreshTaskSearchMetadata(task: TaskRow) {
   const context = getTaskSearchContext(task);
   await db.raw(
     'UPDATE task_chunk_fts SET title = ?, summary = ?, tags = ? WHERE taskId = ?',
-    [context.title, context.summary, context.ftsTags, task.id],
+    [toFtsIndexText(context.title), toFtsIndexText(context.summary), toFtsIndexText(context.ftsTags), task.id],
   );
 }
 
@@ -360,7 +360,16 @@ export async function reindexTask(task: TaskRow) {
       for (const row of parentRows) {
         await trx.raw(
           'INSERT INTO task_chunk_fts (taskChunkId, taskId, userId, workspaceId, title, summary, tags, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [row.id, task.id, userId, workspaceId, context.title, context.summary, context.ftsTags, row.content],
+          [
+            row.id,
+            task.id,
+            userId,
+            workspaceId,
+            toFtsIndexText(context.title),
+            toFtsIndexText(context.summary),
+            toFtsIndexText(context.ftsTags),
+            toFtsIndexText(String(row.content)),
+          ],
         );
       }
     }
@@ -412,50 +421,113 @@ export function scheduleTaskReindex(taskId: string, delayMs = REINDEX_DEBOUNCE_M
   entry.timer.unref?.();
 }
 
-export async function searchTasksByText(userId: string, workspaceId: string, query: string) {
-  if (!query.trim()) {
+type KeywordHit = { taskId: string; score: number; snippet: string };
+
+// Column weights for PostgreSQL keyword scoring: title and tags say more about a recording
+// than one mention somewhere in a long transcript.
+const PG_KEYWORD_COLUMNS: Array<{ column: string; weight: number }> = [
+  { column: 'originalName', weight: 4 },
+  { column: 'tags', weight: 3 },
+  { column: 'summary', weight: 2 },
+  { column: 'transcript', weight: 1 },
+];
+
+async function searchTasksByTextPostgres(
+  userId: string,
+  workspaceId: string,
+  terms: string[],
+  mode: SearchMatchMode,
+): Promise<KeywordHit[]> {
+  const patterns = terms.map(toLikePattern);
+  const scoreParts: string[] = [];
+  const scoreBindings: string[] = [];
+  for (const pattern of patterns) {
+    for (const { column, weight } of PG_KEYWORD_COLUMNS) {
+      scoreParts.push(`(CASE WHEN "${column}" ILIKE ? THEN ${weight} ELSE 0 END)`);
+      scoreBindings.push(pattern);
+    }
+  }
+
+  const rows = await db('tasks')
+    .where({ userId, workspaceId })
+    .andWhere((builder) => {
+      for (const pattern of patterns) {
+        const matchesTerm = (inner: typeof builder) => {
+          for (const { column } of PG_KEYWORD_COLUMNS) {
+            inner.orWhereILike(column, pattern);
+          }
+        };
+        if (mode === 'all') {
+          builder.andWhere(matchesTerm);
+        } else {
+          builder.orWhere(matchesTerm);
+        }
+      }
+    })
+    .select('id', 'originalName', 'summary', 'transcript')
+    .select(db.raw(`(${scoreParts.join(' + ')}) AS score`, scoreBindings))
+    .orderBy([{ column: 'score', order: 'desc' }, { column: 'createdAt', order: 'desc' }])
+    .limit(20) as Array<{ id: string; originalName: string; summary: string | null; transcript: string | null; score: number | string }>;
+
+  return rows.map((row) => ({
+    taskId: row.id,
+    score: Number(row.score) || 0,
+    snippet: buildSnippet(row.transcript, terms)
+      || buildSnippet(row.summary, terms)
+      || repairPossiblyMojibakeText(row.originalName),
+  }));
+}
+
+/** Union of two keyword result lists, keeping each recording's best-scoring hit. */
+export function mergeKeywordHits(primary: KeywordHit[], secondary: KeywordHit[]) {
+  const byTask = new Map<string, KeywordHit>();
+  for (const hit of [...primary, ...secondary]) {
+    const current = byTask.get(hit.taskId);
+    if (!current || hit.score > current.score) {
+      byTask.set(hit.taskId, hit);
+    }
+  }
+  return [...byTask.values()].sort((left, right) => right.score - left.score);
+}
+
+/**
+ * Keyword search over recordings. See search-terms.ts for how unspaced CJK text is handled and
+ * what the 'all' / 'any' modes mean.
+ */
+export async function searchTasksByText(
+  userId: string,
+  workspaceId: string,
+  query: string,
+  mode: SearchMatchMode = 'all',
+): Promise<KeywordHit[]> {
+  const terms = extractSearchTerms(query, mode);
+  if (terms.length === 0) {
     return [];
   }
 
   if (!isSqliteDb()) {
-    const rows = await db('tasks')
-      .where({ userId })
-      .andWhere({ workspaceId })
-      .andWhere((builder) => {
-        builder
-          .whereILike('originalName', `%${query}%`)
-          .orWhereILike('summary', `%${query}%`)
-          .orWhereILike('transcript', `%${query}%`);
-      })
-      .orderBy('createdAt', 'desc')
-      .limit(20);
-    return rows.map((row) => ({ taskId: row.id as string, score: 1, snippet: row.originalName as string }));
-  }
-
-  const sqliteQuery = toSqliteFtsQuery(query);
-  if (!sqliteQuery) {
-    return [];
+    return searchTasksByTextPostgres(userId, workspaceId, terms, mode);
   }
 
   const result = await db.raw(
-    `SELECT taskId, -bm25(task_chunk_fts) AS score, snippet(task_chunk_fts, 7, '[', ']', '...', 12) AS snippet
+    `SELECT taskId, -bm25(task_chunk_fts) AS score, snippet(task_chunk_fts, 7, '[', ']', '...', 32) AS snippet
      FROM task_chunk_fts
      WHERE task_chunk_fts MATCH ? AND userId = ? AND workspaceId = ?
      ORDER BY score DESC
      LIMIT 50`,
-    [sqliteQuery, userId, workspaceId],
+    [toSqliteFtsMatch(terms, mode), userId, workspaceId],
   );
 
-  const rows = (result as Array<{ taskId: string; score: number; snippet: string }> | { rows: Array<{ taskId: string; score: number; snippet: string }> })
+  const rows = (result as KeywordHit[] | { rows: KeywordHit[] })
     && Array.isArray((result as { rows?: unknown }).rows)
-    ? ((result as { rows: Array<{ taskId: string; score: number; snippet: string }> }).rows)
-    : (result as Array<{ taskId: string; score: number; snippet: string }>);
+    ? ((result as { rows: KeywordHit[] }).rows)
+    : (result as KeywordHit[]);
 
-  const bestByTask = new Map<string, { taskId: string; score: number; snippet: string }>();
+  const bestByTask = new Map<string, KeywordHit>();
   for (const row of rows) {
     const current = bestByTask.get(row.taskId);
     if (!current || row.score > current.score) {
-      bestByTask.set(row.taskId, row);
+      bestByTask.set(row.taskId, { ...row, snippet: fromFtsIndexText(row.snippet) });
     }
   }
 
@@ -473,9 +545,12 @@ export async function searchChunksHybrid(
     maxChunks?: number;
     retrievalMode?: 'hybrid' | 'fts' | 'vector';
     settings?: Partial<UserSettings>;
+    /** Keyword matching: 'any' for questions (default), 'all' for the recording search box. */
+    keywordMatch?: SearchMatchMode;
   },
 ) {
   const maxChunks = options?.maxChunks || 8;
+  const keywordMatch = options?.keywordMatch || 'any';
   const retrievalMode = options?.retrievalMode || 'hybrid';
   const allowedTaskIds = options?.taskIds?.length ? options.taskIds : undefined;
   const ENHANCEMENT_TIMEOUT_MS = 4000;
@@ -514,15 +589,19 @@ export async function searchChunksHybrid(
       : Promise.resolve(null),
     // Baseline: FTS on original query runs in parallel
     retrievalMode !== 'vector'
-      ? searchTasksByText(userId, workspaceId, query)
+      ? searchTasksByText(userId, workspaceId, query, keywordMatch)
       : Promise.resolve([]),
   ]);
 
   const enhancementMs = Date.now() - enhancementStart;
 
-  // Use rewritten query FTS only if it differs from the original and enhancement succeeded
+  // The rewritten query adds recall (synonyms, keywords pulled out of a question); it must not
+  // replace the original, or a poor rewrite would drop recordings the user's own words found.
   const ftsResults = rewrittenQuery !== query && retrievalMode !== 'vector'
-    ? await searchTasksByText(userId, workspaceId, rewrittenQuery).catch(() => baselineFtsResults)
+    ? mergeKeywordHits(
+      baselineFtsResults,
+      await searchTasksByText(userId, workspaceId, rewrittenQuery, keywordMatch).catch(() => []),
+    )
     : baselineFtsResults;
 
   let vectorResults: Array<{

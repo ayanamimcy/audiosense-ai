@@ -20,10 +20,13 @@ export async function searchTasks(userId: string, workspaceId: string, query: st
   }
 
   const userSettings = await getUserSettings(userId);
+  // The recording search box filters as the user types: match their words literally and skip
+  // the LLM query enhancements (rewrite, HyDE, rerank), which cost several model calls per
+  // keystroke and add results that do not contain what was typed. Ask AI keeps them.
   const ranking = await searchChunksHybrid(userId, workspaceId, query, {
     retrievalMode: userSettings.retrievalMode,
     maxChunks: userSettings.maxKnowledgeChunks,
-    settings: userSettings,
+    keywordMatch: 'all',
   });
   const rankingMap = new Map(ranking.taskRanking.map((item) => [item.taskId, item]));
 
