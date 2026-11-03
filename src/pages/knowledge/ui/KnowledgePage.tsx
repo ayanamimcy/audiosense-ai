@@ -37,6 +37,7 @@ export function KnowledgeBase({
     deleteConversation,
     renameConversation,
     sendMessage,
+    cancelStream,
   } = useKnowledgeChat();
 
   const {
@@ -105,6 +106,7 @@ export function KnowledgeBase({
           messageInput={messageInput}
           onMessageInputChange={setMessageInput}
           onSend={handleSend}
+          onStop={cancelStream}
           mentions={selectedMentions}
           onRemoveMention={removeMention}
           mentionCandidates={candidates}

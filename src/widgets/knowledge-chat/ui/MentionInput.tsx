@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowUp, AtSign, Book, FileAudio, Loader2, X } from 'lucide-react';
+import { ArrowUp, AtSign, Book, FileAudio, Loader2, Square, X } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 import type { MentionCandidate, MentionRef } from '@/entities/knowledge';
 import { isImeComposing } from '@/shared/lib/keyboard';
@@ -8,6 +8,7 @@ export function MentionInput({
   value,
   onChange,
   onSend,
+  onStop,
   mentions,
   onRemoveMention,
   mentionCandidates,
@@ -22,6 +23,8 @@ export function MentionInput({
   value: string;
   onChange: (value: string) => void;
   onSend: () => void;
+  /** Shown in place of Send while a reply is streaming. */
+  onStop?: () => void;
   mentions: MentionRef[];
   onRemoveMention: (id: string) => void;
   mentionCandidates: MentionCandidate[];
@@ -172,20 +175,32 @@ export function MentionInput({
             className="min-h-[44px] flex-1 resize-none border-0 bg-transparent px-0 py-[10px] text-[15px] leading-6 text-stone-900 placeholder:text-stone-400 focus:outline-none disabled:text-stone-400"
           />
 
-          <button
-            type="button"
-            onClick={onSend}
-            disabled={!canSend}
-            aria-label="Send"
-            className={cn(
-              'mb-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors',
-              canSend
-                ? 'bg-stone-900 text-white shadow-sm active:bg-stone-800'
-                : 'bg-stone-100 text-stone-400',
-            )}
-          >
-            {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
-          </button>
+          {isSending && onStop ? (
+            <button
+              type="button"
+              onClick={onStop}
+              aria-label="Stop generating"
+              title="Stop generating"
+              className="mb-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-stone-900 text-white shadow-sm active:bg-stone-800"
+            >
+              <Square className="h-3.5 w-3.5 fill-current" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={onSend}
+              disabled={!canSend}
+              aria-label="Send"
+              className={cn(
+                'mb-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg transition-colors',
+                canSend
+                  ? 'bg-stone-900 text-white shadow-sm active:bg-stone-800'
+                  : 'bg-stone-100 text-stone-400',
+              )}
+            >
+              {isSending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-1 px-3 pb-2 -mt-1 bg-white rounded-b-[calc(1rem-1px)]">

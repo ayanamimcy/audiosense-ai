@@ -16,6 +16,15 @@ export function useKnowledgeChat() {
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
+  // Bumped whenever the visible conversation changes. A reply streaming for a conversation
+  // the user has left keeps running (the server saves it) but stops writing into the view.
+  const viewRef = useRef(0);
+
+  const detachStream = useCallback(() => {
+    viewRef.current += 1;
+    abortRef.current = null;
+    setIsStreaming(false);
+  }, []);
 
   const loadConversations = useCallback(async () => {
     setIsLoadingConversations(true);
@@ -30,12 +39,16 @@ export function useKnowledgeChat() {
   }, []);
 
   const loadMessages = useCallback(async (conversationId: string): Promise<KnowledgeMessage[]> => {
+    detachStream();
+    const view = viewRef.current;
     setIsLoadingMessages(true);
     try {
       const result = await apiJson<{
         conversation: KnowledgeConversation;
         messages: KnowledgeMessage[];
       }>(`/api/knowledge/conversations/${conversationId}/messages`);
+      // A later click (another conversation, New) wins over this slower response.
+      if (view !== viewRef.current) return [];
       setMessages(result.messages);
       setActiveConversationId(conversationId);
       return result.messages;
@@ -43,27 +56,30 @@ export function useKnowledgeChat() {
       console.error('Failed to load messages:', error);
       return [];
     } finally {
-      setIsLoadingMessages(false);
+      if (view === viewRef.current) setIsLoadingMessages(false);
     }
-  }, []);
+  }, [detachStream]);
 
   const startNewConversation = useCallback(() => {
+    detachStream();
+    setIsLoadingMessages(false);
     setActiveConversationId(null);
     setMessages([]);
-  }, []);
+  }, [detachStream]);
 
   const deleteConversation = useCallback(async (conversationId: string) => {
     try {
       await apiFetch(`/api/knowledge/conversations/${conversationId}`, { method: 'DELETE' });
       setConversations((prev) => prev.filter((c) => c.id !== conversationId));
       if (activeConversationId === conversationId) {
+        detachStream();
         setActiveConversationId(null);
         setMessages([]);
       }
     } catch (error) {
       console.error('Failed to delete conversation:', error);
     }
-  }, [activeConversationId]);
+  }, [activeConversationId, detachStream]);
 
   const renameConversation = useCallback(async (conversationId: string, title: string) => {
     try {
@@ -104,11 +120,26 @@ export function useKnowledgeChat() {
       pending: true,
     };
 
+    const view = viewRef.current;
+    const isViewActive = () => view === viewRef.current;
+    const updatePendingAssistant = (patch: (message: KnowledgeMessage) => KnowledgeMessage) => {
+      if (!isViewActive()) return;
+      setMessages((prev) => {
+        const updated = [...prev];
+        const lastIdx = updated.length - 1;
+        if (lastIdx >= 0 && updated[lastIdx].pending) {
+          updated[lastIdx] = patch(updated[lastIdx]);
+        }
+        return updated;
+      });
+    };
+
     setMessages((prev) => [...prev, userMessage, pendingAssistant]);
     setIsStreaming(true);
 
     const controller = new AbortController();
     abortRef.current = controller;
+    let streamedContent = '';
 
     try {
       const response = await apiFetch('/api/knowledge/chat/stream', {
@@ -127,26 +158,22 @@ export function useKnowledgeChat() {
         throw new Error(err?.error || `Request failed with status ${response.status}`);
       }
 
-      let streamedContent = '';
-
       await consumeSseStream(response, {
         onDelta: (payload) => {
-          const text = typeof payload === 'object' ? payload.text : String(payload);
+          const text = typeof payload === 'object' ? payload?.text : String(payload);
+          if (typeof text !== 'string' || !text) return;
           streamedContent += text;
-          setMessages((prev) => {
-            const updated = [...prev];
-            const lastIdx = updated.length - 1;
-            if (lastIdx >= 0 && updated[lastIdx].pending) {
-              updated[lastIdx] = { ...updated[lastIdx], content: streamedContent };
-            }
-            return updated;
-          });
+          updatePendingAssistant((message) => ({ ...message, content: streamedContent }));
         },
         onDone: (payload) => {
           const metadata: KnowledgeMessageMetadata = {
             sources: payload.sources,
             retrieval: payload.retrieval,
           };
+
+          // Refresh the list either way: a new conversation may have been created server-side.
+          void loadConversations();
+          if (!isViewActive()) return;
 
           setMessages((prev) => {
             const updated = [...prev];
@@ -172,44 +199,41 @@ export function useKnowledgeChat() {
 
           if (payload.conversationId) {
             setActiveConversationId(payload.conversationId);
-            void loadConversations();
           }
         },
         onError: (payload) => {
-          const errorMsg = typeof payload === 'object' ? payload.error : String(payload);
-          setMessages((prev) => {
-            const updated = [...prev];
-            const lastIdx = updated.length - 1;
-            if (lastIdx >= 0 && updated[lastIdx].pending) {
-              updated[lastIdx] = {
-                ...updated[lastIdx],
-                content: errorMsg || 'An error occurred.',
-                pending: false,
-                error: true,
-              };
-            }
-            return updated;
-          });
+          const errorMsg = typeof payload === 'object' ? payload?.error : String(payload);
+          updatePendingAssistant((message) => ({
+            ...message,
+            content: errorMsg || 'An error occurred.',
+            pending: false,
+            error: true,
+          }));
         },
       });
     } catch (error) {
-      if ((error as Error).name === 'AbortError') return;
-      setMessages((prev) => {
-        const updated = [...prev];
-        const lastIdx = updated.length - 1;
-        if (lastIdx >= 0 && updated[lastIdx].pending) {
-          updated[lastIdx] = {
-            ...updated[lastIdx],
-            content: error instanceof Error ? error.message : 'Failed to send message.',
-            pending: false,
-            error: true,
-          };
-        }
-        return updated;
-      });
+      if ((error as Error).name === 'AbortError') {
+        // Stopped by the user: keep what was streamed. The server saves the question but
+        // not a stopped answer, so refresh the list in case this started a conversation.
+        updatePendingAssistant((message) => ({
+          ...message,
+          content: streamedContent || 'Stopped.',
+          pending: false,
+        }));
+        void loadConversations();
+        return;
+      }
+      updatePendingAssistant((message) => ({
+        ...message,
+        content: error instanceof Error ? error.message : 'Failed to send message.',
+        pending: false,
+        error: true,
+      }));
     } finally {
-      setIsStreaming(false);
-      abortRef.current = null;
+      if (isViewActive()) {
+        setIsStreaming(false);
+        abortRef.current = null;
+      }
     }
   }, [activeConversationId, isStreaming, loadConversations]);
 

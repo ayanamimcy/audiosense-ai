@@ -23,6 +23,7 @@ export function KnowledgeChatPanel({
   messageInput,
   onMessageInputChange,
   onSend,
+  onStop,
   mentions,
   onRemoveMention,
   mentionCandidates,
@@ -41,6 +42,7 @@ export function KnowledgeChatPanel({
   messageInput: string;
   onMessageInputChange: (value: string) => void;
   onSend: (message?: string) => void;
+  onStop: () => void;
   mentions: MentionRef[];
   onRemoveMention: (id: string) => void;
   mentionCandidates: MentionCandidate[];
@@ -231,6 +233,7 @@ export function KnowledgeChatPanel({
           value={messageInput}
           onChange={onMessageInputChange}
           onSend={() => handleSend()}
+          onStop={onStop}
           mentions={mentions}
           onRemoveMention={onRemoveMention}
           mentionCandidates={mentionCandidates}
