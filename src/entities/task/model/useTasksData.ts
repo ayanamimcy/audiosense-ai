@@ -12,9 +12,16 @@ export function useTasksData() {
 
   selectedTaskIdRef.current = selectedTaskId;
 
+  /** Refreshes the open task (used by polling). */
   const fetchTaskDetail = useCallback(async (taskId: string) => {
+    const requestId = selectTaskRequestRef.current;
     const data = await apiJson<Task>(`/api/tasks/${taskId}`);
-    setSelectedTask(data);
+    // Drop the response if the user opened another recording (or re-selected this one,
+    // which issues a fresher request) while it was in flight; otherwise it would replace
+    // the newly opened recording.
+    if (taskId === selectedTaskIdRef.current && requestId === selectTaskRequestRef.current) {
+      setSelectedTask(data);
+    }
     return data;
   }, []);
 
@@ -27,6 +34,7 @@ export function useTasksData() {
   const selectTask = useCallback(async (taskId: string | null) => {
     const requestId = ++selectTaskRequestRef.current;
 
+    selectedTaskIdRef.current = taskId;
     setSelectedTaskId(taskId);
     if (!taskId) {
       setSelectedTask(null);
@@ -83,6 +91,8 @@ export function useTasksData() {
   }, [fetchTasks, applySelection]);
 
   const clearTasksData = useCallback(() => {
+    selectTaskRequestRef.current += 1;
+    selectedTaskIdRef.current = null;
     setTasks([]);
     setSelectedTaskId(null);
     setSelectedTask(null);
