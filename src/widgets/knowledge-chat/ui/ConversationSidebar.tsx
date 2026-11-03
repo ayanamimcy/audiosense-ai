@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Check, MessageSquare, MessageSquarePlus, Pencil, Search, Trash2, X } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 import type { KnowledgeConversation } from '@/entities/knowledge';
+import { isImeComposing } from '@/shared/lib/keyboard';
 
 function groupConversations(conversations: KnowledgeConversation[]) {
   const now = Date.now();
@@ -68,6 +69,7 @@ function ConversationItem({
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={(e) => {
+            if (isImeComposing(e)) return;
             if (e.key === 'Enter') handleSubmit();
             if (e.key === 'Escape') { setEditValue(conv.title); setIsEditing(false); }
           }}

@@ -22,7 +22,8 @@ export function Dialog({
 }) {
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
+      // Escape during IME composition cancels the candidate, not the dialog.
+      if (event.key === 'Escape' && !event.isComposing) {
         onClose();
       }
     };

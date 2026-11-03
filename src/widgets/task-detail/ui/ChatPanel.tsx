@@ -4,6 +4,7 @@ import { cn } from '@/shared/lib/cn';
 import { MarkdownContent } from '@/shared/ui/MarkdownContent';
 import { useAppDataContext } from '@/app/providers/app-data-context';
 import { SUMMARY_GENERATING_SENTINEL, type Task, type TaskMessage } from '@/entities/task';
+import { isSubmitEnter } from '@/shared/lib/keyboard';
 
 function buildSuggestedQuestions(task: Task): string[] {
   if (!task.transcript) return [];
@@ -54,7 +55,7 @@ export function ChatPanel({
   }, [messageInput]);
 
   const handleKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && canSendMessage) {
+    if (isSubmitEnter(event) && !event.shiftKey && canSendMessage) {
       event.preventDefault();
       onSendMessage();
     }

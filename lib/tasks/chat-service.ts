@@ -24,7 +24,7 @@ import {
   isSummaryPromptAvailableForNotebook,
   listSummaryPrompts,
 } from './summary-prompts.js';
-import { reindexTask } from '../search/search-index.js';
+import { refreshTaskSearchMetadata, reindexTask, scheduleTaskReindex } from '../search/search-index.js';
 import {
   parseJsonField,
   toTaskResponse,
@@ -364,6 +364,8 @@ export async function handleCancelSummary(userId: string, taskId: string) {
   });
 
   const updated = (await findTaskRowById(task.id)) as TaskRow;
-  await reindexTask(updated);
+  // Don't hold the cancel request on embeddings: fix keyword metadata now, vectors in the background.
+  await refreshTaskSearchMetadata(updated);
+  scheduleTaskReindex(updated.id);
   return toTaskResponse(updated);
 }

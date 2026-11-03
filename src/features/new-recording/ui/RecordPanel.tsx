@@ -122,6 +122,10 @@ export function RecordPanel({
       window.alert('Recording uploaded successfully, but the task list could not be refreshed. Please refresh the page.');
     }
   }, [onUploadSuccess, options, userSettings]);
+  // MediaRecorder.onstop is bound when recording starts; read the latest options through a ref
+  // so notebook/tags/language changed during the recording are used for the upload.
+  const queueRecordingRef = useRef(queueRecording);
+  queueRecordingRef.current = queueRecording;
 
   const discardPendingRecording = useCallback(() => {
     discardRecordingRef.current = true;
@@ -194,7 +198,7 @@ export function RecordPanel({
         const file = new File([blob], `recording-${Date.now()}.${ext}`, { type: mimeType });
         chunksRef.current = [];
         setPendingRecording(file);
-        void queueRecording(file);
+        void queueRecordingRef.current(file);
       };
 
       mediaRecorder.start(1000);

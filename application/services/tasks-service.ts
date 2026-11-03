@@ -18,7 +18,13 @@ import {
   updateTaskRowForUser,
 } from '../../database/repositories/tasks-repository.js';
 import { isLlmConfigured } from '../../lib/ai/llm.js';
-import { clearTaskIndex, reindexTask, syncTaskWorkspaceScope } from '../../lib/search/search-index.js';
+import {
+  clearTaskIndex,
+  hasEmbeddingContextChanged,
+  refreshTaskSearchMetadata,
+  scheduleTaskReindex,
+  syncTaskWorkspaceScope,
+} from '../../lib/search/search-index.js';
 import { getUserSettings } from '../../lib/settings/settings.js';
 import { cancelLocalAudioRuntimeRequest } from '../../lib/audio-engine/local-runtime.js';
 import { buildWebVttFromSegments } from '../../lib/tasks/subtitles.js';
@@ -76,25 +82,34 @@ export class UserTaskCancellationError extends Error {
   }
 }
 
+/**
+ * Keeps the search index in step with a metadata edit without blocking the request on embeddings.
+ * - notebook / date edits: nothing to do (not part of the index)
+ * - workspace move: rescope existing chunks (also refreshes FTS metadata from the tasks row)
+ * - title / summary / tags: rewrite FTS metadata in place now, and refresh the contextual
+ *   embeddings in the background only if their title/summary/tags prefix actually changed
+ */
 async function syncTaskSearchIndex(previousTask: TaskRow, updatedTask: TaskRow) {
   const workspaceChanged = previousTask.workspaceId !== updatedTask.workspaceId;
   const searchMetadataChanged =
     previousTask.originalName !== updatedTask.originalName ||
     previousTask.summary !== updatedTask.summary ||
     previousTask.tags !== updatedTask.tags;
-
-  if (workspaceChanged && !searchMetadataChanged) {
-    await syncTaskWorkspaceScope([updatedTask.id], String(updatedTask.workspaceId || ''));
-    return;
-  }
-
-  if (updatedTask.status === 'completed' && updatedTask.transcript) {
-    await reindexTask(updatedTask);
-    return;
-  }
+  const isIndexable = updatedTask.status === 'completed' && Boolean(updatedTask.transcript);
 
   if (workspaceChanged) {
-    await clearTaskIndex(updatedTask.id);
+    if (isIndexable) {
+      await syncTaskWorkspaceScope([updatedTask.id], String(updatedTask.workspaceId || ''));
+    } else {
+      await clearTaskIndex(updatedTask.id);
+      return;
+    }
+  } else if (searchMetadataChanged) {
+    await refreshTaskSearchMetadata(updatedTask);
+  }
+
+  if (isIndexable && hasEmbeddingContextChanged(previousTask, updatedTask)) {
+    scheduleTaskReindex(updatedTask.id);
   }
 }
 
@@ -376,9 +391,7 @@ export async function applyTaskTagSuggestionsForUser(
     throw new UserTaskNotFoundError();
   }
 
-  if (updatedTask.status === 'completed' && updatedTask.transcript) {
-    await reindexTask(updatedTask);
-  }
+  await syncTaskSearchIndex(task, updatedTask);
 
   return toTaskResponse(updatedTask);
 }

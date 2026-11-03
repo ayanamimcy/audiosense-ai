@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { db, isSqliteDb } from '../../db.js';
-import { cosineSimilarity, createEmbedding, getEmbeddingsInfo, isEmbeddingsConfigured } from '../ai/embeddings.js';
+import { cosineSimilarity, createEmbedding, createEmbeddings, getEmbeddingsInfo, isEmbeddingsConfigured } from '../ai/embeddings.js';
 import logger from '../shared/logger.js';
 
 const log = logger.child('search-index');
@@ -11,23 +11,6 @@ import { triggerAssociationAnalysis } from './background-analysis.js';
 import { rewriteQueryForSearch, generateHydeEmbedding } from '../ai/query-enhancer.js';
 import { rerankChunks } from '../ai/reranker.js';
 import type { UserSettings } from '../settings/user-settings-schema.js';
-
-type SearchChunk = {
-  id: string;
-  taskId: string;
-  userId: string;
-  workspaceId?: string | null;
-  chunkIndex: number;
-  content: string;
-  embedding?: string | null;
-  embeddingVector?: string | null;
-  embeddingModel?: string | null;
-  startTime?: number | null;
-  endTime?: number | null;
-  parentId?: string | null;
-  createdAt: number;
-  updatedAt: number;
-};
 
 const EMBEDDING_TAG_LIMIT = 5;
 
@@ -163,14 +146,12 @@ function splitIntoChildChunks(parentContent: string, maxLength = CHILD_CHUNK_SIZ
 }
 
 export async function clearTaskIndex(taskId: string) {
-  const chunks = (await db('task_chunks').where({ taskId })) as SearchChunk[];
-  if (isSqliteDb() && chunks.length > 0) {
-    for (const chunk of chunks) {
-      await db.raw('DELETE FROM task_chunk_fts WHERE taskChunkId = ?', [chunk.id]);
+  await db.transaction(async (trx) => {
+    if (isSqliteDb()) {
+      await trx.raw('DELETE FROM task_chunk_fts WHERE taskId = ?', [taskId]);
     }
-  }
-
-  await db('task_chunks').where({ taskId }).delete();
+    await trx('task_chunks').where({ taskId }).delete();
+  });
 }
 
 export async function syncTaskWorkspaceScope(taskIds: string[], workspaceId: string) {
@@ -233,32 +214,74 @@ export async function syncTaskWorkspaceScope(taskIds: string[], workspaceId: str
   }
 }
 
-export async function reindexTask(task: TaskRow) {
-  await clearTaskIndex(task.id);
+function getTaskSearchContext(task: Pick<TaskRow, 'originalName' | 'summary' | 'tags'>) {
+  const tags = parseJsonField<string[]>(task.tags, []);
+  const summary = task.summary || '';
+  return {
+    title: repairPossiblyMojibakeText(task.originalName),
+    summary,
+    summarySnippet: summary.length > 300 ? summary.slice(0, 297) + '...' : summary,
+    embeddingTags: tags.slice(0, EMBEDDING_TAG_LIMIT).join(' '),
+    ftsTags: tags.join(' '),
+  };
+}
 
+/**
+ * Child chunks are embedded together with the recording's title, summary snippet and first tags.
+ * Returns true when an edit changed that prefix, i.e. stored vectors no longer match what
+ * a reindex would produce.
+ */
+export function hasEmbeddingContextChanged(
+  previous: Pick<TaskRow, 'originalName' | 'summary' | 'tags'>,
+  next: Pick<TaskRow, 'originalName' | 'summary' | 'tags'>,
+) {
+  const before = getTaskSearchContext(previous);
+  const after = getTaskSearchContext(next);
+  return before.title !== after.title
+    || before.summarySnippet !== after.summarySnippet
+    || before.embeddingTags !== after.embeddingTags;
+}
+
+/**
+ * Cheap path for metadata edits (title, summary, tags): keyword search reads these from the
+ * SQLite FTS table, so rewrite them in place without touching chunks or embeddings.
+ * PostgreSQL keyword search reads the tasks table directly and needs nothing here.
+ */
+export async function refreshTaskSearchMetadata(task: TaskRow) {
+  if (!isSqliteDb()) {
+    return;
+  }
+
+  const context = getTaskSearchContext(task);
+  await db.raw(
+    'UPDATE task_chunk_fts SET title = ?, summary = ?, tags = ? WHERE taskId = ?',
+    [context.title, context.summary, context.ftsTags, task.id],
+  );
+}
+
+export async function reindexTask(task: TaskRow) {
   const userId = task.userId;
   const workspaceId = task.workspaceId;
   if (!userId || !workspaceId || !task.transcript) {
+    await clearTaskIndex(task.id);
     return;
   }
 
   const segments = parseJsonField<TranscriptSegment[]>(task.segments, []);
   const parentChunks = chunkTranscriptWithTimestamps(task.transcript, segments, PARENT_CHUNK_SIZE);
-  const tags = parseJsonField<string[]>(task.tags, []);
-  const embeddingTags = tags.slice(0, EMBEDDING_TAG_LIMIT).join(' ');
-  const ftsTags = tags.join(' ');
-  const summary = task.summary || '';
-  const title = repairPossiblyMojibakeText(task.originalName);
+  const context = getTaskSearchContext(task);
   const now = Date.now();
 
-  const summarySnippet = summary.length > 300 ? summary.slice(0, 297) + '...' : summary;
+  const parentRows: Array<Record<string, unknown>> = [];
+  const childRows: Array<Record<string, unknown>> = [];
+  const childInputs: string[] = [];
 
   for (let index = 0; index < parentChunks.length; index += 1) {
     const { content: parentContent, startTime, endTime } = parentChunks[index];
 
-    // 1. Insert parent chunk (no embedding — used for LLM context)
+    // Parent chunk: no embedding, used for keyword search and LLM context.
     const parentId = uuidv4();
-    const chunkRows: Array<Record<string, unknown>> = [{
+    parentRows.push({
       id: parentId,
       taskId: task.id,
       userId,
@@ -272,61 +295,121 @@ export async function reindexTask(task: TaskRow) {
       endTime: endTime ?? null,
       createdAt: now,
       updatedAt: now,
-    }];
+    });
 
-    // 2. Split parent into child chunks and embed each (for vector search)
+    // Child chunks: embedded for vector search.
     if (isEmbeddingsConfigured()) {
       const childTexts = splitIntoChildChunks(parentContent, CHILD_CHUNK_SIZE);
-
       for (let ci = 0; ci < childTexts.length; ci += 1) {
         const childContent = childTexts[ci];
-        try {
-          // Contextual embedding: title + summary + tags + child content
-          const contextParts = [
-            title,
-            summarySnippet,
-            embeddingTags,
-            childContent,
-          ].filter(Boolean);
-
-          const result = await createEmbedding(contextParts.join('\n\n'));
-
-          chunkRows.push({
-            id: uuidv4(),
-            taskId: task.id,
-            userId,
-            workspaceId,
-            chunkIndex: index * 100 + ci,
-            content: childContent,
-            ...serializeEmbedding(result.vector),
-            embeddingModel: result.model,
-            parentId,
-            startTime: startTime ?? null,
-            endTime: endTime ?? null,
-            createdAt: now,
-            updatedAt: now,
-          });
-        } catch (error) {
-          log.error('Failed to embed child chunk', { taskId: task.id, chunk: `${index}.${ci}`, error: error instanceof Error ? error.message : String(error) });
-        }
+        // Contextual embedding: title + summary + tags + child content
+        childInputs.push([context.title, context.summarySnippet, context.embeddingTags, childContent].filter(Boolean).join('\n\n'));
+        childRows.push({
+          id: uuidv4(),
+          taskId: task.id,
+          userId,
+          workspaceId,
+          chunkIndex: index * 100 + ci,
+          content: childContent,
+          parentId,
+          startTime: startTime ?? null,
+          endTime: endTime ?? null,
+          createdAt: now,
+          updatedAt: now,
+        });
       }
     }
+  }
 
-    // Insert the parent and all successfully embedded children in one statement.
-    await db('task_chunks').insert(chunkRows);
-
-    // FTS index on parent chunk (keyword search operates on full content)
-    if (isSqliteDb()) {
-      await db.raw(
-        'INSERT INTO task_chunk_fts (taskChunkId, taskId, userId, workspaceId, title, summary, tags, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-        [parentId, task.id, userId, workspaceId, title, summary, ftsTags, parentContent],
-      );
+  // Embed everything before touching the stored index, so search keeps serving the
+  // previous chunks while (possibly slow) embedding requests run.
+  const embeddedChildRows: Array<Record<string, unknown>> = [];
+  if (childInputs.length > 0) {
+    const embeddings = await createEmbeddings(childInputs);
+    let failed = 0;
+    embeddings.forEach((result, index) => {
+      if (!result) {
+        failed += 1;
+        return;
+      }
+      embeddedChildRows.push({
+        ...childRows[index],
+        ...serializeEmbedding(result.vector),
+        embeddingModel: result.model,
+      });
+    });
+    if (failed > 0) {
+      log.error('Failed to embed child chunks', { taskId: task.id, failed, total: childInputs.length });
     }
   }
 
-  if (userId) {
-    triggerAssociationAnalysis(userId, task.id);
+  // Swap old chunks for new ones in one transaction: no empty-index window, and two
+  // reindexes of the same task cannot interleave into duplicate chunks.
+  await db.transaction(async (trx) => {
+    if (isSqliteDb()) {
+      await trx.raw('DELETE FROM task_chunk_fts WHERE taskId = ?', [task.id]);
+    }
+    await trx('task_chunks').where({ taskId: task.id }).delete();
+
+    for (const row of parentRows) {
+      const children = embeddedChildRows.filter((child) => child.parentId === row.id);
+      await trx('task_chunks').insert([row, ...children]);
+    }
+
+    if (isSqliteDb()) {
+      for (const row of parentRows) {
+        await trx.raw(
+          'INSERT INTO task_chunk_fts (taskChunkId, taskId, userId, workspaceId, title, summary, tags, content) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [row.id, task.id, userId, workspaceId, context.title, context.summary, context.ftsTags, row.content],
+        );
+      }
+    }
+  });
+
+  triggerAssociationAnalysis(userId, task.id);
+}
+
+const REINDEX_DEBOUNCE_MS = 3000;
+const scheduledReindexes = new Map<string, { timer: ReturnType<typeof setTimeout> | null; running: boolean; rerun: boolean }>();
+
+/**
+ * Rebuilds a task's chunks and embeddings in the background. Repeated calls for the same
+ * task within the debounce window collapse into one run, and a call during a run queues
+ * exactly one more run that reads the latest task row.
+ */
+export function scheduleTaskReindex(taskId: string, delayMs = REINDEX_DEBOUNCE_MS) {
+  const entry = scheduledReindexes.get(taskId) || { timer: null, running: false, rerun: false };
+  scheduledReindexes.set(taskId, entry);
+
+  if (entry.running) {
+    entry.rerun = true;
+    return;
   }
+
+  if (entry.timer) clearTimeout(entry.timer);
+  entry.timer = setTimeout(() => {
+    entry.timer = null;
+    entry.running = true;
+    void (async () => {
+      try {
+        const task = (await db('tasks').where({ id: taskId }).first()) as TaskRow | undefined;
+        if (task?.status === 'completed' && task.transcript) {
+          await reindexTask(task);
+        }
+      } catch (error) {
+        log.error('Background reindex failed', { taskId, error: error instanceof Error ? error.message : String(error) });
+      } finally {
+        entry.running = false;
+        if (entry.rerun) {
+          entry.rerun = false;
+          scheduleTaskReindex(taskId, 0);
+        } else {
+          scheduledReindexes.delete(taskId);
+        }
+      }
+    })();
+  }, delayMs);
+  entry.timer.unref?.();
 }
 
 export async function searchTasksByText(userId: string, workspaceId: string, query: string) {

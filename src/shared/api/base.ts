@@ -1,5 +1,17 @@
 import { clearStoredUser } from '@/shared/lib/local-storage';
 
+/** Fired on window when an API call comes back 401, i.e. the session is gone. */
+export const UNAUTHORIZED_EVENT = 'audiosense:unauthorized';
+
+// A 401 from these means "wrong credentials", not "session expired".
+const CREDENTIAL_ENDPOINTS = ['/api/auth/login', '/api/auth/register'];
+
+function requestPath(input: RequestInfo | URL) {
+  if (typeof input === 'string') return input;
+  if (input instanceof URL) return input.pathname;
+  return input.url;
+}
+
 export async function apiFetch(input: RequestInfo | URL, init?: RequestInit) {
   const response = await fetch(input, {
     credentials: 'same-origin',
@@ -7,7 +19,11 @@ export async function apiFetch(input: RequestInfo | URL, init?: RequestInit) {
   });
 
   if (response.status === 401) {
-    clearStoredUser();
+    const path = requestPath(input);
+    if (!CREDENTIAL_ENDPOINTS.some((endpoint) => path.includes(endpoint))) {
+      clearStoredUser();
+      window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    }
   }
 
   return response;

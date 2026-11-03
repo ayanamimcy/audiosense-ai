@@ -78,7 +78,9 @@ export function TaskDetail({
 
   const isVideo = isVideoTask(task);
   const isCompleted = task.status === 'completed';
-  const hasTranscript = Boolean(task.segments.length || task.transcript || task.result);
+  // `result` also carries the error/status message for failed, blocked and cancelled tasks,
+  // so only a completed task has a transcript to show or copy.
+  const hasTranscript = isCompleted && Boolean(task.segments.length || task.transcript || task.result);
 
   useEffect(() => {
     setActiveTab(hasTaskSummaryState(task) ? 'summary' : 'transcript');
@@ -186,6 +188,7 @@ export function TaskDetail({
   };
 
   const handleCopyTranscript = async () => {
+    if (!hasTranscript) return;
     const content = buildTranscriptClipboardText(task).trim();
     if (!content) return;
     try {

@@ -10,6 +10,7 @@ import {
   isTaskTagSuggestionGenerating,
   type Task,
 } from '@/entities/task';
+import { isSubmitEnter } from '@/shared/lib/keyboard';
 
 type TaskTagSuggestionPanelMode = 'desktop-popover' | 'inline';
 
@@ -432,7 +433,7 @@ export function TaskTagSuggestionPanel({
                 value={customTagInput}
                 onChange={(event) => setCustomTagInput(event.target.value)}
                 onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
+                  if (isSubmitEnter(event)) {
                     event.preventDefault();
                     handleCustomTagAdd();
                   }

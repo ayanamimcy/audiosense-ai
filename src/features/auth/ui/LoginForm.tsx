@@ -6,9 +6,12 @@ import type { AuthUser } from '@/entities/user';
 export function LoginForm({
   onLogin,
   allowRegistration,
+  notice,
 }: {
   onLogin: (user: AuthUser) => void;
   allowRegistration: boolean;
+  /** Shown above the form, e.g. why the user has to sign in again. */
+  notice?: string;
 }) {
   const [isRegister, setIsRegister] = useState(false);
   const [email, setEmail] = useState('');
@@ -71,6 +74,11 @@ export function LoginForm({
             </div>
           )}
 
+          {notice ? (
+            <p role="status" className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              {notice}
+            </p>
+          ) : null}
           <form onSubmit={handleSubmit} className="space-y-4">
             {isRegister && (
               <div>
