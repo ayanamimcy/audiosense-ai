@@ -4,6 +4,7 @@ import collections
 import copy
 import logging
 import queue
+import re
 import threading
 import time
 from typing import Any, Callable
@@ -24,6 +25,9 @@ logger = logging.getLogger(__name__)
 
 SAMPLE_RATE = 16000
 INT16_MAX_ABS_VALUE = 32768.0
+
+_CJK_PATTERN = re.compile(r"[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+_SENTENCE_END = ".!?。！？…"
 
 
 class AudioToTextRecorder:
@@ -49,6 +53,9 @@ class AudioToTextRecorder:
         on_vad_start: Callable[[], None] | None = None,
         on_vad_stop: Callable[[], None] | None = None,
         on_recorded_chunk: Callable[[bytes], None] | None = None,
+        on_realtime_update: Callable[[str], None] | None = None,
+        word_timestamps: bool = True,
+        align: bool = True,
     ) -> None:
         self._manager = manager
         self._config = config
@@ -70,6 +77,12 @@ class AudioToTextRecorder:
         self.on_vad_start = on_vad_start
         self.on_vad_stop = on_vad_stop
         self.on_recorded_chunk = on_recorded_chunk
+        self.on_realtime_update = on_realtime_update
+        self.word_timestamps = word_timestamps
+        self.align = align
+        # Bumped at every utterance start, so interim text decoded for an utterance that has
+        # since ended is never reported against the next one.
+        self._utterance_id = 0
 
         self.state = "inactive"
         self.is_recording = False
@@ -87,6 +100,13 @@ class AudioToTextRecorder:
         )
         self._buffer_size = config.buffer_size
         self.frames: list[bytes] = []
+        # Utterances that have ended but not been transcribed yet. Ending an utterance moves its
+        # frames here, so recording can carry straight on into the next one without racing the
+        # consumer for `frames`.
+        self._finished_utterances: collections.deque[list[bytes]] = collections.deque()
+        self._finished_lock = threading.Lock()
+        self._utterance_ready = threading.Event()
+        self._utterance_has_speech = False
         self.audio: np.ndarray | None = None
         self._feed_buffer = bytearray()
 
@@ -106,6 +126,15 @@ class AudioToTextRecorder:
             name=f"{instance_name}_worker",
         )
         self.recording_thread.start()
+
+        self.realtime_thread: threading.Thread | None = None
+        if self.on_realtime_update and config.realtime_update_interval > 0:
+            self.realtime_thread = threading.Thread(
+                target=self._realtime_worker,
+                daemon=True,
+                name=f"{instance_name}_realtime",
+            )
+            self.realtime_thread.start()
 
     def _set_state(self, state: str) -> None:
         self.state = state
@@ -149,6 +178,8 @@ class AudioToTextRecorder:
 
         self._set_state("recording")
         self.frames = []
+        self._utterance_id += 1
+        self._utterance_has_speech = True
         self.is_recording = True
         self.recording_start_time = time.time()
         self.speech_end_silence_start = 0.0
@@ -162,10 +193,39 @@ class AudioToTextRecorder:
             self.on_recording_start()
         return self
 
+    def _close_utterance(self) -> None:
+        frames, self.frames = self.frames, []
+        if frames and self._utterance_has_speech:
+            with self._finished_lock:
+                self._finished_utterances.append(frames)
+            self._utterance_ready.set()
+
+    def _pop_finished_utterance(self) -> list[bytes] | None:
+        with self._finished_lock:
+            frames = self._finished_utterances.popleft() if self._finished_utterances else None
+            if not self._finished_utterances:
+                self._utterance_ready.clear()
+            return frames
+
+    def has_pending_audio(self) -> bool:
+        with self._finished_lock:
+            return bool(self._finished_utterances)
+
+    def _split_utterance(self) -> None:
+        """Hand the utterance so far to transcription and keep recording into a new one."""
+        self._close_utterance()
+        self._utterance_id += 1
+        self._utterance_has_speech = False
+        self.recording_start_time = time.time()
+        self.speech_end_silence_start = 0.0
+
     def stop(self) -> "AudioToTextRecorder":
         if time.time() - self.recording_start_time < self._config.min_length_of_recording:
             return self
+        return self._end_recording()
 
+    def _end_recording(self) -> "AudioToTextRecorder":
+        self._close_utterance()
         self.is_recording = False
         self.recording_stop_time = time.time()
         self.vad.reset_states()
@@ -176,31 +236,41 @@ class AudioToTextRecorder:
             self.on_recording_stop()
         return self
 
+    def finish(self) -> None:
+        """End the session. An utterance in progress is closed first, so the last words spoken
+        before stopping are still returned by the next text_result() call."""
+        if self.is_recording:
+            self._end_recording()
+        self.shutdown()
+
     def listen(self) -> None:
         self._set_state("listening")
         self.start_recording_on_voice_activity = True
 
     def wait_audio(self) -> None:
-        if not self.is_recording and not self.frames:
-            self._set_state("listening")
-            self.start_recording_on_voice_activity = True
-            while not self.shutdown_event.is_set():
-                if self.start_recording_event.wait(timeout=0.02):
-                    break
+        """Blocks until an utterance has ended (or the recorder shuts down) and loads it into
+        `self.audio`. Keeps the recorder listening for speech while it waits."""
+        frames: list[bytes] | None = None
+        while not self.shutdown_event.is_set():
+            frames = self._pop_finished_utterance()
+            if frames is not None:
+                break
+            if self.is_recording:
+                self.stop_recording_on_voice_deactivity = True
+            elif not self.start_recording_on_voice_activity:
+                self._set_state("listening")
+                self.start_recording_on_voice_activity = True
+            self._utterance_ready.wait(timeout=0.02)
+        else:
+            # Shut down (e.g. by finish()): still return an utterance it closed.
+            frames = self._pop_finished_utterance()
 
-        if self.is_recording:
-            self.stop_recording_on_voice_deactivity = True
-            while not self.shutdown_event.is_set():
-                if self.stop_recording_event.wait(timeout=0.02):
-                    break
-
-        if self.frames:
-            audio_array = np.frombuffer(b"".join(self.frames), dtype=np.int16)
+        if frames:
+            audio_array = np.frombuffer(b"".join(frames), dtype=np.int16)
             self.audio = audio_array.astype(np.float32) / INT16_MAX_ABS_VALUE
         else:
             self.audio = np.array([], dtype=np.float32)
 
-        self.frames = []
         self._set_state("inactive")
 
     def _preprocess_output(self, text: str) -> str:
@@ -211,12 +281,13 @@ class AudioToTextRecorder:
         if self._config.ensure_sentence_starting_uppercase:
             output = output[:1].upper() + output[1:]
 
-        if self._config.ensure_sentence_ends_with_period and output[-1] not in ".!?":
-            output = f"{output}."
+        if self._config.ensure_sentence_ends_with_period and output[-1] not in _SENTENCE_END:
+            # Chinese/Japanese sentences end with an ideographic full stop, not ".".
+            output = f"{output}{'。' if _CJK_PATTERN.search(output) else '.'}"
 
         return output
 
-    def _perform_transcription(self, audio: np.ndarray | None = None) -> dict[str, Any]:
+    def _perform_transcription(self, audio: np.ndarray | None = None, *, realtime: bool = False) -> dict[str, Any]:
         with self.transcription_lock:
             if audio is None:
                 audio = copy.deepcopy(self.audio)
@@ -249,7 +320,11 @@ class AudioToTextRecorder:
                 sample_rate=SAMPLE_RATE,
                 language=self.language or None,
                 diarization=False,
-                word_timestamps=True,
+                # Interim text is decoded greedily and without word timing: it is redrawn
+                # every fraction of a second and replaced by the final pass anyway.
+                word_timestamps=False if realtime else self.word_timestamps,
+                beam_size=1 if realtime else None,
+                align=False if realtime else self.align,
                 task=self.task,
                 translation_target_language=self.translation_target_language,
                 backend=self.backend,
@@ -269,10 +344,50 @@ class AudioToTextRecorder:
             self._set_state("inactive")
 
     def text(self) -> str:
+        return str(self.text_result().get("text", ""))
+
+    def text_result(self) -> dict[str, Any]:
+        """Waits for the next utterance and returns its transcription (text, language, ...).
+        An utterance closed by finish() is still transcribed."""
         self.wait_audio()
-        if self.is_shut_down:
-            return ""
-        return str(self.transcribe().get("text", ""))
+        if self.is_shut_down and (self.audio is None or len(self.audio) == 0):
+            return {"text": "", "language": None}
+        return self.transcribe()
+
+    def _realtime_worker(self) -> None:
+        """Re-decodes the utterance in progress at a fixed interval and reports interim text."""
+        interval = self._config.realtime_update_interval
+        min_samples = int(self._config.realtime_min_audio_duration * SAMPLE_RATE)
+        last_text = ""
+        last_utterance = -1
+        while self.is_running and not self.shutdown_event.wait(interval):
+            if not self.is_recording:
+                continue
+            utterance_id = self._utterance_id
+            if utterance_id != last_utterance:
+                last_utterance, last_text = utterance_id, ""
+            frames = list(self.frames)
+            if sum(len(frame) for frame in frames) // 2 < min_samples:
+                continue
+            # A final transcription owns the lock; interim text for that utterance is moot.
+            if not self.transcription_lock.acquire(blocking=False):
+                continue
+            self.transcription_lock.release()
+            audio = np.frombuffer(b"".join(frames), dtype=np.int16).astype(np.float32) / INT16_MAX_ABS_VALUE
+            try:
+                text = str(self._perform_transcription(audio, realtime=True).get("text", "")).strip()
+            except Exception:
+                logger.exception("Interim transcription failed")
+                continue
+            if (
+                text
+                and text != last_text
+                and self.is_recording
+                and self._utterance_id == utterance_id
+                and self.on_realtime_update
+            ):
+                last_text = text
+                self.on_realtime_update(text)
 
     def shutdown(self) -> None:
         self.is_running = False
@@ -282,6 +397,8 @@ class AudioToTextRecorder:
         self.stop_recording_event.set()
         if self.recording_thread.is_alive():
             self.recording_thread.join(timeout=2.0)
+        if self.realtime_thread is not None and self.realtime_thread.is_alive():
+            self.realtime_thread.join(timeout=2.0)
 
     def _recording_worker(self) -> None:
         try:
@@ -320,19 +437,30 @@ class AudioToTextRecorder:
                     self.frames.append(data)
 
                     if self.stop_recording_on_voice_deactivity:
+                        utterance_duration = time.time() - self.recording_start_time
+                        # Long monologues: end the utterance at a short pause once it is long,
+                        # and cut it outright past the hard limit, so captions keep flowing.
+                        is_long = utterance_duration >= self._config.max_utterance_duration
                         is_speech = self.vad.check_deactivation(data)
-                        if not is_speech:
+                        if is_speech:
+                            self._utterance_has_speech = True
+                            self.speech_end_silence_start = 0
+                            self.extended_silence_start = 0
+                            if utterance_duration >= self._config.hard_max_utterance_duration:
+                                self._split_utterance()
+                        else:
                             if self.speech_end_silence_start == 0:
                                 self.speech_end_silence_start = time.time()
                                 if self.on_vad_stop:
                                     self.on_vad_stop()
                             silence_duration = time.time() - self.speech_end_silence_start
-                            if silence_duration >= self._config.post_speech_silence_duration:
+                            if is_long and silence_duration >= self._config.long_utterance_silence_duration:
+                                # A long utterance ends at the first short pause; recording
+                                # continues so the next words are not lost.
+                                self._split_utterance()
+                            elif silence_duration >= self._config.post_speech_silence_duration:
                                 self.stop()
                                 self.stop_recording_on_voice_deactivity = False
-                        else:
-                            self.speech_end_silence_start = 0
-                            self.extended_silence_start = 0
                 self.audio_queue.task_done()
         except Exception:
             logger.exception("Recorder worker failed")

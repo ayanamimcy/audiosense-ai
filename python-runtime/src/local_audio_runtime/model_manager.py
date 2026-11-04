@@ -193,6 +193,7 @@ class ModelManager:
         model_name: str | None = None,
         backend_instance: BaseBackend | None = None,
         cancellation_check: CancellationCheck | None = None,
+        beam_size: int | None = None,
     ) -> dict[str, Any]:
         _check_cancelled(cancellation_check)
         runtime_backend = backend_instance or self._ensure_backend(backend=backend, model_name=model_name)
@@ -201,7 +202,7 @@ class ModelManager:
             audio_sample_rate=sample_rate,
             language=language,
             task=task,
-            beam_size=self._config.beam_size,
+            beam_size=beam_size or self._config.beam_size,
             initial_prompt=initial_prompt,
             suppress_tokens=suppress_tokens,
             word_timestamps=word_timestamps,
@@ -231,7 +232,11 @@ class ModelManager:
         hf_token: str | None = None,
         backend_instance: BaseBackend | None = None,
         cancellation_check: CancellationCheck | None = None,
+        beam_size: int | None = None,
+        align: bool = True,
     ) -> dict[str, Any]:
+        """`beam_size` overrides the configured beam (live interim text uses 1); `align=False`
+        skips optional WhisperX alignment, which live captions don't need."""
         with self._transcription_lock:
           try:
             _check_cancelled(cancellation_check)
@@ -286,15 +291,17 @@ class ModelManager:
                     model_name=model_name,
                     backend_instance=runtime_backend,
                     cancellation_check=cancellation_check,
+                    beam_size=beam_size,
                 )
-                result = self._apply_optional_alignment(
-                    result,
-                    audio_data,
-                    runtime_backend=runtime_backend,
-                    task=effective_task,
-                    language=language,
-                    cancellation_check=cancellation_check,
-                )
+                if align:
+                    result = self._apply_optional_alignment(
+                        result,
+                        audio_data,
+                        runtime_backend=runtime_backend,
+                        task=effective_task,
+                        language=language,
+                        cancellation_check=cancellation_check,
+                    )
                 _check_cancelled(cancellation_check)
                 result["duration"] = get_audio_duration_seconds(audio_data, sample_rate)
                 result["backend"] = runtime_backend.backend_name

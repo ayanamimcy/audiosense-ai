@@ -213,6 +213,8 @@ class LiveModeSession:
         self._engine: LiveModeEngine | None = None
         self._message_queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
         self._running = False
+        # Set once a stop has queued its final "stopped" message; the sender drains and exits.
+        self._finished = False
 
     async def send_message(self, msg_type: str, data: dict | None = None) -> None:
         if self.websocket.client_state == WebSocketState.DISCONNECTED:
@@ -237,8 +239,11 @@ class LiveModeSession:
             {"type": msg_type, "data": data or {}},
         )
 
-    def _on_sentence(self, text: str) -> None:
-        self._queue_message("sentence", {"text": text})
+    def _on_sentence(self, text: str, language: str | None = None) -> None:
+        self._queue_message("sentence", {"text": text, "language": language})
+
+    def _on_realtime_update(self, text: str) -> None:
+        self._queue_message("realtime", {"text": text})
 
     def _on_state_change(self, state: LiveModeState) -> None:
         self._queue_message("state", {"state": state.name})
@@ -268,6 +273,7 @@ class LiveModeSession:
             config=config,
             live_config=live_config,
             on_sentence=self._on_sentence,
+            on_realtime_update=self._on_realtime_update,
             on_state_change=self._on_state_change,
         )
         if self._engine.start():
@@ -278,11 +284,15 @@ class LiveModeSession:
         return False
 
     async def stop_engine(self) -> None:
+        engine, self._engine = self._engine, None
+        if engine:
+            # Flushing transcribes the last utterance, which can take a while: keep the event
+            # loop free so the resulting sentence is delivered meanwhile.
+            await asyncio.to_thread(engine.stop)
+        # Queued behind every sentence, so the client knows nothing else is coming.
+        self._message_queue.put_nowait({"type": "stopped", "data": {}})
         self._running = False
-        if self._engine:
-            self._engine.stop()
-            self._engine = None
-        await self.send_message("state", {"state": "STOPPED"})
+        self._finished = True
 
     async def clear_history(self) -> None:
         if self._engine:
@@ -302,7 +312,9 @@ class LiveModeSession:
                 msg = await asyncio.wait_for(self._message_queue.get(), timeout=0.1)
                 await self.send_message(str(msg["type"]), msg.get("data") if isinstance(msg.get("data"), dict) else {})
             except TimeoutError:
-                if not self._running and self._message_queue.empty():
+                # Not `not self._running`: that is also true before "start" arrives, and
+                # exiting then would drop every message of the session.
+                if self._finished and self._message_queue.empty():
                     break
                 continue
 

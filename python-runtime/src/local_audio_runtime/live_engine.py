@@ -43,7 +43,7 @@ class LiveModeEngine:
         manager: ModelManager,
         config: RuntimeConfig,
         live_config: LiveModeConfig | None = None,
-        on_sentence: Callable[[str], None] | None = None,
+        on_sentence: Callable[[str, str | None], None] | None = None,
         on_realtime_update: Callable[[str], None] | None = None,
         on_state_change: Callable[[LiveModeState], None] | None = None,
     ) -> None:
@@ -87,7 +87,7 @@ class LiveModeEngine:
         if self._state == LiveModeState.PROCESSING:
             self._set_state(LiveModeState.LISTENING)
 
-    def _process_sentence(self, text: str) -> None:
+    def _process_sentence(self, text: str, language: str | None = None) -> None:
         if not text.strip():
             return
 
@@ -97,7 +97,11 @@ class LiveModeEngine:
             self._sentence_history = self._sentence_history[-self._max_history :]
 
         if self._on_sentence:
-            self._on_sentence(normalized)
+            self._on_sentence(normalized, language)
+
+    def _handle_realtime_update(self, text: str) -> None:
+        if self._on_realtime_update and not self._stop_event.is_set():
+            self._on_realtime_update(text)
 
     def _transcription_loop(self) -> None:
         try:
@@ -115,13 +119,23 @@ class LiveModeEngine:
                 ),
                 on_recording_start=self._on_recording_start,
                 on_recording_stop=self._on_recording_stop,
+                on_realtime_update=self._handle_realtime_update if self._on_realtime_update else None,
+                # Captions need text fast; word timing and alignment only add latency here.
+                word_timestamps=False,
+                align=False,
             )
             self._set_state(LiveModeState.LISTENING)
 
-            while not self._stop_event.is_set():
-                text = self._recorder.text()
+            # After stop() the loop keeps going until utterances already captured (including
+            # the one closed by finish()) have been transcribed.
+            while not self._stop_event.is_set() or self._recorder.has_pending_audio():
+                result = self._recorder.text_result()
+                text = str(result.get("text", "") or "")
                 if text:
-                    self._process_sentence(text)
+                    language = result.get("language")
+                    self._process_sentence(text, str(language) if language else None)
+                elif self._stop_event.is_set():
+                    break
         except Exception:
             logger.exception("Live Mode transcription loop failed")
             self._set_state(LiveModeState.ERROR)
@@ -175,14 +189,16 @@ class LiveModeEngine:
         self._feeder_thread.start()
         return True
 
-    def stop(self) -> None:
+    def stop(self, flush_timeout: float = 30.0) -> None:
+        """Stops listening. Speech already captured, including an utterance still in progress,
+        is transcribed and reported before this returns (bounded by `flush_timeout`)."""
         self._stop_event.set()
 
         if self._recorder is not None:
-            self._recorder.shutdown()
+            self._recorder.finish()
 
         if self._loop_thread and self._loop_thread.is_alive():
-            self._loop_thread.join(timeout=5.0)
+            self._loop_thread.join(timeout=flush_timeout)
         if self._feeder_thread and self._feeder_thread.is_alive():
             self._feeder_thread.join(timeout=2.0)
 

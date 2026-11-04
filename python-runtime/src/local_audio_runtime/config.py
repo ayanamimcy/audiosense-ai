@@ -67,6 +67,15 @@ class RuntimeConfig:
     ensure_sentence_starting_uppercase: bool
     ensure_sentence_ends_with_period: bool
     buffer_size: int
+    # Live mode: interim text for the utterance still being spoken, re-decoded this often (0 = off).
+    realtime_update_interval: float = 0.7
+    # Live mode: don't produce interim text until the utterance has this much audio.
+    realtime_min_audio_duration: float = 0.6
+    # Live mode: after an utterance runs this long, end it at a much shorter pause...
+    max_utterance_duration: float = 12.0
+    long_utterance_silence_duration: float = 0.25
+    # ...and never let one run past this, so long monologues keep producing captions.
+    hard_max_utterance_duration: float = 20.0
 
 
 def load_config() -> RuntimeConfig:
@@ -135,4 +144,9 @@ def load_config() -> RuntimeConfig:
             True,
         ),
         buffer_size=_read_int("LOCAL_AUDIO_ENGINE_BUFFER_SIZE", 512),
+        realtime_update_interval=_read_float("LOCAL_AUDIO_ENGINE_REALTIME_UPDATE_INTERVAL", 0.7),
+        realtime_min_audio_duration=_read_float("LOCAL_AUDIO_ENGINE_REALTIME_MIN_AUDIO_DURATION", 0.6),
+        max_utterance_duration=_read_float("LOCAL_AUDIO_ENGINE_MAX_UTTERANCE_DURATION", 12.0),
+        long_utterance_silence_duration=_read_float("LOCAL_AUDIO_ENGINE_LONG_UTTERANCE_SILENCE_DURATION", 0.25),
+        hard_max_utterance_duration=_read_float("LOCAL_AUDIO_ENGINE_HARD_MAX_UTTERANCE_DURATION", 20.0),
     )
