@@ -32,6 +32,7 @@ const OPERATION_LABELS: Record<string, string> = {
   tag_suggestion: 'Tag suggestions',
   task_chat: 'Recording chat',
   knowledge_chat: 'Ask AI',
+  live_translation: 'Live caption translation',
 };
 
 const WINDOWS = [7, 30];

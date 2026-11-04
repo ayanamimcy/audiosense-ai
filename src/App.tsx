@@ -16,6 +16,9 @@ const NotebookView = lazy(() => import('@/pages/notebook/ui/NotebookPage'));
 const KnowledgeBase = lazy(() =>
   import('@/pages/knowledge/ui/KnowledgePage').then((m) => ({ default: m.KnowledgeBase })),
 );
+const LiveCaptionsPage = lazy(() =>
+  import('@/pages/live/ui/LiveCaptionsPage').then((m) => ({ default: m.LiveCaptionsPage })),
+);
 const SettingsPage = lazy(() =>
   import('@/pages/settings/ui/SettingsPage').then((m) => ({ default: m.SettingsPage })),
 );
@@ -166,6 +169,7 @@ function AuthenticatedApp() {
               path="/knowledge"
               element={<KnowledgeBase onSelectTask={handleSelectKnowledgeTask} />}
             />
+            <Route path="/live" element={<LiveCaptionsPage />} />
             <Route path="/upload" element={<OpenNewRecordingRoute mode="upload" />} />
             <Route path="/record" element={<OpenNewRecordingRoute mode="record" />} />
             <Route path="/tasks" element={<Navigate to="/notebook" replace />} />

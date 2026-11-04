@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowUp, AudioLines, Loader2, LogOut, MessageSquare, Mic, Plus, SlidersHorizontal } from 'lucide-react';
+import { ArrowUp, AudioLines, Captions, Loader2, LogOut, MessageSquare, Mic, Plus, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/shared/lib/cn';
 import { useAppDataContext } from '@/app/providers/app-data-context';
 import { INBOX_FILTER, NOTEBOOK_FILTER_PARAM } from '@/entities/notebook';
@@ -10,11 +10,12 @@ import { RECORDING_NAVIGATION_EVENT, useRecordingDraft } from '@/features/record
 import { NotebookNav } from '@/features/notebook-nav';
 import { WorkspaceSwitcher } from './WorkspaceSwitcher';
 
-type Section = 'recordings' | 'ask' | 'settings';
+type Section = 'recordings' | 'ask' | 'live' | 'settings';
 
 function useActiveSection(): Section {
   const { pathname } = useLocation();
   if (pathname.startsWith('/knowledge')) return 'ask';
+  if (pathname.startsWith('/live')) return 'live';
   if (pathname.startsWith('/settings')) return 'settings';
   return 'recordings';
 }
@@ -129,7 +130,7 @@ export function AppShell({
   // Recording detail is a full-screen view on mobile: no header, no bottom nav.
   const isMobileChromeHidden = pathname.startsWith('/notebook/');
   // Pages that manage their own scrolling (split panes) should not scroll the shell.
-  const isFixedHeightPage = pathname.startsWith('/notebook/') || pathname.startsWith('/knowledge');
+  const isFixedHeightPage = pathname.startsWith('/notebook/') || pathname.startsWith('/knowledge') || pathname.startsWith('/live');
 
   const PULL_THRESHOLD = 60;
 
@@ -250,6 +251,9 @@ export function AppShell({
         </RailLink>
         <RailLink to="/knowledge" active={activeSection === 'ask'} icon={<MessageSquare className="h-4 w-4" />}>
           Ask AI
+        </RailLink>
+        <RailLink to="/live" active={activeSection === 'live'} icon={<Captions className="h-4 w-4" />}>
+          Live captions
         </RailLink>
 
         <div className="mt-5 min-h-0 flex-1 overflow-y-auto custom-scrollbar">
