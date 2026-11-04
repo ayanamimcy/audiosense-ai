@@ -67,6 +67,14 @@ flowchart LR
 - Cross-recording search and knowledge answering
 - Hybrid retrieval with FTS and embeddings
 
+### Live Captions
+
+- Captions for an online meeting running in a browser tab: share the meeting tab's audio, optionally add your microphone
+- Interim text while someone is speaking, finalized sentence by sentence; long monologues are split so captions keep flowing
+- Chinese ⇄ Japanese translation of each finalized sentence, using the previous sentences as context
+- When you stop, the meeting is saved as a recording and goes through the full pipeline (accurate transcript, speakers, summary)
+- New transcription jobs wait while a live session runs, so captions get the GPU
+
 ### Operations
 
 - User login / registration / sessions
@@ -249,6 +257,16 @@ Relevant files:
 - [python-runtime/src/local_audio_runtime/backends.py](python-runtime/src/local_audio_runtime/backends.py)
 - [python-runtime/src/local_audio_runtime/diarization.py](python-runtime/src/local_audio_runtime/diarization.py)
 - [python-runtime/src/local_audio_runtime/parallel_diarize.py](python-runtime/src/local_audio_runtime/parallel_diarize.py)
+
+### Live captions
+
+The **Live captions** page streams audio from the browser to the app server (`/api/live/ws`), which forwards it to the runtime's `WS /ws/live` endpoint and translates finalized sentences with the configured AI model.
+
+- Use desktop Chrome or Edge. In the sharing dialog, pick the meeting's tab and turn on "Also share tab audio". Use headphones if your microphone is on.
+- The runtime needs the `live` extra (`webrtcvad`, `silero-vad`); the CUDA image installs it. It serves one live session at a time.
+- A job that is already transcribing when a session starts keeps the runtime busy until it finishes; captions start after that. New jobs wait until the session ends.
+- Behind a reverse proxy, enable WebSocket upgrades for `/api/live/ws` (in Nginx Proxy Manager: "Websockets Support").
+- Tuning (runtime environment): `LOCAL_AUDIO_ENGINE_REALTIME_UPDATE_INTERVAL` (interim text refresh, default `0.7` s, `0` turns it off), `LOCAL_AUDIO_ENGINE_POST_SPEECH_SILENCE_DURATION` (pause that ends a sentence, default `0.8` s), `LOCAL_AUDIO_ENGINE_MAX_UTTERANCE_DURATION` / `LOCAL_AUDIO_ENGINE_HARD_MAX_UTTERANCE_DURATION` (split long speech, defaults `12` / `20` s).
 
 ## Current Scope
 
