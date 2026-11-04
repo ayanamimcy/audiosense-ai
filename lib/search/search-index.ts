@@ -20,6 +20,7 @@ import {
 import { rewriteQueryForSearch, generateHydeEmbedding } from '../ai/query-enhancer.js';
 import { rerankChunks } from '../ai/reranker.js';
 import type { UserSettings } from '../settings/user-settings-schema.js';
+import type { ConversationTurn } from '../ai/conversation-history.js';
 
 const EMBEDDING_TAG_LIMIT = 5;
 
@@ -421,7 +422,13 @@ export function scheduleTaskReindex(taskId: string, delayMs = REINDEX_DEBOUNCE_M
   entry.timer.unref?.();
 }
 
-type KeywordHit = { taskId: string; score: number; snippet: string };
+type KeywordHit = {
+  taskId: string;
+  score: number;
+  snippet: string;
+  /** The parent chunk (transcript passage) that matched best, when known. */
+  chunkId?: string | null;
+};
 
 // Column weights for PostgreSQL keyword scoring: title and tags say more about a recording
 // than one mention somewhere in a long transcript.
@@ -437,6 +444,7 @@ async function searchTasksByTextPostgres(
   workspaceId: string,
   terms: string[],
   mode: SearchMatchMode,
+  taskIds?: string[],
 ): Promise<KeywordHit[]> {
   const patterns = terms.map(toLikePattern);
   const scoreParts: string[] = [];
@@ -448,8 +456,11 @@ async function searchTasksByTextPostgres(
     }
   }
 
-  const rows = await db('tasks')
-    .where({ userId, workspaceId })
+  let tasksQuery = db('tasks').where({ userId, workspaceId });
+  if (taskIds?.length) {
+    tasksQuery = tasksQuery.whereIn('id', taskIds);
+  }
+  const rows = await tasksQuery
     .andWhere((builder) => {
       for (const pattern of patterns) {
         const matchesTerm = (inner: typeof builder) => {
@@ -469,13 +480,47 @@ async function searchTasksByTextPostgres(
     .orderBy([{ column: 'score', order: 'desc' }, { column: 'createdAt', order: 'desc' }])
     .limit(20) as Array<{ id: string; originalName: string; summary: string | null; transcript: string | null; score: number | string }>;
 
+  const bestChunks = await findBestMatchingChunks(rows.map((row) => row.id), patterns, terms);
+
   return rows.map((row) => ({
     taskId: row.id,
     score: Number(row.score) || 0,
     snippet: buildSnippet(row.transcript, terms)
       || buildSnippet(row.summary, terms)
       || repairPossiblyMojibakeText(row.originalName),
+    chunkId: bestChunks.get(row.id) || null,
   }));
+}
+
+/**
+ * PostgreSQL keyword search ranks whole recordings; find the transcript passage (parent chunk)
+ * in each that contains the most distinct query terms, so callers can use that passage and its
+ * timestamps instead of a short excerpt.
+ */
+async function findBestMatchingChunks(taskIds: string[], patterns: string[], terms: string[]) {
+  const best = new Map<string, string>();
+  if (taskIds.length === 0 || patterns.length === 0) return best;
+
+  const chunks = await db('task_chunks')
+    .whereIn('taskId', taskIds)
+    .whereNull('parentId')
+    .andWhere((builder) => {
+      for (const pattern of patterns) builder.orWhereILike('content', pattern);
+    })
+    .orderBy('chunkIndex', 'asc')
+    .select('id', 'taskId', 'content') as Array<{ id: string; taskId: string; content: string }>;
+
+  const bestHits = new Map<string, number>();
+  const lowerTerms = terms.map((term) => term.toLowerCase());
+  for (const chunk of chunks) {
+    const content = chunk.content.toLowerCase();
+    const hits = lowerTerms.filter((term) => content.includes(term)).length;
+    if (hits > (bestHits.get(chunk.taskId) ?? 0)) {
+      bestHits.set(chunk.taskId, hits);
+      best.set(chunk.taskId, chunk.id);
+    }
+  }
+  return best;
 }
 
 /** Union of two keyword result lists, keeping each recording's best-scoring hit. */
@@ -499,6 +544,7 @@ export async function searchTasksByText(
   workspaceId: string,
   query: string,
   mode: SearchMatchMode = 'all',
+  taskIds?: string[],
 ): Promise<KeywordHit[]> {
   const terms = extractSearchTerms(query, mode);
   if (terms.length === 0) {
@@ -506,16 +552,19 @@ export async function searchTasksByText(
   }
 
   if (!isSqliteDb()) {
-    return searchTasksByTextPostgres(userId, workspaceId, terms, mode);
+    return searchTasksByTextPostgres(userId, workspaceId, terms, mode, taskIds);
   }
 
+  // Scope inside the query (not afterwards), so the LIMIT applies to the recordings asked about.
+  const scope = taskIds?.length ? ` AND taskId IN (${taskIds.map(() => '?').join(', ')})` : '';
   const result = await db.raw(
-    `SELECT taskId, -bm25(task_chunk_fts) AS score, snippet(task_chunk_fts, 7, '[', ']', '...', 32) AS snippet
+    `SELECT taskId, taskChunkId AS chunkId, -bm25(task_chunk_fts) AS score,
+            snippet(task_chunk_fts, 7, '[', ']', '...', 32) AS snippet
      FROM task_chunk_fts
-     WHERE task_chunk_fts MATCH ? AND userId = ? AND workspaceId = ?
+     WHERE task_chunk_fts MATCH ? AND userId = ? AND workspaceId = ?${scope}
      ORDER BY score DESC
      LIMIT 50`,
-    [toSqliteFtsMatch(terms, mode), userId, workspaceId],
+    [toSqliteFtsMatch(terms, mode), userId, workspaceId, ...(taskIds || [])],
   );
 
   const rows = (result as KeywordHit[] | { rows: KeywordHit[] })
@@ -547,10 +596,13 @@ export async function searchChunksHybrid(
     settings?: Partial<UserSettings>;
     /** Keyword matching: 'any' for questions (default), 'all' for the recording search box. */
     keywordMatch?: SearchMatchMode;
+    /** Recent conversation (Ask AI), so a follow-up question is searched for what it means. */
+    history?: ConversationTurn[];
   },
 ) {
   const maxChunks = options?.maxChunks || 8;
   const keywordMatch = options?.keywordMatch || 'any';
+  const history = options?.history?.length ? options.history : undefined;
   const retrievalMode = options?.retrievalMode || 'hybrid';
   const allowedTaskIds = options?.taskIds?.length ? options.taskIds : undefined;
   const ENHANCEMENT_TIMEOUT_MS = 4000;
@@ -574,33 +626,37 @@ export async function searchChunksHybrid(
 
   const [rewrittenQuery, hydeResult, baselineFtsResults] = await Promise.all([
     // Enhancement: query rewrite (timeout → abort + fall back to original query)
-    retrievalMode !== 'vector' && options?.settings
+    // With history the rewrite also turns a follow-up into a standalone query, which vector
+    // search needs too, so it runs in every mode then.
+    (retrievalMode !== 'vector' || history) && options?.settings
       ? withTimeout(
-          (signal) => rewriteQueryForSearch(query, options!.settings, signal),
+          (signal) => rewriteQueryForSearch(query, options!.settings, signal, history),
           query,
         )
       : Promise.resolve(query),
     // Enhancement: HyDE embedding (timeout → abort + null, use direct embedding)
     retrievalMode !== 'fts' && options?.settings
       ? withTimeout(
-          (signal) => generateHydeEmbedding(query, options!.settings, signal),
+          (signal) => generateHydeEmbedding(query, options!.settings, signal, history),
           null,
         )
       : Promise.resolve(null),
     // Baseline: FTS on original query runs in parallel
     retrievalMode !== 'vector'
-      ? searchTasksByText(userId, workspaceId, query, keywordMatch)
+      ? searchTasksByText(userId, workspaceId, query, keywordMatch, allowedTaskIds)
       : Promise.resolve([]),
   ]);
 
   const enhancementMs = Date.now() - enhancementStart;
+  // What the follow-up actually asks, for steps that cannot see the conversation themselves.
+  const standaloneQuery = history && rewrittenQuery.trim() ? rewrittenQuery : query;
 
   // The rewritten query adds recall (synonyms, keywords pulled out of a question); it must not
   // replace the original, or a poor rewrite would drop recordings the user's own words found.
   const ftsResults = rewrittenQuery !== query && retrievalMode !== 'vector'
     ? mergeKeywordHits(
       baselineFtsResults,
-      await searchTasksByText(userId, workspaceId, rewrittenQuery, keywordMatch).catch(() => []),
+      await searchTasksByText(userId, workspaceId, rewrittenQuery, keywordMatch, allowedTaskIds).catch(() => []),
     )
     : baselineFtsResults;
 
@@ -615,7 +671,7 @@ export async function searchChunksHybrid(
 
   if (retrievalMode !== 'fts' && isEmbeddingsConfigured()) {
     // Use HyDE embedding if available, fall back to direct query embedding
-    const queryEmbedding = hydeResult || await createEmbedding(query);
+    const queryEmbedding = hydeResult || await createEmbedding(standaloneQuery);
 
     let chunkRows: Array<{
       id: string;
@@ -715,7 +771,7 @@ export async function searchChunksHybrid(
       try {
         const reranked = await withTimeout(
           (signal) => rerankChunks(
-            query,
+            standaloneQuery,
             vectorResults.map((r) => ({ id: r.chunkId, content: r.content })),
             maxChunks,
             options?.settings,
@@ -740,53 +796,85 @@ export async function searchChunksHybrid(
     }
   }
 
-  const taskMap = new Map<string, { score: number; snippet: string }>();
-  for (const result of ftsResults) {
-    if (!allowedTaskIds || allowedTaskIds.includes(result.taskId)) {
-      taskMap.set(result.taskId, {
-        score: Number(result.score || 0),
-        snippet: result.snippet || '',
-      });
-    }
-  }
+  const scopedFtsResults = ftsResults.filter(
+    (result) => !allowedTaskIds || allowedTaskIds.includes(result.taskId),
+  );
 
+  // Recording ranking: reciprocal rank fusion of the keyword and vector rankings. bm25 scores
+  // (roughly 0-20) and cosine similarity (0-1) are not on comparable scales, so adding them let
+  // any keyword hit outrank every semantic match; ranks are comparable.
+  const vectorTaskOrder: string[] = [];
   for (const result of vectorResults) {
-    const existing = taskMap.get(result.taskId);
-    if (existing) {
-      existing.score += result.score * 3;
-      if (!existing.snippet) {
-        existing.snippet = result.content;
-      }
-    } else {
-      taskMap.set(result.taskId, {
-        score: result.score * 3,
-        snippet: result.content,
-      });
-    }
+    if (!vectorTaskOrder.includes(result.taskId)) vectorTaskOrder.push(result.taskId);
+  }
+  const fused = reciprocalRankFusion([scopedFtsResults.map((result) => result.taskId), vectorTaskOrder]);
+
+  const snippets = new Map<string, string>();
+  for (const result of vectorResults) {
+    if (!snippets.has(result.taskId)) snippets.set(result.taskId, result.content);
+  }
+  for (const result of scopedFtsResults) {
+    if (result.snippet) snippets.set(result.taskId, result.snippet);
   }
 
-  // Merge FTS snippets into chunkRanking for tasks that have no vector hits.
-  // This ensures FTS-only matches still provide actual matched content to the LLM
-  // instead of falling back to transcript prefixes.
-  const vectorTaskIds = new Set(vectorResults.map((r) => r.taskId));
-  const ftsOnlyChunks = ftsResults
-    .filter((r) => !vectorTaskIds.has(r.taskId) && r.snippet)
-    .map((r) => ({
-      taskId: r.taskId,
-      chunkId: `fts-${r.taskId}`,
-      content: r.snippet,
-      score: Number(r.score || 0),
-      startTime: null as number | null,
-      endTime: null as number | null,
-    }));
+  // Recordings found only by keyword get the transcript passage that matched (with its
+  // timestamps), not just the short excerpt around the match.
+  const vectorTaskIds = new Set(vectorTaskOrder);
+  const keywordOnly = scopedFtsResults.filter((result) => !vectorTaskIds.has(result.taskId));
+  const passages = await loadChunkPassages(
+    keywordOnly.map((result) => result.chunkId).filter((id): id is string => Boolean(id)),
+  );
+  const ftsOnlyChunks = keywordOnly
+    .map((result) => {
+      const passage = result.chunkId ? passages.get(result.chunkId) : undefined;
+      return {
+        taskId: result.taskId,
+        chunkId: passage ? String(result.chunkId) : `fts-${result.taskId}`,
+        content: passage?.content || result.snippet,
+        score: Number(result.score || 0),
+        startTime: passage?.startTime ?? null,
+        endTime: passage?.endTime ?? null,
+      };
+    })
+    .filter((chunk) => chunk.content);
   const mergedChunkRanking = [...vectorResults, ...ftsOnlyChunks];
 
   return {
-    taskRanking: Array.from(taskMap.entries())
-      .map(([taskId, value]) => ({ taskId, score: value.score, snippet: value.snippet }))
+    taskRanking: [...fused.entries()]
+      .map(([taskId, score]) => ({ taskId, score, snippet: snippets.get(taskId) || '' }))
       .sort((a, b) => b.score - a.score)
       .slice(0, 20),
     chunkRanking: mergedChunkRanking,
     embeddings: getEmbeddingsInfo(),
   };
+}
+
+const RRF_K = 60;
+
+/**
+ * Reciprocal rank fusion: score = sum of 1 / (k + rank) over the rankings an item appears in.
+ * Items found by several retrievers rise; the constant k damps the weight of the very top ranks.
+ */
+export function reciprocalRankFusion(rankings: string[][], k = RRF_K) {
+  const scores = new Map<string, number>();
+  for (const ranking of rankings) {
+    ranking.forEach((id, index) => {
+      scores.set(id, (scores.get(id) || 0) + 1 / (k + index + 1));
+    });
+  }
+  return scores;
+}
+
+async function loadChunkPassages(chunkIds: string[]) {
+  const passages = new Map<string, { content: string; startTime: number | null; endTime: number | null }>();
+  if (chunkIds.length === 0) return passages;
+  const rows = await db('task_chunks')
+    .whereIn('id', [...new Set(chunkIds)])
+    .select('id', 'content', 'startTime', 'endTime') as Array<{
+      id: string; content: string; startTime?: number | null; endTime?: number | null;
+    }>;
+  for (const row of rows) {
+    passages.set(row.id, { content: row.content, startTime: row.startTime ?? null, endTime: row.endTime ?? null });
+  }
+  return passages;
 }

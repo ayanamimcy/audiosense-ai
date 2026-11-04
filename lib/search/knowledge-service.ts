@@ -30,16 +30,21 @@ export async function searchTasks(userId: string, workspaceId: string, query: st
   });
   const rankingMap = new Map(ranking.taskRanking.map((item) => [item.taskId, item]));
 
+  // Recordings the search ranked come first, in ranking order; plain substring matches on
+  // title/tags/summary/transcript follow. (Ranking scores are rank-fusion values, not on the
+  // same scale as scoreTask.)
   return tasks
-    .map((task) => ({
-      task,
-      score:
-        rankingMap.get(task.id)?.score ||
-        scoreTask(query, task),
-      snippet: rankingMap.get(task.id)?.snippet || '',
-    }))
+    .map((task) => {
+      const ranked = rankingMap.get(task.id);
+      return {
+        task,
+        ranked: Boolean(ranked),
+        score: ranked ? ranked.score : scoreTask(query, task),
+        snippet: ranked?.snippet || '',
+      };
+    })
     .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score || b.task.createdAt - a.task.createdAt)
+    .sort((a, b) => Number(b.ranked) - Number(a.ranked) || b.score - a.score || b.task.createdAt - a.task.createdAt)
     .slice(0, 20)
     .map((item) => ({
       ...item.task,
