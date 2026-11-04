@@ -10,6 +10,7 @@ import {
   countMessagesByConversation,
 } from '../../database/repositories/knowledge-conversations-repository.js';
 import { streamAnswerAcrossKnowledgeBase, isLlmConfigured, type LlmMessage } from '../ai/llm.js';
+import { prepareAnswerHistory, prepareRetrievalHistory, type ConversationTurn } from '../ai/conversation-history.js';
 import { searchChunksHybrid } from './search-index.js';
 import { getUserSettings } from '../settings/settings.js';
 import { repairPossiblyMojibakeText } from '../shared/text-encoding.js';
@@ -38,11 +39,13 @@ export interface KnowledgeChatResult {
   };
 }
 
-function buildHistoryMessages(rows: KnowledgeMessageRow[]): LlmMessage[] {
-  return rows.map((row) => ({
-    role: row.role as 'user' | 'assistant',
-    content: row.content,
-  }));
+function toConversationTurns(rows: KnowledgeMessageRow[]): ConversationTurn[] {
+  return rows
+    .filter((row) => row.role === 'user' || row.role === 'assistant')
+    .map((row) => ({
+      role: row.role as 'user' | 'assistant',
+      content: row.content,
+    }));
 }
 
 function resolveMentionTaskIds(
@@ -101,6 +104,11 @@ export async function streamKnowledgeChatMessage(
     }
   }
 
+  // Earlier turns of this conversation, read before the new question is stored.
+  const conversationHistory = conversationId
+    ? toConversationTurns(await listMessagesByConversation(convId))
+    : [];
+
   const userMsgId = uuidv4();
   await insertMessage({
     id: userMsgId,
@@ -142,6 +150,7 @@ export async function streamKnowledgeChatMessage(
     retrievalMode: userSettings.retrievalMode,
     maxChunks: userSettings.maxKnowledgeChunks,
     settings: userSettings,
+    history: prepareRetrievalHistory(conversationHistory),
   });
 
   // Always use ranked results for candidate selection, even with mentions.
@@ -175,9 +184,7 @@ export async function streamKnowledgeChatMessage(
     };
   });
 
-  const historyRows = await listMessagesByConversation(convId);
-  const priorMessages = historyRows.filter((m) => m.id !== userMsgId);
-  const history = buildHistoryMessages(priorMessages);
+  const history: LlmMessage[] = prepareAnswerHistory(conversationHistory);
 
   let fullContent = '';
   const content = await streamAnswerAcrossKnowledgeBase(
