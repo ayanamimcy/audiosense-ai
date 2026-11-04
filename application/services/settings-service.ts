@@ -9,6 +9,10 @@ import {
   insertSummaryPromptRow,
   updateSummaryPromptRowByWorkspace,
 } from '../../database/repositories/summary-prompts-repository.js';
+import {
+  clearNotebookDefaultSummaryPromptRows,
+  listNotebookRowsByDefaultSummaryPrompt,
+} from '../../database/repositories/notebooks-repository.js';
 import { getEmbeddingsInfo } from '../../lib/ai/embeddings.js';
 import { getLlmInfo } from '../../lib/ai/llm.js';
 import { summarizeLlmUsage } from '../../lib/ai/llm-usage.js';
@@ -24,6 +28,7 @@ import {
 } from '../../lib/settings/settings.js';
 import {
   findSummaryPrompt,
+  isSummaryPromptAvailableForNotebook,
   listSummaryPrompts,
 } from '../../lib/tasks/summary-prompts.js';
 import { getLocalRuntimeCatalogSnapshot } from '../../lib/settings/user-settings-schema.js';
@@ -163,6 +168,17 @@ export async function updateSummaryPromptForUser(
     updatedAt: Date.now(),
   });
 
+  // Notebooks that used this template as their default but can no longer see it fall
+  // back to the workspace default.
+  const notebooksUsingPrompt = await listNotebookRowsByDefaultSummaryPrompt(userId, current.id);
+  await clearNotebookDefaultSummaryPromptRows(
+    userId,
+    current.id,
+    notebooksUsingPrompt
+      .filter((notebook) => !isSummaryPromptAvailableForNotebook({ notebookIds }, notebook.id))
+      .map((notebook) => notebook.id),
+  );
+
   return findSummaryPrompt(userId, current.id, currentWorkspaceId);
 }
 
@@ -172,6 +188,7 @@ export async function deleteSummaryPromptForUser(userId: string, promptId: strin
   if (!deleted) {
     throw new SummaryPromptNotFoundError();
   }
+  await clearNotebookDefaultSummaryPromptRows(userId, promptId);
 }
 
 // ---------------------------------------------------------------------------

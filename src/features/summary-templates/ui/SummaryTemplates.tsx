@@ -5,6 +5,7 @@ import { cn } from '@/shared/lib/cn';
 import { Field, inputClassName, primaryButtonClassName, secondaryButtonClassName } from '@/shared/ui/form';
 import { useAppDataContext } from '@/app/providers/app-data-context';
 import type { SummaryPrompt } from '@/entities/summary-prompt';
+import { NotebookDefaults } from './NotebookDefaults';
 
 type PromptDraft = {
   name: string;
@@ -29,7 +30,11 @@ function buildDraft(prompt: SummaryPrompt | null): PromptDraft {
 
 /** Reusable summary prompt templates, managed from Settings › Summary templates. */
 export function SummaryTemplates() {
-  const { summaryPrompts: prompts, notebooks, fetchSummaryPrompts: onRefresh } = useAppDataContext();
+  const { summaryPrompts: prompts, notebooks, fetchSummaryPrompts, fetchNotebooks } = useAppDataContext();
+  // Saving or deleting a template can clear notebook defaults on the server.
+  const onRefresh = async () => {
+    await Promise.all([fetchSummaryPrompts(), fetchNotebooks()]);
+  };
   const [selectedPromptId, setSelectedPromptId] = useState<string | null>(prompts[0]?.id || null);
   const [draft, setDraft] = useState<PromptDraft>(createEmptyDraft());
   const [isSaving, setIsSaving] = useState(false);
@@ -210,8 +215,10 @@ export function SummaryTemplates() {
             className="mt-0.5 h-4 w-4 accent-stone-900"
           />
           <span>
-            <span className="block text-sm font-medium text-stone-900">Use as default</span>
-            <span className="block text-[13px] text-stone-600">Used whenever a summary is generated without picking a template.</span>
+            <span className="block text-sm font-medium text-stone-900">Use as workspace default</span>
+            <span className="block text-[13px] text-stone-600">
+              Used whenever a summary is generated without picking a template, unless the notebook has its own default.
+            </span>
           </span>
         </label>
 
@@ -238,6 +245,8 @@ export function SummaryTemplates() {
           </button>
         </div>
       </div>
+
+      <NotebookDefaults />
     </div>
   );
 }

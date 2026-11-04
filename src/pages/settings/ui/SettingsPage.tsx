@@ -773,7 +773,7 @@ export function SettingsPage({
           <>
             <SectionHeading
               title="Summary templates"
-              description="Reusable instructions for summaries. Pick one per recording, or set a default."
+              description="Reusable instructions for summaries. Pick one per recording, or set a default for the workspace or each notebook."
             />
             <SummaryTemplates />
           </>

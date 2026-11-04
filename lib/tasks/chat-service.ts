@@ -20,9 +20,9 @@ import {
 } from '../ai/llm.js';
 import { getUserSettings } from '../settings/settings.js';
 import {
-  getDefaultSummaryPromptForNotebook,
   isSummaryPromptAvailableForNotebook,
   listSummaryPrompts,
+  resolveDefaultSummaryPromptForNotebook,
 } from './summary-prompts.js';
 import { refreshTaskSearchMetadata, reindexTask, scheduleTaskReindex } from '../search/search-index.js';
 import {
@@ -249,7 +249,8 @@ export async function handleGenerateSummary(
     }
     resolvedPrompt = selectedPrompt.prompt;
   } else if (!options.skipConfiguredPrompt) {
-    resolvedPrompt = getDefaultSummaryPromptForNotebook(summaryPrompts, task.notebookId)?.prompt || null;
+    resolvedPrompt =
+      (await resolveDefaultSummaryPromptForNotebook(userId, summaryPrompts, task.notebookId))?.prompt || null;
   }
 
   const previousSummary = task.summary ?? null;
