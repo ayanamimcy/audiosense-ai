@@ -279,10 +279,13 @@ export default function NotebookView() {
   return (
     <div className={cn('flex lg:h-full', id ? 'h-full' : 'min-h-full')}>
       {/* List column */}
+      {/* `relative` makes this scroll pane the containing block of absolutely positioned
+          descendants (the rows' sr-only labels); otherwise they escape its clipping and stretch
+          the app shell's scroll area, which then scrolls the whole page past the list. */}
       <section
         aria-label="Recordings"
         className={cn(
-          'w-full flex-col gap-3 px-4 pt-2 pb-6 lg:flex lg:h-full lg:w-[380px] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-stone-200 lg:px-3 lg:pt-4 custom-scrollbar',
+          'relative w-full flex-col gap-3 px-4 pt-2 pb-6 lg:flex lg:h-full lg:w-[380px] lg:shrink-0 lg:overflow-y-auto lg:border-r lg:border-stone-200 lg:px-3 lg:pt-4 custom-scrollbar',
           id ? 'hidden' : 'flex',
         )}
       >

@@ -802,7 +802,7 @@ export function SettingsPage({
     <div className="flex min-h-full flex-col lg:h-full lg:flex-row">
       <nav
         aria-label="Settings sections"
-        className="shrink-0 lg:flex lg:w-56 lg:flex-col lg:overflow-y-auto lg:border-r lg:border-stone-200 lg:px-3 lg:py-5"
+        className="relative shrink-0 lg:flex lg:w-56 lg:flex-col lg:overflow-y-auto lg:border-r lg:border-stone-200 lg:px-3 lg:py-5"
       >
         <h1 className="hidden px-2.5 pb-3 text-lg font-semibold text-stone-900 lg:block">Settings</h1>
         {/* Mobile: one scrollable row of sections */}
@@ -856,7 +856,8 @@ export function SettingsPage({
       </nav>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col bg-white">
-        <div className="min-h-0 flex-1 lg:overflow-y-auto custom-scrollbar">
+        {/* `relative`: keep sr-only labels and switch inputs inside this scroll pane (see NotebookPage). */}
+        <div className="relative min-h-0 flex-1 lg:overflow-y-auto custom-scrollbar">
           <div className="max-w-2xl px-5 py-6 lg:px-10 lg:py-8">
             {renderSection()}
             {section === 'account' ? (
