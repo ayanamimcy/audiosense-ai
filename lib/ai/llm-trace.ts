@@ -6,7 +6,7 @@ import { insertLlmCallRow, type LlmCallRow } from '../../database/repositories/l
 
 const log = logger.child('llm-trace');
 
-export type LlmOperation = 'summary' | 'tag_suggestion' | 'task_chat' | 'knowledge_chat';
+export type LlmOperation = 'summary' | 'tag_suggestion' | 'task_chat' | 'knowledge_chat' | 'live_translation';
 
 /** Who/what a call is for. Passed by callers; never contains prompt text. */
 export interface LlmTraceContext {

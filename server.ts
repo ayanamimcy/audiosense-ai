@@ -26,6 +26,7 @@ import { apiTokensRouter } from './routes/api-tokens.js';
 import { knowledgeRouter } from './routes/knowledge.js';
 import { associationsRouter } from './routes/associations.js';
 import { workspacesRouter } from './routes/workspaces.js';
+import { attachLiveCaptionServer } from './lib/live/live-caption-server.js';
 
 declare global {
   namespace Express {
@@ -127,9 +128,10 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  const httpServer = app.listen(PORT, '0.0.0.0', () => {
     log.info('Server running', { url: `http://localhost:${PORT}` });
   });
+  attachLiveCaptionServer(httpServer);
 }
 
 startServer().catch((error) => {

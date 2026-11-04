@@ -32,6 +32,7 @@ import { parseJsonField, type QueueStateRow, type TaskJobRow } from './task-type
 import config from '../config.js';
 import { isTranscriptionCancelledError } from '../audio-engine/cancellation.js';
 import { isJobLeaseLostError, isJobOwnedBy } from './job-lease.js';
+import { hasActiveLiveSession } from '../../database/repositories/live-sessions-repository.js';
 
 const DEFAULT_PROVIDER = config.transcription.defaultProvider;
 const DEFAULT_QUEUE_NAME = 'transcription';
@@ -199,6 +200,11 @@ export async function enqueueTaskJob(input: {
 
 export async function claimNextJob(workerId: string) {
   const now = Date.now();
+  // Live captions share the transcription runtime (one model, one GPU): while a live session
+  // is running, start no new jobs so captions are not stuck behind a long file.
+  if (await hasActiveLiveSession(now)) {
+    return null;
+  }
   const queueState = await getOrCreateQueueState();
 
   let candidate: TaskJobRow | null = null;

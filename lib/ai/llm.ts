@@ -709,6 +709,61 @@ export async function streamAnswerAcrossKnowledgeBase(
   });
 }
 
+const LIVE_TRANSLATION_LANGUAGE_NAMES: Record<string, string> = {
+  zh: 'Simplified Chinese',
+  ja: 'Japanese',
+  en: 'English',
+};
+
+const LIVE_TRANSLATION_SYSTEM_PROMPT = [
+  'You translate live meeting captions.',
+  'Translate only the sentence marked "Translate", into the requested language.',
+  'Earlier sentences are context for names, terms and pronouns; do not translate them.',
+  'Captions come from speech recognition and may contain small errors: translate what was most likely said.',
+  'Keep names, numbers and technical terms accurate.',
+  'Output only the translation, with no quotes, notes or romanization.',
+].join(' ');
+
+/**
+ * Translates one finalized live caption. `context` holds the preceding captions (oldest first)
+ * so references and terminology carry over between sentences.
+ */
+export async function translateLiveCaption(
+  input: {
+    text: string;
+    targetLanguage: string;
+    sourceLanguage?: string | null;
+    context?: string[];
+  },
+  settings?: Partial<UserSettings>,
+  trace?: Omit<LlmTraceContext, 'operation'>,
+) {
+  const target = LIVE_TRANSLATION_LANGUAGE_NAMES[input.targetLanguage] || input.targetLanguage;
+  const source = input.sourceLanguage
+    ? LIVE_TRANSLATION_LANGUAGE_NAMES[input.sourceLanguage] || input.sourceLanguage
+    : 'the original language';
+  const context = (input.context || []).filter(Boolean);
+  const userContent = [
+    context.length ? `Earlier sentences:\n${context.map((line) => `- ${line}`).join('\n')}\n` : '',
+    `Translate from ${source} into ${target}:`,
+    input.text,
+  ].filter(Boolean).join('\n');
+
+  return callChatCompletion(
+    [
+      { role: 'system', content: LIVE_TRANSLATION_SYSTEM_PROMPT },
+      { role: 'user', content: userContent },
+    ],
+    0.1,
+    settings,
+    20000,
+    {
+      trace: trace && { ...trace, operation: 'live_translation' },
+      promptVersion: buildPromptVersion('live_translation', [LIVE_TRANSLATION_SYSTEM_PROMPT]),
+    },
+  );
+}
+
 export function getLlmInfo(settings?: Partial<UserSettings>) {
   return {
     configured: isLlmConfigured(settings),
