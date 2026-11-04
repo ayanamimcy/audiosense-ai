@@ -4,7 +4,7 @@ import { generateTaskSummary, isLlmConfigured } from '../ai/llm.js';
 import logger from '../shared/logger.js';
 
 const log = logger.child('post-processing');
-import { getDefaultSummaryPromptForNotebook, listSummaryPrompts } from './summary-prompts.js';
+import { listSummaryPrompts, resolveDefaultSummaryPromptForNotebook } from './summary-prompts.js';
 import { reindexTask } from '../search/search-index.js';
 import type { UserSettings } from '../settings/settings.js';
 import {
@@ -65,7 +65,9 @@ const summaryStep: PostProcessingStep = {
     try {
       const displayName = repairPossiblyMojibakeText(task.originalName);
       const summaryPrompts = task.userId ? await listSummaryPrompts(task.userId) : [];
-      const defaultPrompt = getDefaultSummaryPromptForNotebook(summaryPrompts, task.notebookId)?.prompt || null;
+      const defaultPrompt = task.userId
+        ? (await resolveDefaultSummaryPromptForNotebook(task.userId, summaryPrompts, task.notebookId))?.prompt || null
+        : null;
 
       const summary = await generateTaskSummary(
         {

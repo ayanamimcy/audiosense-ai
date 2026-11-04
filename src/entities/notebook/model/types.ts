@@ -5,5 +5,7 @@ export interface Notebook {
   name: string;
   description?: string | null;
   color?: string | null;
+  /** The notebook's own default summary template; null uses the workspace default. */
+  defaultSummaryPromptId?: string | null;
   createdAt: number;
 }

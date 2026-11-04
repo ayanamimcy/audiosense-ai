@@ -7,6 +7,7 @@ export interface NotebookRow {
   name: string;
   description?: string | null;
   color?: string | null;
+  defaultSummaryPromptId?: string | null;
   createdAt: number;
 }
 
@@ -55,4 +56,22 @@ export async function updateNotebookRowByUserAndId(
 
 export async function deleteNotebookRowByUserAndId(userId: string, notebookId: string) {
   return db('notebooks').where({ id: notebookId, userId }).delete();
+}
+
+export async function listNotebookRowsByDefaultSummaryPrompt(userId: string, promptId: string) {
+  return (await db('notebooks')
+    .where({ userId, defaultSummaryPromptId: promptId })) as NotebookRow[];
+}
+
+export async function clearNotebookDefaultSummaryPromptRows(
+  userId: string,
+  promptId: string,
+  notebookIds?: string[],
+) {
+  const query = db('notebooks').where({ userId, defaultSummaryPromptId: promptId });
+  if (notebookIds) {
+    if (!notebookIds.length) return;
+    query.whereIn('id', notebookIds);
+  }
+  await query.update({ defaultSummaryPromptId: null });
 }

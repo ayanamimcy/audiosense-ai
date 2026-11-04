@@ -4,6 +4,7 @@ import { apiFetch } from '@/shared/api/base';
 import { cn } from '@/shared/lib/cn';
 import { MarkdownContent } from '@/shared/ui/MarkdownContent';
 import { useAppDataContext } from '@/app/providers/app-data-context';
+import { getDefaultPromptForNotebook, isPromptAvailableInNotebook } from '@/entities/summary-prompt';
 import {
   SUMMARY_GENERATING_SENTINEL,
   getTaskSummaryGenerationError,
@@ -18,7 +19,7 @@ export function SummaryPanel({
   task: Task;
   onUpdateTask: () => void | Promise<void>;
 }) {
-  const { capabilities, summaryPrompts } = useAppDataContext();
+  const { capabilities, summaryPrompts, notebooks } = useAppDataContext();
   const [promptSelection, setPromptSelection] = useState('default');
   const [instructions, setInstructions] = useState('');
   const [isInstructionsOpen, setIsInstructionsOpen] = useState(false);
@@ -34,10 +35,13 @@ export function SummaryPanel({
   const isGenerating = isRequesting || isTaskSummaryGenerating(task);
   const hasSummary = Boolean(task.summary && task.summary !== SUMMARY_GENERATING_SENTINEL);
   const isLlmConfigured = Boolean(capabilities?.llm.configured);
-  const availablePrompts = summaryPrompts.filter((prompt) => (
-    !prompt.notebookIds.length || (task.notebookId ? prompt.notebookIds.includes(task.notebookId) : false)
-  ));
-  const defaultPrompt = availablePrompts.find((prompt) => prompt.isDefault) || null;
+  const availablePrompts = summaryPrompts.filter((prompt) => isPromptAvailableInNotebook(prompt, task.notebookId));
+  const notebook = task.notebookId ? notebooks.find((item) => item.id === task.notebookId) : undefined;
+  const defaultPrompt = getDefaultPromptForNotebook(
+    summaryPrompts,
+    task.notebookId,
+    notebook?.defaultSummaryPromptId,
+  );
 
   const handleGenerate = async () => {
     setIsRequesting(true);

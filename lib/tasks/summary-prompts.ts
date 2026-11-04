@@ -6,6 +6,7 @@ import {
   listSummaryPromptRowsByWorkspace,
   type SummaryPromptRow,
 } from '../../database/repositories/summary-prompts-repository.js';
+import { findNotebookRowByUserAndId } from '../../database/repositories/notebooks-repository.js';
 import { parseJsonField } from './task-types.js';
 
 export interface SummaryPromptRecord {
@@ -71,14 +72,37 @@ export function isSummaryPromptAvailableForNotebook(
   return prompt.notebookIds.includes(notebookId);
 }
 
+/**
+ * The template used when a summary is generated without picking one: the notebook's own
+ * default when it is set and still usable in that notebook, otherwise the workspace default.
+ */
 export function getDefaultSummaryPromptForNotebook(
   prompts: SummaryPromptRecord[],
   notebookId?: string | null,
+  notebookDefaultPromptId?: string | null,
 ) {
+  if (notebookId && notebookDefaultPromptId) {
+    const notebookDefault = prompts.find((prompt) => (
+      prompt.id === notebookDefaultPromptId && isSummaryPromptAvailableForNotebook(prompt, notebookId)
+    ));
+    if (notebookDefault) {
+      return notebookDefault;
+    }
+  }
+
   return (
     prompts.find((prompt) => prompt.isDefault && isSummaryPromptAvailableForNotebook(prompt, notebookId)) ||
     null
   );
+}
+
+export async function resolveDefaultSummaryPromptForNotebook(
+  userId: string,
+  prompts: SummaryPromptRecord[],
+  notebookId?: string | null,
+) {
+  const notebook = notebookId ? await findNotebookRowByUserAndId(userId, notebookId) : undefined;
+  return getDefaultSummaryPromptForNotebook(prompts, notebookId, notebook?.defaultSummaryPromptId);
 }
 
 export async function clearDefaultSummaryPrompts(userId: string, exceptId?: string | null) {

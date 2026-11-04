@@ -17,6 +17,10 @@ import {
   updateSummaryPromptRowByWorkspace,
 } from '../../database/repositories/summary-prompts-repository.js';
 import { syncTaskWorkspaceScope } from '../../lib/search/search-index.js';
+import {
+  findSummaryPrompt,
+  isSummaryPromptAvailableForNotebook,
+} from '../../lib/tasks/summary-prompts.js';
 import { parseJsonField, type TaskRow } from '../../lib/tasks/task-types.js';
 import {
   assertWorkspaceBelongsToUser,
@@ -51,6 +55,7 @@ export async function createNotebookForUser(
     name,
     description: input.description ? String(input.description).trim() : null,
     color: input.color ? String(input.color).trim() : '#4f46e5',
+    defaultSummaryPromptId: null,
     createdAt: Date.now(),
   };
 
@@ -61,7 +66,13 @@ export async function createNotebookForUser(
 export async function updateNotebookForUser(
   userId: string,
   notebookId: string,
-  input: { name?: unknown; description?: unknown; color?: unknown; workspaceId?: unknown },
+  input: {
+    name?: unknown;
+    description?: unknown;
+    color?: unknown;
+    workspaceId?: unknown;
+    defaultSummaryPromptId?: unknown;
+  },
 ) {
   const notebook = await findNotebookRowByUserAndId(userId, notebookId);
   if (!notebook) {
@@ -74,16 +85,39 @@ export async function updateNotebookForUser(
     await assertWorkspaceBelongsToUser(userId, requestedWorkspaceId);
   }
 
+  const nextWorkspaceId = requestedWorkspaceId !== undefined ? requestedWorkspaceId : notebook.workspaceId;
+  const isMovingWorkspace = Boolean(requestedWorkspaceId && requestedWorkspaceId !== notebook.workspaceId);
+
+  // Templates belong to a workspace, so a notebook that moves drops its default
+  // unless the same request picks one from the new workspace.
+  let defaultSummaryPromptId = isMovingWorkspace ? null : notebook.defaultSummaryPromptId ?? null;
+  if (input.defaultSummaryPromptId !== undefined) {
+    const requestedPromptId = String(input.defaultSummaryPromptId || '').trim() || null;
+    if (requestedPromptId) {
+      const prompt = nextWorkspaceId
+        ? await findSummaryPrompt(userId, requestedPromptId, nextWorkspaceId)
+        : null;
+      if (!prompt) {
+        throw new Error('Summary template not found.');
+      }
+      if (!isSummaryPromptAvailableForNotebook(prompt, notebookId)) {
+        throw new Error('That template is not available in this notebook.');
+      }
+    }
+    defaultSummaryPromptId = requestedPromptId;
+  }
+
   const updates = {
     name: input.name ? String(input.name).trim() : notebook.name,
     description: input.description !== undefined ? String(input.description || '') || null : notebook.description,
     color: input.color !== undefined ? String(input.color || '') || null : notebook.color,
-    workspaceId: requestedWorkspaceId !== undefined ? requestedWorkspaceId : notebook.workspaceId,
+    workspaceId: nextWorkspaceId,
+    defaultSummaryPromptId,
   };
 
   await updateNotebookRowByUserAndId(userId, notebookId, updates);
 
-  if (requestedWorkspaceId && requestedWorkspaceId !== notebook.workspaceId) {
+  if (isMovingWorkspace && requestedWorkspaceId) {
     const movedTasks = await listTaskRowsByUserAndNotebook(userId, notebookId);
     const sourceWorkspaceId = String(notebook.workspaceId || '');
     const now = Date.now();
